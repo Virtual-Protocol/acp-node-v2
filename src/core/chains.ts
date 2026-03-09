@@ -1,10 +1,18 @@
 export type ChainFamily = "evm" | "solana";
 
-export const EVM_CHAIN_IDS = {
+const EVM_MAINNET_CHAIN_IDS = {
   base: 8453,
   polygon: 137,
   bsc: 56,
+} as const;
+
+const EVM_TESTNET_CHAIN_IDS = {
   baseSepolia: 84532,
+} as const;
+
+export const EVM_CHAIN_IDS = {
+  ...EVM_MAINNET_CHAIN_IDS,
+  ...EVM_TESTNET_CHAIN_IDS,
 } as const;
 
 export type EvmNetworkName = keyof typeof EVM_CHAIN_IDS;

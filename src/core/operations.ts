@@ -1,5 +1,5 @@
 import type { NetworkContext } from "./chains";
-import type { Call } from "viem";
+import type { Call, Hex } from "viem";
 import type { SolanaInstructionLike } from "../providers/types";
 
 export type CapabilityFlags = {
@@ -31,41 +31,41 @@ export type CreateJobParams = {
   expiredAt: number;
   description: string;
   hookAddress?: string;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type SetBudgetParams = {
   jobId: bigint;
   amount: bigint;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type ApproveAllowanceParams = {
   tokenAddress: string;
   spenderAddress: string;
   amount: bigint;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type FundParams = {
   jobId: bigint;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type SubmitParams = {
   jobId: bigint;
   deliverable: string;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type CompleteParams = {
   jobId: bigint;
   reason: string;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };
 
 export type RejectParams = {
   jobId: bigint;
   reason: string;
-  optParams?: Record<string, unknown>;
+  optParams?: Hex;
 };

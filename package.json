@@ -1,0 +1,25 @@
+{
+  "name": "acp-node-v2",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "author": "Zuhwa",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aa-sdk/core": "^4.84.1",
+    "@account-kit/infra": "^4.84.1",
+    "@account-kit/smart-contracts": "^4.84.1",
+    "typescript": "^5.9.3",
+    "viem": "^2.47.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3"
+  },
+  "types": "dist/index.d.ts"
+}

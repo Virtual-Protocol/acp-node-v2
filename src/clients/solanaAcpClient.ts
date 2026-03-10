@@ -6,6 +6,7 @@ import type {
   CompleteParams,
   CreateJobParams,
   FundParams,
+  OnChainJob,
   PreparedSolanaTx,
   PreparedTxInput,
   RejectParams,
@@ -140,6 +141,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   override async getJobIdFromTxHash(): Promise<bigint | null> {
     throw new Error(
       "getJobIdFromTxHash is not implemented for SolanaAcpClient."
+    );
+  }
+
+  override async getJob(_jobId: bigint): Promise<OnChainJob | null> {
+    throw new Error(
+      "getJob is not implemented for SolanaAcpClient."
     );
   }
 

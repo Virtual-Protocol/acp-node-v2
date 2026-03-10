@@ -12,6 +12,7 @@ import type {
 } from "./core/operations";
 import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
 import { Erc20Token } from "./core/erc20Token";
+import { AcpJob } from "./acpJob";
 
 export type SetBudgetParams = {
   jobId: bigint;
@@ -68,20 +69,26 @@ export class AcpAgent {
     return Erc20Token.fromOnChain(address, amount, this.client);
   }
 
-  async createJob(params: CreateJobParams): Promise<bigint> {
+  async createJob(params: CreateJobParams): Promise<AcpJob> {
     const prepared = await this.client.createJob(params);
     const result = await this.client.submitPrepared([prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
     const jobId = await this.client.getJobIdFromTxHash(txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
-    return jobId;
+    return this.getJobById(jobId);
   }
 
-  async createFundTransferJob(params: CreateJobParams): Promise<bigint> {
+  async createFundTransferJob(params: CreateJobParams): Promise<AcpJob> {
     return this.createJob({
       ...params,
       hookAddress: params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS,
     });
+  }
+
+  async getJobById(jobId: bigint): Promise<AcpJob> {
+    const data = await this.client.getJob(jobId);
+    if (!data) throw new Error(`Job not found: ${jobId}`);
+    return new AcpJob(this, data);
   }
 
   async setBudget(params: SetBudgetParams): Promise<string | string[]> {

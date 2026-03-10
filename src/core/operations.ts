@@ -69,3 +69,15 @@ export type RejectParams = {
   reason: string;
   optParams?: Hex;
 };
+
+export type OnChainJob = {
+  id: bigint;
+  client: string;
+  provider: string;
+  evaluator: string;
+  description: string;
+  budget: bigint;
+  expiredAt: bigint;
+  status: number;
+  hook: string;
+};

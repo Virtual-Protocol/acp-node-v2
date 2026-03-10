@@ -18,6 +18,7 @@ import type {
   CompleteParams,
   CreateJobParams,
   FundParams,
+  OnChainJob,
   OperationResult,
   PreparedEvmTx,
   PreparedTxInput,
@@ -170,6 +171,39 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       this.contractAddress as Address,
       filter
     );
+  }
+
+  override async getJob(jobId: bigint): Promise<OnChainJob | null> {
+    const result = await this.provider.readContract({
+      address: this.contractAddress as Address,
+      abi: ACP_ABI as readonly unknown[],
+      functionName: "getJob",
+      args: [jobId],
+    });
+    if (!result || typeof result !== "object" || !("id" in result))
+      return null;
+    const raw = result as {
+      id: bigint;
+      client: string;
+      provider: string;
+      evaluator: string;
+      description: string;
+      budget: bigint;
+      expiredAt: bigint;
+      status: number;
+      hook: string;
+    };
+    return {
+      id: raw.id,
+      client: raw.client,
+      provider: raw.provider,
+      evaluator: raw.evaluator,
+      description: raw.description,
+      budget: raw.budget,
+      expiredAt: raw.expiredAt,
+      status: raw.status,
+      hook: raw.hook,
+    };
   }
 
   override async getTokenDecimals(tokenAddress: string): Promise<number> {

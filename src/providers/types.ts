@@ -14,11 +14,19 @@ export interface IProviderAdapter {
   getNetworkContext(): Promise<NetworkContext>;
 }
 
+export type ReadContractParams = {
+  address: Address;
+  abi: readonly unknown[];
+  functionName: string;
+  args?: readonly unknown[];
+};
+
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
   getChainId(): Promise<number>;
   sendCalls(calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(hash: Address): Promise<TransactionReceipt>;
+  readContract(params: ReadContractParams): Promise<unknown>;
 }
 
 export interface ISolanaProviderAdapter extends IProviderAdapter {

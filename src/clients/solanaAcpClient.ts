@@ -143,6 +143,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
+  override async getTokenDecimals(_tokenAddress: string): Promise<number> {
+    throw new Error(
+      "getTokenDecimals is only supported on EVM. Use Erc20Token.create with explicit decimals for Solana."
+    );
+  }
+
   private makeIx(
     method: string,
     payload: Record<string, unknown>

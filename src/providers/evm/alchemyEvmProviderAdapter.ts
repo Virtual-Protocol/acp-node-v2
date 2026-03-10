@@ -6,7 +6,7 @@ import {
 } from "@account-kit/smart-contracts";
 import type { Address, Call, Chain, Hex, TransactionReceipt } from "viem";
 import { createEvmNetworkContext } from "../../core/chains";
-import type { IEvmProviderAdapter } from "../types";
+import type { IEvmProviderAdapter, ReadContractParams } from "../types";
 
 interface AlchemyEvmProviderAdapterParams {
   walletAddress: Address;
@@ -96,5 +96,9 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async getTransactionReceipt(hash: Address): Promise<TransactionReceipt> {
     return this.client.getTransactionReceipt({ hash });
+  }
+
+  async readContract(params: ReadContractParams): Promise<unknown> {
+    return this.client.readContract(params);
   }
 }

@@ -8,20 +8,26 @@ import type {
   CompleteParams,
   CreateJobParams,
   RejectParams,
-  SetBudgetParams,
   SubmitParams,
 } from "./core/operations";
+import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
+import { Erc20Token } from "./core/erc20Token";
+
+export type SetBudgetParams = {
+  jobId: bigint;
+  amount: Erc20Token;
+  optParams?: Hex;
+};
 
 export type FundJobParams = {
   jobId: bigint;
-  amount: bigint;
+  amount: Erc20Token;
 };
 
 export type SetFundTransferBudgetParams = {
   jobId: bigint;
-  amount: bigint;
-  transferAmount: bigint;
-  tokenAddress: string;
+  amount: Erc20Token;
+  transferAmount: Erc20Token;
   destination: string;
   subExpiry?: bigint;
   packageId?: bigint;
@@ -29,23 +35,18 @@ export type SetFundTransferBudgetParams = {
 
 export type FundWithTransferParams = {
   jobId: bigint;
-  tokenAddress: string;
-  acpAmount: bigint;
-  hookAddress?: string;
-  transferAmount: bigint;
+  amount: Erc20Token;
+  transferAmount: Erc20Token;
   targetIntentId: bigint;
+  hookAddress?: string;
 };
 
 export type SubmitWithTransferParams = {
   jobId: bigint;
   deliverable: string;
-  tokenAddress: string;
+  transferAmount: Erc20Token;
   hookAddress?: string;
-  transferAmount: bigint;
 };
-
-const FUND_TRANSFER_HOOK_ADDRESS = "0x37F8D776D101094C2c0164803BfA0b731398E411";
-const USDC_CONTRACT_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 export class AcpAgent {
   private readonly client: AcpClient;
@@ -61,6 +62,10 @@ export class AcpAgent {
 
   getClient(): AcpClient {
     return this.client;
+  }
+
+  async resolveToken(address: string, amount: number): Promise<Erc20Token> {
+    return Erc20Token.fromOnChain(address, amount, this.client);
   }
 
   async createJob(params: CreateJobParams): Promise<bigint> {
@@ -80,7 +85,11 @@ export class AcpAgent {
   }
 
   async setBudget(params: SetBudgetParams): Promise<string | string[]> {
-    const prepared = await this.client.setBudget(params);
+    const prepared = await this.client.setBudget({
+      jobId: params.jobId,
+      amount: params.amount.rawAmount,
+      optParams: params.optParams ?? "0x",
+    });
     return this.client.submitPrepared([prepared]);
   }
 
@@ -96,8 +105,8 @@ export class AcpAgent {
         { type: "uint256", name: "packageId" },
       ],
       [
-        params.tokenAddress as Address,
-        params.transferAmount,
+        params.transferAmount.address as Address,
+        params.transferAmount.rawAmount,
         params.destination as Address,
         params.subExpiry ?? 0n,
         params.packageId ?? 0n,
@@ -113,9 +122,9 @@ export class AcpAgent {
 
   async fund(params: FundJobParams): Promise<string | string[]> {
     const approvePrepared = await this.client.approveAllowance({
-      tokenAddress: USDC_CONTRACT_ADDRESS,
+      tokenAddress: params.amount.address,
       spenderAddress: this.client.getContractAddress(),
-      amount: params.amount,
+      amount: params.amount.rawAmount,
     });
 
     const fundPrepared = await this.client.fund({
@@ -129,15 +138,16 @@ export class AcpAgent {
     params: FundWithTransferParams
   ): Promise<string | string[]> {
     const approveAcp = await this.client.approveAllowance({
-      tokenAddress: USDC_CONTRACT_ADDRESS,
+      tokenAddress: params.amount.address,
       spenderAddress: this.client.getContractAddress(),
-      amount: params.acpAmount,
+      amount: params.amount.rawAmount,
     });
 
+    const hookAddr = params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS;
     const approveHook = await this.client.approveAllowance({
-      tokenAddress: params.tokenAddress,
-      spenderAddress: params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS,
-      amount: params.transferAmount,
+      tokenAddress: params.transferAmount.address,
+      spenderAddress: hookAddr,
+      amount: params.transferAmount.rawAmount,
     });
 
     const optParams: Hex = encodeAbiParameters(
@@ -161,10 +171,11 @@ export class AcpAgent {
   async submitWithTransfer(
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
+    const hookAddr = params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS;
     const approvePrepared = await this.client.approveAllowance({
-      tokenAddress: params.tokenAddress,
-      spenderAddress: params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS,
-      amount: params.transferAmount,
+      tokenAddress: params.transferAmount.address,
+      spenderAddress: hookAddr,
+      amount: params.transferAmount.rawAmount,
     });
 
     const optParams: Hex = encodeAbiParameters(
@@ -172,7 +183,10 @@ export class AcpAgent {
         { type: "address", name: "token" },
         { type: "uint256", name: "amount" },
       ],
-      [params.tokenAddress as Address, params.transferAmount]
+      [
+        params.transferAmount.address as Address,
+        params.transferAmount.rawAmount,
+      ]
     );
 
     const submitPrepared = await this.client.submit({

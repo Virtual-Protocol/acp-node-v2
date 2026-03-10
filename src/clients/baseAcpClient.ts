@@ -69,4 +69,6 @@ export abstract class BaseAcpClient<TTx> {
     txHash: string,
     filter?: JobCreatedFilter
   ): Promise<bigint | null>;
+
+  abstract getTokenDecimals(tokenAddress: string): Promise<number>;
 }

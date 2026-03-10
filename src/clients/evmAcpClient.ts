@@ -172,6 +172,15 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     );
   }
 
+  override async getTokenDecimals(tokenAddress: string): Promise<number> {
+    const result = await this.provider.readContract({
+      address: tokenAddress as Address,
+      abi: erc20Abi,
+      functionName: "decimals",
+    });
+    return Number(result);
+  }
+
   private static toBytes32(value: string): Hex {
     if (value.startsWith("0x") && value.length === 66) return value as Hex;
     return pad(toHex(value), { size: 32, dir: "right" });

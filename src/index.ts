@@ -1,3 +1,4 @@
+export * from "./acpAgent";
 export * from "./clientFactory";
 export * from "./clients/baseAcpClient";
 export * from "./clients/evmAcpClient";

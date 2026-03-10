@@ -12,3 +12,6 @@ export * from "./providers/types";
 export * from "./providers/evm/viemProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
 export * from "./utils/events";
+export * from "./events/types";
+export * from "./events/decoder";
+export * from "./events/pollingTransport";

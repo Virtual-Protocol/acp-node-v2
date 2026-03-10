@@ -4,9 +4,13 @@ import {
   createModularAccountV2Client,
   ModularAccountV2Client,
 } from "@account-kit/smart-contracts";
-import type { Address, Call, Chain, Hex, TransactionReceipt } from "viem";
+import type { Address, Call, Chain, Hex, Log, TransactionReceipt } from "viem";
 import { createEvmNetworkContext } from "../../core/chains";
-import type { IEvmProviderAdapter, ReadContractParams } from "../types";
+import type {
+  GetLogsParams,
+  IEvmProviderAdapter,
+  ReadContractParams,
+} from "../types";
 
 interface AlchemyEvmProviderAdapterParams {
   walletAddress: Address;
@@ -100,5 +104,20 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async readContract(params: ReadContractParams): Promise<unknown> {
     return this.client.readContract(params);
+  }
+
+  async getLogs(params: GetLogsParams): Promise<Log[]> {
+    return this.client.getFilterLogs({
+      filter: await this.client.createEventFilter({
+        address: params.address,
+        events: params.events as any,
+        fromBlock: params.fromBlock,
+        toBlock: params.toBlock ?? "latest",
+      }),
+    });
+  }
+
+  async getBlockNumber(): Promise<bigint> {
+    return this.client.getBlockNumber();
   }
 }

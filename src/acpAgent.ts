@@ -13,6 +13,12 @@ import type {
 import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
 import { Erc20Token } from "./core/erc20Token";
 import { AcpJob } from "./acpJob";
+import { PollingTransport } from "./events/pollingTransport";
+import type {
+  AcpEventHandlers,
+  AcpTransport,
+  TransportContext,
+} from "./events/types";
 
 export type SetBudgetParams = {
   jobId: bigint;
@@ -63,6 +69,25 @@ export class AcpAgent {
 
   getClient(): AcpClient {
     return this.client;
+  }
+
+  async getAddress(): Promise<string> {
+    return this.client.getAddress();
+  }
+
+  async listen(
+    handlers: AcpEventHandlers,
+    transport?: AcpTransport
+  ): Promise<() => void> {
+    const t = transport ?? new PollingTransport();
+    const ctx: TransportContext = {
+      agentAddress: await this.getAddress(),
+      contractAddress: this.client.getContractAddress(),
+      client: this.client,
+      agent: this,
+    };
+    await t.start(ctx, handlers);
+    return () => t.stop();
   }
 
   async resolveToken(address: string, amount: number): Promise<Erc20Token> {

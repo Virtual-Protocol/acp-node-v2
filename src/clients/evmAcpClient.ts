@@ -55,6 +55,14 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     return new EvmAcpClient(input.contractAddress, input.provider, context);
   }
 
+  override async getAddress(): Promise<string> {
+    return this.provider.getAddress();
+  }
+
+  getProvider(): IEvmProviderAdapter {
+    return this.provider;
+  }
+
   override getCapabilities(): CapabilityFlags {
     return {
       supportsBatch: true,

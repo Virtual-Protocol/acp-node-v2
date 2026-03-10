@@ -1,7 +1,11 @@
-import type { Address, Call, TransactionReceipt } from "viem";
+import type { Address, Call, Log, TransactionReceipt } from "viem";
 
 import { createEvmNetworkContext } from "../../core/chains";
-import type { IEvmProviderAdapter, ReadContractParams } from "../types";
+import type {
+  GetLogsParams,
+  IEvmProviderAdapter,
+  ReadContractParams,
+} from "../types";
 
 export class ViemProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string;
@@ -35,5 +39,13 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
 
   async readContract(_params: ReadContractParams): Promise<unknown> {
     throw new Error("readContract() not implemented. Override in subclass.");
+  }
+
+  async getLogs(_params: GetLogsParams): Promise<Log[]> {
+    throw new Error("getLogs() not implemented. Override in subclass.");
+  }
+
+  async getBlockNumber(): Promise<bigint> {
+    throw new Error("getBlockNumber() not implemented. Override in subclass.");
   }
 }

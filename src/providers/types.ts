@@ -1,4 +1,4 @@
-import type { Address, Call, TransactionReceipt } from "viem";
+import type { Address, Call, Log, TransactionReceipt } from "viem";
 
 import type { NetworkContext, SolanaCluster } from "../core/chains";
 
@@ -21,12 +21,21 @@ export type ReadContractParams = {
   args?: readonly unknown[];
 };
 
+export type GetLogsParams = {
+  address: Address;
+  events: readonly unknown[];
+  fromBlock: bigint;
+  toBlock?: bigint | "latest";
+};
+
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
   getChainId(): Promise<number>;
   sendCalls(calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(hash: Address): Promise<TransactionReceipt>;
   readContract(params: ReadContractParams): Promise<unknown>;
+  getLogs(params: GetLogsParams): Promise<Log[]>;
+  getBlockNumber(): Promise<bigint>;
 }
 
 export interface ISolanaProviderAdapter extends IProviderAdapter {

@@ -44,6 +44,8 @@ export abstract class BaseAcpClient<TTx> {
     return this.networkContext.family;
   }
 
+  abstract getAddress(): Promise<string>;
+
   abstract getCapabilities(): CapabilityFlags;
 
   abstract createJob(params: CreateJobParams): Promise<OperationResult<TTx>>;

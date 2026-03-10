@@ -44,6 +44,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return new SolanaAcpClient(input.contractAddress, input.provider, context);
   }
 
+  override async getAddress(): Promise<string> {
+    return this.provider.getAddress();
+  }
+
   override getCapabilities(): CapabilityFlags {
     return {
       supportsBatch: true,

@@ -36,6 +36,7 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
   readContract(params: ReadContractParams): Promise<unknown>;
   getLogs(params: GetLogsParams): Promise<Log[]>;
   getBlockNumber(): Promise<bigint>;
+  signMessage(message: string): Promise<string>;
 }
 
 export interface ISolanaProviderAdapter extends IProviderAdapter {

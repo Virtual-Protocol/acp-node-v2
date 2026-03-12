@@ -48,4 +48,8 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
   async getBlockNumber(): Promise<bigint> {
     throw new Error("getBlockNumber() not implemented. Override in subclass.");
   }
+
+  async signMessage(_message: string): Promise<string> {
+    throw new Error("signMessage() not implemented. Override in subclass.");
+  }
 }

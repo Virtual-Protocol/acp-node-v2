@@ -13,12 +13,28 @@ import type {
 import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
 import { Erc20Token } from "./core/erc20Token";
 import { AcpJob } from "./acpJob";
-import { PollingTransport } from "./events/pollingTransport";
+import { JobSession } from "./jobSession";
+import { SocketTransport } from "./events/socketTransport";
 import type {
-  AcpEventHandlers,
   AcpTransport,
+  AgentRole,
+  JobRoomEntry,
+  TransportConfig,
   TransportContext,
 } from "./events/types";
+
+export type EntryHandler = (
+  session: JobSession,
+  entry: JobRoomEntry
+) => void | Promise<void>;
+
+// ---------------------------------------------------------------------------
+// Public param types
+// ---------------------------------------------------------------------------
+
+export type CreateAgentInput = CreateAcpClientInput & {
+  transport: TransportConfig;
+};
 
 export type SetBudgetParams = {
   jobId: bigint;
@@ -55,16 +71,27 @@ export type SubmitWithTransferParams = {
   hookAddress?: string;
 };
 
+// ---------------------------------------------------------------------------
+// AcpAgent
+// ---------------------------------------------------------------------------
+
 export class AcpAgent {
   private readonly client: AcpClient;
+  private readonly transportConfig: TransportConfig;
+  private transport: AcpTransport | null = null;
+  private entryHandler: EntryHandler | null = null;
+  private sessions = new Map<string, JobSession>();
+  private address: string | null = null;
 
-  constructor(client: AcpClient) {
+  constructor(client: AcpClient, transportConfig: TransportConfig) {
     this.client = client;
+    this.transportConfig = transportConfig;
   }
 
-  static async create(input: CreateAcpClientInput): Promise<AcpAgent> {
-    const client = await createAcpClient(input);
-    return new AcpAgent(client);
+  static async create(input: CreateAgentInput): Promise<AcpAgent> {
+    const { transport, ...clientInput } = input;
+    const client = await createAcpClient(clientInput);
+    return new AcpAgent(client, transport);
   }
 
   getClient(): AcpClient {
@@ -72,51 +99,221 @@ export class AcpAgent {
   }
 
   async getAddress(): Promise<string> {
-    return this.client.getAddress();
+    if (!this.address) {
+      this.address = await this.client.getAddress();
+    }
+    return this.address;
   }
 
-  async listen(
-    handlers: AcpEventHandlers,
-    transport?: AcpTransport
-  ): Promise<() => void> {
-    const t = transport ?? new PollingTransport();
+  // -------------------------------------------------------------------------
+  // Single entry handler
+  // -------------------------------------------------------------------------
+
+  on(_event: "entry", handler: EntryHandler): this {
+    this.entryHandler = handler;
+    return this;
+  }
+
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
+
+  async start(): Promise<void> {
+    if (this.transport) {
+      throw new Error("Agent already started. Call stop() first.");
+    }
+
+    const transport = this.buildTransport();
+    this.transport = transport;
+    this.address = await this.client.getAddress();
+
     const ctx: TransportContext = {
-      agentAddress: await this.getAddress(),
+      agentAddress: this.address,
       contractAddress: this.client.getContractAddress(),
       client: this.client,
-      agent: this,
     };
-    await t.start(ctx, handlers);
-    return () => t.stop();
+
+    transport.onEntry((entry) => this.dispatch(entry));
+    await transport.connect(ctx);
+
+    await this.hydrateSessions();
   }
+
+  async stop(): Promise<void> {
+    if (this.transport) {
+      await this.transport.disconnect();
+      this.transport = null;
+    }
+    this.sessions.clear();
+  }
+
+  private buildTransport(): AcpTransport {
+    const cfg = this.transportConfig;
+    return new SocketTransport({ serverUrl: cfg.url });
+  }
+
+  // -------------------------------------------------------------------------
+  // Session hydration (on startup, catch up with existing rooms)
+  // -------------------------------------------------------------------------
+
+  private async hydrateSessions(): Promise<void> {
+    if (!this.transport) return;
+
+    const jobIds = await this.transport.getActiveJobs();
+    for (const jobId of jobIds) {
+      const entries = await this.transport.getHistory(jobId);
+      const session = this.getOrCreateSession(jobId, entries);
+
+      try {
+        const jobData = await this.client.getJob(BigInt(jobId));
+        if (jobData) session._setJob(new AcpJob(jobData));
+      } catch {
+        // job may not be fetchable yet
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Session management
+  // -------------------------------------------------------------------------
+
+  getSession(jobId: string): JobSession | undefined {
+    return this.sessions.get(jobId);
+  }
+
+  private getOrCreateSession(
+    jobId: string,
+    initialEntries: JobRoomEntry[] = []
+  ): JobSession {
+    let session = this.sessions.get(jobId);
+    if (session) return session;
+
+    const roles = this.inferRoles(initialEntries, jobId);
+    session = new JobSession(this, this.address!, jobId, roles, initialEntries);
+    this.sessions.set(jobId, session);
+    return session;
+  }
+
+  private inferRoles(entries: JobRoomEntry[], _jobId: string): AgentRole[] {
+    const addr = this.address!.toLowerCase();
+
+    for (const entry of entries) {
+      if (entry.kind === "system" && entry.event.type === "job.created") {
+        const event = entry.event as Record<string, unknown>;
+        const roles: AgentRole[] = [];
+        if ((event.client as string)?.toLowerCase() === addr)
+          roles.push("client");
+        if ((event.provider as string)?.toLowerCase() === addr)
+          roles.push("provider");
+        if ((event.evaluator as string)?.toLowerCase() === addr)
+          roles.push("evaluator");
+        if (roles.length > 0) return roles;
+      }
+    }
+
+    return ["provider"];
+  }
+
+  // -------------------------------------------------------------------------
+  // Dispatch
+  // -------------------------------------------------------------------------
+
+  private dispatch(entry: JobRoomEntry): void {
+    const jobId = entry.jobId;
+    const session = this.getOrCreateSession(jobId, []);
+
+    if (session.entries.length === 0 || !session.entries.includes(entry)) {
+      session.appendEntry(entry);
+    }
+
+    if (entry.kind === "system" && entry.event.type === "job.created") {
+      const roles = this.inferRoles([entry], jobId);
+      const rolesChanged =
+        roles.length !== session.roles.length ||
+        roles.some((r, i) => r !== session.roles[i]);
+      if (rolesChanged) {
+        const newSession = new JobSession(
+          this,
+          this.address!,
+          jobId,
+          roles,
+          session.entries
+        );
+        this.sessions.set(jobId, newSession);
+        this.fireHandler(newSession, entry);
+        return;
+      }
+    }
+
+    this.fireHandler(session, entry);
+  }
+
+  private fireHandler(session: JobSession, entry: JobRoomEntry): void {
+    if (!this.entryHandler) return;
+    if (!session.shouldRespond(entry)) return;
+
+    try {
+      const result = this.entryHandler(session, entry);
+      if (result && typeof (result as Promise<void>).catch === "function") {
+        (result as Promise<void>).catch((err) => {
+          console.error(`[AcpAgent] entry handler error:`, err);
+        });
+      }
+    } catch (err) {
+      console.error(`[AcpAgent] entry handler error:`, err);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Messaging (delegates to transport)
+  // -------------------------------------------------------------------------
+
+  sendJobMessage(
+    jobId: string,
+    content: string,
+    contentType: string = "text"
+  ): void {
+    if (!this.transport) throw new Error("Agent not started");
+    this.transport.sendMessage(jobId, content, contentType);
+  }
+
+  // -------------------------------------------------------------------------
+  // Token helpers
+  // -------------------------------------------------------------------------
 
   async resolveToken(address: string, amount: number): Promise<Erc20Token> {
     return Erc20Token.fromOnChain(address, amount, this.client);
   }
 
-  async createJob(params: CreateJobParams): Promise<AcpJob> {
+  // -------------------------------------------------------------------------
+  // Job creation (on-chain, room is created by the observer)
+  // -------------------------------------------------------------------------
+
+  async createJob(params: CreateJobParams): Promise<bigint> {
     const prepared = await this.client.createJob(params);
     const result = await this.client.submitPrepared([prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
+
+    console.log("txHash", txHash);
+
     const jobId = await this.client.getJobIdFromTxHash(txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
-    return this.getJobById(jobId);
+    return jobId;
   }
 
-  async createFundTransferJob(params: CreateJobParams): Promise<AcpJob> {
+  async createFundTransferJob(params: CreateJobParams): Promise<bigint> {
     return this.createJob({
       ...params,
       hookAddress: params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS,
     });
   }
 
-  async getJobById(jobId: bigint): Promise<AcpJob> {
-    const data = await this.client.getJob(jobId);
-    if (!data) throw new Error(`Job not found: ${jobId}`);
-    return new AcpJob(this, data);
-  }
+  // -------------------------------------------------------------------------
+  // Internal on-chain actions (called by JobSession)
+  // -------------------------------------------------------------------------
 
-  async setBudget(params: SetBudgetParams): Promise<string | string[]> {
+  /** @internal */
+  async internalSetBudget(params: SetBudgetParams): Promise<string | string[]> {
     const prepared = await this.client.setBudget({
       jobId: params.jobId,
       amount: params.amount.rawAmount,
@@ -125,7 +322,41 @@ export class AcpAgent {
     return this.client.submitPrepared([prepared]);
   }
 
-  async setFundTransferBudget(
+  /** @internal */
+  async internalFund(params: FundJobParams): Promise<string | string[]> {
+    const approvePrepared = await this.client.approveAllowance({
+      tokenAddress: params.amount.address,
+      spenderAddress: this.client.getContractAddress(),
+      amount: params.amount.rawAmount,
+    });
+
+    const fundPrepared = await this.client.fund({
+      jobId: params.jobId,
+    });
+
+    return this.client.submitPrepared([approvePrepared, fundPrepared]);
+  }
+
+  /** @internal */
+  async internalSubmit(params: SubmitParams): Promise<string | string[]> {
+    const prepared = await this.client.submit(params);
+    return this.client.submitPrepared([prepared]);
+  }
+
+  /** @internal */
+  async internalComplete(params: CompleteParams): Promise<string | string[]> {
+    const prepared = await this.client.complete(params);
+    return this.client.submitPrepared([prepared]);
+  }
+
+  /** @internal */
+  async internalReject(params: RejectParams): Promise<string | string[]> {
+    const prepared = await this.client.reject(params);
+    return this.client.submitPrepared([prepared]);
+  }
+
+  /** @internal */
+  async internalSetFundTransferBudget(
     params: SetFundTransferBudgetParams
   ): Promise<string | string[]> {
     const optParams = encodeAbiParameters(
@@ -145,28 +376,15 @@ export class AcpAgent {
       ]
     );
 
-    return this.setBudget({
+    return this.internalSetBudget({
       jobId: params.jobId,
       amount: params.amount,
       optParams,
     });
   }
 
-  async fund(params: FundJobParams): Promise<string | string[]> {
-    const approvePrepared = await this.client.approveAllowance({
-      tokenAddress: params.amount.address,
-      spenderAddress: this.client.getContractAddress(),
-      amount: params.amount.rawAmount,
-    });
-
-    const fundPrepared = await this.client.fund({
-      jobId: params.jobId,
-    });
-
-    return this.client.submitPrepared([approvePrepared, fundPrepared]);
-  }
-
-  async fundWithTransfer(
+  /** @internal */
+  async internalFundWithTransfer(
     params: FundWithTransferParams
   ): Promise<string | string[]> {
     const approveAcp = await this.client.approveAllowance({
@@ -195,12 +413,8 @@ export class AcpAgent {
     return this.client.submitPrepared([approveAcp, approveHook, fundPrepared]);
   }
 
-  async submit(params: SubmitParams): Promise<string | string[]> {
-    const prepared = await this.client.submit(params);
-    return this.client.submitPrepared([prepared]);
-  }
-
-  async submitWithTransfer(
+  /** @internal */
+  async internalSubmitWithTransfer(
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
     const hookAddr = params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS;
@@ -228,15 +442,5 @@ export class AcpAgent {
     });
 
     return this.client.submitPrepared([approvePrepared, submitPrepared]);
-  }
-
-  async complete(params: CompleteParams): Promise<string | string[]> {
-    const prepared = await this.client.complete(params);
-    return this.client.submitPrepared([prepared]);
-  }
-
-  async reject(params: RejectParams): Promise<string | string[]> {
-    const prepared = await this.client.reject(params);
-    return this.client.submitPrepared([prepared]);
   }
 }

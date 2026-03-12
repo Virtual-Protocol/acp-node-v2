@@ -76,6 +76,17 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return createEvmNetworkContext(chainId);
   }
 
+  private getRandomNonce(bits = 152) {
+    const bytes = bits / 8;
+    const array = new Uint8Array(bytes);
+    crypto.getRandomValues(array);
+
+    let hex = Array.from(array, (b) => b.toString(16).padStart(2, "0")).join(
+      ""
+    );
+    return BigInt("0x" + hex);
+  }
+
   async sendCalls(_calls: Call[]): Promise<Address | Address[]> {
     const { hash } = await this.client.sendUserOperation({
       uo: _calls.map((call) => ({
@@ -83,6 +94,9 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         data: call.data ?? "0x",
         ...(call.value != null && { value: call.value }),
       })),
+      overrides: {
+        nonceKey: this.getRandomNonce(),
+      },
     });
 
     const receiptHash = await this.client.waitForUserOperationTransaction({
@@ -119,5 +133,9 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async getBlockNumber(): Promise<bigint> {
     return this.client.getBlockNumber();
+  }
+
+  async signMessage(_message: string): Promise<string> {
+    return this.client.signMessage({ message: _message });
   }
 }

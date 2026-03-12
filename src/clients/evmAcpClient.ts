@@ -1,6 +1,7 @@
 import {
   encodeFunctionData,
   erc20Abi,
+  keccak256,
   pad,
   toHex,
   zeroAddress,
@@ -188,8 +189,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       functionName: "getJob",
       args: [jobId],
     });
-    if (!result || typeof result !== "object" || !("id" in result))
-      return null;
+    if (!result || typeof result !== "object" || !("id" in result)) return null;
     const raw = result as {
       id: bigint;
       client: string;
@@ -225,7 +225,9 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
 
   private static toBytes32(value: string): Hex {
     if (value.startsWith("0x") && value.length === 66) return value as Hex;
-    return pad(toHex(value), { size: 32, dir: "right" });
+    const hex = toHex(value);
+    if (hex.length <= 66) return pad(hex, { size: 32, dir: "right" });
+    return keccak256(hex);
   }
 
   private buildContractCall(

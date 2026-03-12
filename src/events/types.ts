@@ -1,57 +1,56 @@
 import type { AcpClient } from "../clientFactory";
-import type { AcpAgent } from "../acpAgent";
 
 // ---------------------------------------------------------------------------
-// ACP job events (discriminated union)
+// ACP job events (discriminated union — used inside SystemEntry.event)
 // ---------------------------------------------------------------------------
 
 export type JobCreatedEvent = {
   type: "job.created";
-  jobId: bigint;
+  jobId: string;
   client: string;
   provider: string;
   evaluator: string;
-  expiredAt: bigint;
+  expiredAt: string;
   hook: string;
 };
 
 export type BudgetSetEvent = {
   type: "budget.set";
-  jobId: bigint;
-  amount: bigint;
+  jobId: string;
+  amount: string;
 };
 
 export type JobFundedEvent = {
   type: "job.funded";
-  jobId: bigint;
+  jobId: string;
   client: string;
-  amount: bigint;
+  amount: string;
 };
 
 export type JobSubmittedEvent = {
   type: "job.submitted";
-  jobId: bigint;
+  jobId: string;
   provider: string;
   deliverable: string;
 };
 
 export type JobCompletedEvent = {
   type: "job.completed";
-  jobId: bigint;
+  jobId: string;
   evaluator: string;
   reason: string;
 };
 
 export type JobRejectedEvent = {
   type: "job.rejected";
-  jobId: bigint;
+  jobId: string;
   rejector: string;
   reason: string;
 };
 
 export type JobExpiredEvent = {
   type: "job.expired";
-  jobId: bigint;
+  jobId: string;
 };
 
 export type AcpJobEvent =
@@ -63,40 +62,88 @@ export type AcpJobEvent =
   | JobRejectedEvent
   | JobExpiredEvent;
 
+export type AcpJobEventType = AcpJobEvent["type"];
+
 // ---------------------------------------------------------------------------
-// Event handlers
+// Job room entry types (mirrors acp-chat-v2 types)
 // ---------------------------------------------------------------------------
 
-export type AcpEventHandlers = {
-  onJobCreated?: (event: JobCreatedEvent, agent: AcpAgent) => Promise<void>;
-  onBudgetSet?: (event: BudgetSetEvent, agent: AcpAgent) => Promise<void>;
-  onJobFunded?: (event: JobFundedEvent, agent: AcpAgent) => Promise<void>;
-  onJobSubmitted?: (
-    event: JobSubmittedEvent,
-    agent: AcpAgent
-  ) => Promise<void>;
-  onJobCompleted?: (
-    event: JobCompletedEvent,
-    agent: AcpAgent
-  ) => Promise<void>;
-  onJobRejected?: (
-    event: JobRejectedEvent,
-    agent: AcpAgent
-  ) => Promise<void>;
+export type SystemEntry = {
+  kind: "system";
+  jobId: string;
+  event: AcpJobEvent;
+  timestamp: number;
+};
+
+export type AgentMessage = {
+  kind: "message";
+  jobId: string;
+  from: string;
+  contentType: "text" | "proposal" | "deliverable" | "structured";
+  content: string;
+  timestamp: number;
+};
+
+export type JobRoomEntry = SystemEntry | AgentMessage;
+
+// ---------------------------------------------------------------------------
+// ACP tool definition (for LLM function-calling integration)
+// ---------------------------------------------------------------------------
+
+export type AcpToolParameter = {
+  name: string;
+  type: string;
+  description: string;
+  required?: boolean;
+};
+
+export type AcpTool = {
+  name: string;
+  description: string;
+  parameters: AcpToolParameter[];
 };
 
 // ---------------------------------------------------------------------------
-// Transport abstraction
+// Agent role
+// ---------------------------------------------------------------------------
+
+export type AgentRole = "client" | "provider" | "evaluator";
+
+// ---------------------------------------------------------------------------
+// Transport context (shared state passed to transports on connect)
 // ---------------------------------------------------------------------------
 
 export type TransportContext = {
   agentAddress: string;
   contractAddress: string;
   client: AcpClient;
-  agent: AcpAgent;
 };
 
+// ---------------------------------------------------------------------------
+// Transport interface
+// ---------------------------------------------------------------------------
+
 export interface AcpTransport {
-  start(ctx: TransportContext, handlers: AcpEventHandlers): Promise<void>;
-  stop(): Promise<void>;
+  connect(ctx: TransportContext): Promise<void>;
+  disconnect(): Promise<void>;
+
+  onEntry(handler: (entry: JobRoomEntry) => void): void;
+  sendMessage(
+    jobId: string,
+    content: string,
+    contentType?: string,
+  ): void;
+  getHistory(jobId: string): Promise<JobRoomEntry[]>;
+  getActiveJobs(): Promise<string[]>;
 }
+
+// ---------------------------------------------------------------------------
+// Transport configuration (user-facing, passed to AcpAgent.create)
+// ---------------------------------------------------------------------------
+
+export type SocketTransportConfig = {
+  type: "socket";
+  url: string;
+};
+
+export type TransportConfig = SocketTransportConfig;

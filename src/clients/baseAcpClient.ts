@@ -73,7 +73,7 @@ export abstract class BaseAcpClient<TTx> {
     filter?: JobCreatedFilter
   ): Promise<bigint | null>;
 
-  abstract getJob(jobId: bigint): Promise<OnChainJob | null>;
+  abstract getJob(chainId: number, jobId: bigint): Promise<OnChainJob | null>;
 
   abstract getTokenDecimals(tokenAddress: string): Promise<number>;
 }

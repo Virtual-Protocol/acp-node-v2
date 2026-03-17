@@ -12,7 +12,6 @@ import type {
 } from "./core/operations";
 import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
 import { Erc20Token } from "./core/erc20Token";
-import { AcpJob } from "./acpJob";
 import { JobSession } from "./jobSession";
 import { SocketTransport } from "./events/socketTransport";
 import type {
@@ -159,17 +158,14 @@ export class AcpAgent {
   private async hydrateSessions(): Promise<void> {
     if (!this.transport) return;
 
-    const jobIds = await this.transport.getActiveJobs();
-    for (const jobId of jobIds) {
-      const entries = await this.transport.getHistory(jobId);
-      const session = this.getOrCreateSession(jobId, entries);
+    const jobs = await this.transport.getActiveJobs();
 
-      try {
-        const jobData = await this.client.getJob(BigInt(jobId));
-        if (jobData) session._setJob(new AcpJob(jobData));
-      } catch {
-        // job may not be fetchable yet
-      }
+    for (const job of jobs) {
+      const entries = await this.transport.getHistory(
+        job.chainId,
+        job.onChainJobId
+      );
+      this.getOrCreateSession(job.onChainJobId, job.chainId, entries);
     }
   }
 
@@ -183,18 +179,26 @@ export class AcpAgent {
 
   private getOrCreateSession(
     jobId: string,
+    chainId: number,
     initialEntries: JobRoomEntry[] = []
   ): JobSession {
     let session = this.sessions.get(jobId);
     if (session) return session;
 
-    const roles = this.inferRoles(initialEntries, jobId);
-    session = new JobSession(this, this.address!, jobId, roles, initialEntries);
+    const roles = this.inferRoles(initialEntries);
+    session = new JobSession(
+      this,
+      this.address!,
+      jobId,
+      chainId,
+      roles,
+      initialEntries
+    );
     this.sessions.set(jobId, session);
     return session;
   }
 
-  private inferRoles(entries: JobRoomEntry[], _jobId: string): AgentRole[] {
+  private inferRoles(entries: JobRoomEntry[]): AgentRole[] {
     const addr = this.address!.toLowerCase();
 
     for (const entry of entries) {
@@ -219,15 +223,16 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   private dispatch(entry: JobRoomEntry): void {
-    const jobId = entry.jobId;
-    const session = this.getOrCreateSession(jobId, []);
+    const jobId = entry.onChainJobId;
+    const chainId = entry.chainId;
+    const session = this.getOrCreateSession(jobId, chainId, []);
 
     if (session.entries.length === 0 || !session.entries.includes(entry)) {
       session.appendEntry(entry);
     }
 
     if (entry.kind === "system" && entry.event.type === "job.created") {
-      const roles = this.inferRoles([entry], jobId);
+      const roles = this.inferRoles([entry]);
       const rolesChanged =
         roles.length !== session.roles.length ||
         roles.some((r, i) => r !== session.roles[i]);
@@ -236,6 +241,7 @@ export class AcpAgent {
           this,
           this.address!,
           jobId,
+          chainId,
           roles,
           session.entries
         );
@@ -269,12 +275,13 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   sendJobMessage(
+    chainId: number,
     jobId: string,
     content: string,
     contentType: string = "text"
   ): void {
     if (!this.transport) throw new Error("Agent not started");
-    this.transport.sendMessage(jobId, content, contentType);
+    this.transport.sendMessage(chainId, jobId, content, contentType);
   }
 
   // -------------------------------------------------------------------------

@@ -1,9 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import type {
-  AcpTransport,
-  JobRoomEntry,
-  TransportContext,
-} from "./types";
+import type { AcpTransport, JobRoomEntry, TransportContext } from "./types";
 
 export type SocketTransportOptions = {
   serverUrl: string;
@@ -63,29 +59,40 @@ export class SocketTransport implements AcpTransport {
   // -------------------------------------------------------------------------
 
   sendMessage(
+    chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text",
+    contentType: string = "text"
   ): void {
     if (!this.socket) throw new Error("Transport not connected");
-    this.socket.emit("job:message", { jobId, content, contentType });
+    this.socket.emit("job:message", {
+      chainId,
+      onChainJobId: jobId,
+      content,
+      contentType,
+    });
   }
 
   // -------------------------------------------------------------------------
   // REST queries
   // -------------------------------------------------------------------------
 
-  async getActiveJobs(): Promise<string[]> {
+  async getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]> {
     const res = await fetch(
-      `${this.opts.serverUrl}/jobs?wallet=${this.agentAddress}`,
+      `${this.opts.serverUrl}/jobs?wallet=${this.agentAddress}`
     );
-    const data = (await res.json()) as { jobs: string[] };
-    return data.jobs;
+    const data = (await res.json()) as {
+      jobs: {
+        chainId: number;
+        onChainJobId: string;
+      }[];
+    };
+    return data.jobs || [];
   }
 
-  async getHistory(jobId: string): Promise<JobRoomEntry[]> {
+  async getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]> {
     const res = await fetch(
-      `${this.opts.serverUrl}/jobs/${jobId}/history?wallet=${this.agentAddress}`,
+      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/history?wallet=${this.agentAddress}`
     );
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;

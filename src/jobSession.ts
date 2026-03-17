@@ -8,7 +8,7 @@ import type {
   AcpJobEventType,
 } from "./events/types";
 import type { AcpAgent } from "./acpAgent";
-import type { AcpJob } from "./acpJob";
+import { AcpJob } from "./acpJob";
 import { Erc20Token } from "./core/erc20Token";
 
 // ---------------------------------------------------------------------------
@@ -141,10 +141,11 @@ const TOOL_MATRIX: ToolMatrix = {
 
 export class JobSession {
   readonly jobId: string;
+  readonly chainId: number;
   readonly roles: AgentRole[];
   readonly entries: JobRoomEntry[] = [];
 
-  private _job: AcpJob | null = null;
+  // private _job: AcpJob | null = null;
   private readonly agent: AcpAgent;
   private readonly agentAddress: string;
 
@@ -152,27 +153,30 @@ export class JobSession {
     agent: AcpAgent,
     agentAddress: string,
     jobId: string,
+    chainId: number,
     roles: AgentRole[],
     initialEntries: JobRoomEntry[] = []
   ) {
     this.agent = agent;
     this.agentAddress = agentAddress.toLowerCase();
     this.jobId = jobId;
+    this.chainId = chainId;
     this.roles = roles;
     this.entries.push(...initialEntries);
   }
 
-  // -------------------------------------------------------------------------
-  // Job data (lazily fetched)
-  // -------------------------------------------------------------------------
-
-  get job(): AcpJob | null {
-    return this._job;
-  }
-
-  /** @internal Called by AcpAgent after fetching on-chain data */
-  _setJob(job: AcpJob): void {
-    this._job = job;
+  async fetchJob(): Promise<AcpJob | null> {
+    try {
+      const data = await this.agent
+        .getClient()
+        .getJob(this.chainId, BigInt(this.jobId));
+      if (data) return new AcpJob(data);
+    } catch {
+      console.error(
+        `Failed to fetch job ${this.jobId} on chain ${this.chainId}`
+      );
+    }
+    return null;
   }
 
   // -------------------------------------------------------------------------
@@ -297,7 +301,7 @@ export class JobSession {
     content: string,
     contentType: AgentMessage["contentType"] = "text"
   ): Promise<void> {
-    this.agent.sendJobMessage(this.jobId, content, contentType);
+    this.agent.sendJobMessage(this.chainId, this.jobId, content, contentType);
   }
 
   async setBudget(amount: Erc20Token): Promise<void> {

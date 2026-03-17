@@ -182,7 +182,10 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     );
   }
 
-  override async getJob(jobId: bigint): Promise<OnChainJob | null> {
+  override async getJob(
+    chainId: number,
+    jobId: bigint
+  ): Promise<OnChainJob | null> {
     const result = await this.provider.readContract({
       address: this.contractAddress as Address,
       abi: ACP_ABI as readonly unknown[],

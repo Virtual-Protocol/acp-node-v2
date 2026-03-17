@@ -70,14 +70,16 @@ export type AcpJobEventType = AcpJobEvent["type"];
 
 export type SystemEntry = {
   kind: "system";
-  jobId: string;
+  onChainJobId: string;
+  chainId: number;
   event: AcpJobEvent;
   timestamp: number;
 };
 
 export type AgentMessage = {
   kind: "message";
-  jobId: string;
+  onChainJobId: string;
+  chainId: number;
   from: string;
   contentType: "text" | "proposal" | "deliverable" | "structured";
   content: string;
@@ -129,12 +131,13 @@ export interface AcpTransport {
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;
   sendMessage(
+    chainId: number,
     jobId: string,
     content: string,
-    contentType?: string,
+    contentType?: string
   ): void;
-  getHistory(jobId: string): Promise<JobRoomEntry[]>;
-  getActiveJobs(): Promise<string[]>;
+  getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
+  getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
 }
 
 // ---------------------------------------------------------------------------

@@ -148,10 +148,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
-  override async getJob(_jobId: bigint): Promise<OnChainJob | null> {
-    throw new Error(
-      "getJob is not implemented for SolanaAcpClient."
-    );
+  override async getJob(
+    _chainId: number,
+    _jobId: bigint
+  ): Promise<OnChainJob | null> {
+    throw new Error("getJob is not implemented for SolanaAcpClient.");
   }
 
   override async getTokenDecimals(_tokenAddress: string): Promise<number> {

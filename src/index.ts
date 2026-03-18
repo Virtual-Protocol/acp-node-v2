@@ -18,6 +18,8 @@ export * from "./core/erc20Token";
 // Provider interfaces & adapters
 export * from "./providers/types";
 export * from "./providers/evm/viemProviderAdapter";
+export * from "./providers/evm/alchemyEvmProviderAdapter";
+export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
 
 // Event / room types (public)

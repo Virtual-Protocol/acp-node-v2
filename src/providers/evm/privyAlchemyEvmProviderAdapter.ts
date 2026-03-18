@@ -2,6 +2,7 @@ import { baseSepolia } from "@account-kit/infra";
 import {
   createPublicClient,
   LocalAccount,
+  PublicClient,
   toHex,
   TypedDataDefinition,
   type Address,
@@ -233,11 +234,18 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly address: Address;
   public readonly chainId: number;
   public readonly client: SmartWalletClient;
+  public readonly publicClient: PublicClient;
 
-  constructor(address: Address, chainId: number, client: SmartWalletClient) {
+  constructor(
+    address: Address,
+    chainId: number,
+    client: SmartWalletClient,
+    publicClient: PublicClient
+  ) {
     this.address = address;
     this.chainId = chainId;
     this.client = client;
+    this.publicClient = publicClient;
   }
 
   static async create(
@@ -259,10 +267,18 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       paymaster: { policyId: "186aaa4a-5f57-4156-83fb-e456365a8820" },
     });
 
+    const publicClient = createPublicClient({
+      chain: baseSepolia,
+      transport: alchemyWalletTransport({
+        url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${baseSepolia.id}`,
+      }),
+    });
+
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
       baseSepolia.id,
-      client
+      client,
+      publicClient
     );
   }
 
@@ -314,27 +330,19 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async getTransactionReceipt(hash: Address): Promise<TransactionReceipt> {
-    return getTransactionReceipt(
-      createPublicClient({
-        chain: baseSepolia,
-        transport: alchemyWalletTransport({
-          url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${this.chainId}`,
-        }),
-      }),
-      { hash }
-    );
+    return getTransactionReceipt(this.publicClient, { hash });
   }
 
   async readContract(params: ReadContractParams): Promise<unknown> {
-    return readContract(this.client, params);
+    return readContract(this.publicClient, params);
   }
 
   async getLogs(params: GetLogsParams): Promise<Log[]> {
-    return getLogs(this.client, params);
+    return getLogs(this.publicClient, params);
   }
 
   async getBlockNumber(): Promise<bigint> {
-    return getBlockNumber(this.client);
+    return getBlockNumber(this.publicClient);
   }
 
   async signMessage(_message: string): Promise<string> {

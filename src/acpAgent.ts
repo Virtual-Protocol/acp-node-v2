@@ -19,7 +19,6 @@ import type {
   AcpTransport,
   AgentRole,
   JobRoomEntry,
-  TransportConfig,
   TransportContext,
 } from "./events/types";
 
@@ -33,7 +32,7 @@ export type EntryHandler = (
 // ---------------------------------------------------------------------------
 
 export type CreateAgentInput = CreateAcpClientInput & {
-  transport: TransportConfig;
+  transport?: AcpTransport;
 };
 
 export type SetBudgetParams = {
@@ -77,19 +76,19 @@ export type SubmitWithTransferParams = {
 
 export class AcpAgent {
   private readonly client: AcpClient;
-  private readonly transportConfig: TransportConfig;
-  private transport: AcpTransport | null = null;
+  private readonly transport: AcpTransport;
+  private started = false;
   private entryHandler: EntryHandler | null = null;
   private sessions = new Map<string, JobSession>();
   private address: string | null = null;
 
-  constructor(client: AcpClient, transportConfig: TransportConfig) {
+  constructor(client: AcpClient, transport: AcpTransport) {
     this.client = client;
-    this.transportConfig = transportConfig;
+    this.transport = transport;
   }
 
   static async create(input: CreateAgentInput): Promise<AcpAgent> {
-    const { transport, ...clientInput } = input;
+    const { transport = new SocketTransport(), ...clientInput } = input;
     const client = await createAcpClient(clientInput);
     return new AcpAgent(client, transport);
   }
@@ -118,13 +117,12 @@ export class AcpAgent {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async start(): Promise<void> {
-    if (this.transport) {
+  async start(onConnected?: () => void): Promise<void> {
+    if (this.started) {
       throw new Error("Agent already started. Call stop() first.");
     }
 
-    const transport = this.buildTransport();
-    this.transport = transport;
+    this.started = true;
     this.address = await this.client.getAddress();
 
     const ctx: TransportContext = {
@@ -139,23 +137,18 @@ export class AcpAgent {
       },
     };
 
-    transport.onEntry((entry) => this.dispatch(entry));
-    await transport.connect(ctx);
+    this.transport.onEntry((entry) => this.dispatch(entry));
+    await this.transport.connect(ctx, onConnected);
 
     await this.hydrateSessions();
   }
 
   async stop(): Promise<void> {
-    if (this.transport) {
+    if (this.started) {
       await this.transport.disconnect();
-      this.transport = null;
+      this.started = false;
     }
     this.sessions.clear();
-  }
-
-  private buildTransport(): AcpTransport {
-    const cfg = this.transportConfig;
-    return new SocketTransport({ serverUrl: cfg.url });
   }
 
   // -------------------------------------------------------------------------
@@ -163,7 +156,7 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   private async hydrateSessions(): Promise<void> {
-    if (!this.transport) return;
+    if (!this.started) return;
 
     const jobs = await this.transport.getActiveJobs();
 
@@ -287,7 +280,7 @@ export class AcpAgent {
     content: string,
     contentType: string = "text"
   ): void {
-    if (!this.transport) throw new Error("Agent not started");
+    if (!this.started) throw new Error("Agent not started");
     this.transport.sendMessage(chainId, jobId, content, contentType);
   }
 

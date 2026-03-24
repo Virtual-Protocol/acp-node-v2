@@ -3,11 +3,10 @@ import { Erc20Token } from "../core/erc20Token";
 import { ACP_CONTRACT_ADDRESS } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { SocketTransport } from "../events/socketTransport";
 import type { JobSession, JobRoomEntry } from "../index";
 
 const SELLER_ADDRESS = "0xSellerAddress";
-const SOCKET_SERVER_URL =
-  process.env.SOCKET_SERVER_URL ?? "http://localhost:3000";
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
@@ -19,7 +18,7 @@ async function main(): Promise<void> {
       entityId: 1,
       chain: baseSepolia,
     }),
-    transport: { type: "socket", url: SOCKET_SERVER_URL },
+    transport: new SocketTransport(),
   });
 
   const buyerAddress = await buyer.getAddress();

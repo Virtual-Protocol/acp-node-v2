@@ -1,26 +1,30 @@
 import { io, type Socket } from "socket.io-client";
 import type { AcpTransport, JobRoomEntry, TransportContext } from "./types";
+import { SOCKET_SERVER_URL } from "../core/constants";
 
 export type SocketTransportOptions = {
-  serverUrl: string;
+  serverUrl?: string;
 };
 
 export class SocketTransport implements AcpTransport {
   private socket: Socket | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
   private ctx: TransportContext | null = null;
   private token = "";
-  private readonly opts: SocketTransportOptions;
+  private readonly opts: Required<SocketTransportOptions>;
 
-  constructor(opts: SocketTransportOptions) {
-    this.opts = opts;
+  constructor(opts: SocketTransportOptions = {}) {
+    this.opts = {
+      serverUrl: opts.serverUrl ?? SOCKET_SERVER_URL,
+    };
   }
 
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async connect(ctx: TransportContext): Promise<void> {
+  async connect(ctx: TransportContext, onConnected?: () => void): Promise<void> {
     this.ctx = ctx;
     this.token = await this.authenticate();
 
@@ -40,14 +44,24 @@ export class SocketTransport implements AcpTransport {
       this.socket!.on("connect_error", reject);
     });
 
+    onConnected?.();
+
     this.socket.on("job:entry", (data: Record<string, unknown>) => {
       if (this.entryHandler) {
         this.entryHandler(data as unknown as JobRoomEntry);
       }
     });
+
+    this.heartbeatInterval = setInterval(() => {
+      this.socket?.emit("heartbeat");
+    }, 30_000);
   }
 
   async disconnect(): Promise<void> {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;

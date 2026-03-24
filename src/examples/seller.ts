@@ -3,26 +3,22 @@ import { Erc20Token } from "../core/erc20Token";
 import { ACP_CONTRACT_ADDRESS } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { SocketTransport } from "../events/socketTransport";
 import type { JobSession, JobRoomEntry } from "../index";
-
-const SOCKET_SERVER_URL =
-  process.env.SOCKET_SERVER_URL ?? "http://localhost:3000";
 
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
     contractAddress: ACP_CONTRACT_ADDRESS,
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
-      privateKey:
-        "0xSellerPrivateKey",
+      privateKey: "0xSellerPrivateKey",
       entityId: 1,
       chain: baseSepolia,
     }),
-    transport: { type: "socket", url: SOCKET_SERVER_URL },
+    transport: new SocketTransport(),
   });
 
   console.log(`[seller] address: ${await seller.getAddress()}`);
-  console.log("[seller] listening for jobs…");
 
   seller.on("entry", async (session: JobSession, entry: JobRoomEntry) => {
     const job = await session.fetchJob();
@@ -59,7 +55,9 @@ async function main(): Promise<void> {
     }
   });
 
-  await seller.start();
+  await seller.start(() => {
+    console.log("[seller callback] listening for jobs…");
+  });
 }
 
 main().catch(console.error);

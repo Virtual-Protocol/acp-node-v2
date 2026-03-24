@@ -127,7 +127,7 @@ export type TransportContext = {
 // ---------------------------------------------------------------------------
 
 export interface AcpTransport {
-  connect(ctx: TransportContext): Promise<void>;
+  connect(ctx: TransportContext, onConnected?: () => void): Promise<void>;
   disconnect(): Promise<void>;
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;
@@ -141,13 +141,3 @@ export interface AcpTransport {
   getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
 }
 
-// ---------------------------------------------------------------------------
-// Transport configuration (user-facing, passed to AcpAgent.create)
-// ---------------------------------------------------------------------------
-
-export type SocketTransportConfig = {
-  type: "socket";
-  url: string;
-};
-
-export type TransportConfig = SocketTransportConfig;

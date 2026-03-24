@@ -3,14 +3,12 @@ import { AcpAgent } from "../acpAgent";
 import { ACP_CONTRACT_ADDRESS } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { SocketTransport } from "../events/socketTransport";
 import type { AcpTool } from "../events/types";
 import type { JobSession, JobRoomEntry } from "../index";
 import dotenv from "dotenv";
 
 dotenv.config();
-
-const SOCKET_SERVER_URL =
-  process.env.SOCKET_SERVER_URL ?? "http://localhost:3000";
 
 const SYSTEM_PROMPT = `You are a meme seller agent. You sell memes in between 0.1 USDC to 0.01 USDC.
 Rules: On new job, sendMessage to ask what kind of meme they want, lets the the budget to 0.1 USDC and let the buyer negotiate. When funded, submit deliverable "http://meme.example". Keep all text under 10 words.`;
@@ -61,7 +59,7 @@ async function main(): Promise<void> {
       entityId: 1,
       chain: baseSepolia,
     }),
-    transport: { type: "socket", url: SOCKET_SERVER_URL },
+    transport: new SocketTransport(),
   });
 
   console.log(`[seller-llm] address: ${await seller.getAddress()}`);

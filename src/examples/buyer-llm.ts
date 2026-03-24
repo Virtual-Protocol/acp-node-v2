@@ -3,6 +3,7 @@ import { AcpAgent } from "../acpAgent";
 import { ACP_CONTRACT_ADDRESS } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { SocketTransport } from "../events/socketTransport";
 import type { AcpTool } from "../events/types";
 import type { JobSession, JobRoomEntry } from "../index";
 import dotenv from "dotenv";
@@ -11,8 +12,6 @@ import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvm
 dotenv.config();
 
 const SELLER_ADDRESS = "0xSellerAddress";
-const SOCKET_SERVER_URL =
-  process.env.SOCKET_SERVER_URL ?? "http://localhost:3000";
 
 const SYSTEM_PROMPT = `You are a buyer agent. You want to buy a funny cat meme.
 Rules: When the seller asks what you want, sendMessage describing your requirement (e.g. "I want a funny cat meme") and ask for a price. Fund any budget under 0.1 USDC. Try to negotation for price below 0.07 USDC. Complete any deliverable. Keep all text under 10 words.`;
@@ -62,7 +61,7 @@ async function main(): Promise<void> {
       walletId: "your-privy-wallet-id",
       signerPrivateKey: "your-privy-signer-private-key",
     }),
-    transport: { type: "socket", url: SOCKET_SERVER_URL },
+    transport: new SocketTransport(),
   });
 
   const buyerAddress = await buyer.getAddress();

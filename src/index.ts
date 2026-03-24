@@ -22,6 +22,9 @@ export * from "./providers/evm/alchemyEvmProviderAdapter";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
 
+// Transport
+export { SocketTransport } from "./events/socketTransport";
+
 // Event / room types (public)
 export type {
   AcpJobEvent,
@@ -39,8 +42,7 @@ export type {
   AcpTool,
   AcpToolParameter,
   AgentRole,
-  TransportConfig,
-  SocketTransportConfig,
+  AcpTransport,
 } from "./events/types";
 
 // Utilities

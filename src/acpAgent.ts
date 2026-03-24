@@ -4,6 +4,7 @@ import {
   type CreateAcpClientInput,
   createAcpClient,
 } from "./clientFactory";
+import { EvmAcpClient } from "./clients/evmAcpClient";
 import type {
   CompleteParams,
   CreateJobParams,
@@ -130,6 +131,12 @@ export class AcpAgent {
       agentAddress: this.address,
       contractAddress: this.client.getContractAddress(),
       client: this.client,
+      signMessage: (msg: string) => {
+        if (this.client instanceof EvmAcpClient) {
+          return this.client.getProvider().signMessage(msg);
+        }
+        throw new Error("signMessage is not supported for this provider");
+      },
     };
 
     transport.onEntry((entry) => this.dispatch(entry));

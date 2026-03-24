@@ -346,6 +346,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async signMessage(_message: string): Promise<string> {
-    throw new Error("signMessage() not implemented");
+    return this.client.signMessage({ message: _message });
   }
 }

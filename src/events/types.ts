@@ -119,6 +119,7 @@ export type TransportContext = {
   agentAddress: string;
   contractAddress: string;
   client: AcpClient;
+  signMessage: (message: string) => Promise<string>;
 };
 
 // ---------------------------------------------------------------------------

@@ -118,6 +118,7 @@ export type AgentRole = "client" | "provider" | "evaluator";
 export type TransportContext = {
   agentAddress: string;
   contractAddresses: Record<number, string>;
+  providerSupportedChainIds: number[];
   client: AcpClient;
   signMessage: (chainId: number, message: string) => Promise<string>;
 };

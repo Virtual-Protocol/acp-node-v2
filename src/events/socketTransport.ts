@@ -80,8 +80,7 @@ export class SocketTransport implements AcpTransport {
   private async authenticate(): Promise<string> {
     if (!this.ctx) throw new Error("Transport not connected");
 
-    const supportedChains = this.ctx.client.getSupportedChainIds();
-    const chainId = supportedChains[0];
+    const chainId = this.ctx.providerSupportedChainIds[0];
 
     const message = `acp-auth:${Date.now()}`;
     const signature = await this.ctx.signMessage(chainId!, message);

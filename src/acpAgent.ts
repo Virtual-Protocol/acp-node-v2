@@ -132,9 +132,15 @@ export class AcpAgent {
     this.started = true;
     this.address = await this.client.getAddress();
 
+    const providerChainIds =
+      this.client instanceof EvmAcpClient
+        ? await this.client.getProvider().getSupportedChainIds()
+        : [];
+
     const ctx: TransportContext = {
       agentAddress: this.address,
       contractAddresses: this.client.getContractAddresses(),
+      providerSupportedChainIds: providerChainIds,
       client: this.client,
       signMessage: (chainId: number, msg: string) => {
         if (this.client instanceof EvmAcpClient) {

@@ -9,7 +9,7 @@ import type {
 } from "./events/types";
 import type { AcpAgent } from "./acpAgent";
 import { AcpJob } from "./acpJob";
-import { Erc20Token } from "./core/erc20Token";
+import { AssetToken } from "./core/assetToken";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -275,11 +275,11 @@ export class JobSession {
         break;
       case "setBudget":
         await this.setBudget(
-          Erc20Token.usdc(args.amount as number, this.chainId)
+          AssetToken.usdc(args.amount as number, this.chainId)
         );
         break;
       case "fund":
-        await this.fund(Erc20Token.usdc(args.amount as number, this.chainId));
+        await this.fund(AssetToken.usdc(args.amount as number, this.chainId));
         break;
       case "submit":
         await this.submit(args.deliverable as string);
@@ -306,14 +306,14 @@ export class JobSession {
     this.agent.sendJobMessage(this.chainId, this.jobId, content, contentType);
   }
 
-  async setBudget(amount: Erc20Token): Promise<void> {
+  async setBudget(amount: AssetToken): Promise<void> {
     await this.agent.internalSetBudget(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
     });
   }
 
-  async fund(amount: Erc20Token): Promise<void> {
+  async fund(amount: AssetToken): Promise<void> {
     await this.agent.internalFund(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
@@ -365,7 +365,7 @@ export class JobSession {
           return {
             role: "system" as const,
             content: `The budget for this job is ${
-              Erc20Token.usdcFromRaw(BigInt(event.amount), this.chainId).amount
+              AssetToken.usdcFromRaw(BigInt(event.amount), this.chainId).amount
             } USDC.`,
           };
         }

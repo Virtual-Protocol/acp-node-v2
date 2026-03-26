@@ -13,7 +13,7 @@ export * from "./clients/solanaAcpClient";
 export * from "./core/acpAbi";
 export * from "./core/chains";
 export * from "./core/constants";
-export * from "./core/erc20Token";
+export * from "./core/assetToken";
 
 // Provider interfaces & adapters
 export * from "./providers/types";

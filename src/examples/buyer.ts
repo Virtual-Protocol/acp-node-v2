@@ -1,5 +1,5 @@
 import { AcpAgent } from "../acpAgent";
-import { Erc20Token } from "../core/erc20Token";
+import { AssetToken } from "../core/assetToken";
 import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
         case "budget.set":
           console.log(`[buyer] budget set on job ${session.jobId}, funding…`);
           await session.sendMessage("Looks good, funding now.");
-          await session.fund(Erc20Token.usdc(0.1, session.chainId));
+          await session.fund(AssetToken.usdc(0.1, session.chainId));
           console.log(`[buyer] funded job ${session.jobId}`);
           break;
 

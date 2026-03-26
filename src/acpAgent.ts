@@ -15,7 +15,7 @@ import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
 } from "./core/constants";
-import { Erc20Token } from "./core/erc20Token";
+import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
 import { SocketTransport } from "./events/socketTransport";
 import type {
@@ -40,19 +40,19 @@ export type CreateAgentInput = CreateAcpClientInput & {
 
 export type SetBudgetParams = {
   jobId: bigint;
-  amount: Erc20Token;
+  amount: AssetToken;
   optParams?: Hex;
 };
 
 export type FundJobParams = {
   jobId: bigint;
-  amount: Erc20Token;
+  amount: AssetToken;
 };
 
 export type SetFundTransferBudgetParams = {
   jobId: bigint;
-  amount: Erc20Token;
-  transferAmount: Erc20Token;
+  amount: AssetToken;
+  transferAmount: AssetToken;
   destination: string;
   subExpiry?: bigint;
   packageId?: bigint;
@@ -60,8 +60,8 @@ export type SetFundTransferBudgetParams = {
 
 export type FundWithTransferParams = {
   jobId: bigint;
-  amount: Erc20Token;
-  transferAmount: Erc20Token;
+  amount: AssetToken;
+  transferAmount: AssetToken;
   targetIntentId: bigint;
   hookAddress?: string;
 };
@@ -69,7 +69,7 @@ export type FundWithTransferParams = {
 export type SubmitWithTransferParams = {
   jobId: bigint;
   deliverable: string;
-  transferAmount: Erc20Token;
+  transferAmount: AssetToken;
   hookAddress?: string;
 };
 
@@ -303,8 +303,8 @@ export class AcpAgent {
     address: string,
     amount: number,
     chainId: number
-  ): Promise<Erc20Token> {
-    return Erc20Token.fromOnChain(address, amount, chainId, this.client);
+  ): Promise<AssetToken> {
+    return AssetToken.fromOnChain(address, amount, chainId, this.client);
   }
 
   // -------------------------------------------------------------------------

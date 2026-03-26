@@ -2,7 +2,7 @@ import { parseUnits } from "viem";
 import type { AcpClient } from "../clientFactory";
 import { USDC_ADDRESSES, USDC_DECIMALS, getAddressForChain } from "./constants";
 
-export class Erc20Token {
+export class AssetToken {
   readonly address: string;
   readonly decimals: number;
   readonly amount: number;
@@ -15,19 +15,19 @@ export class Erc20Token {
     this.rawAmount = parseUnits(amount.toString(), decimals);
   }
 
-  static create(address: string, decimals: number, amount: number): Erc20Token {
-    return new Erc20Token(address, decimals, amount);
+  static create(address: string, decimals: number, amount: number): AssetToken {
+    return new AssetToken(address, decimals, amount);
   }
 
-  static usdc(amount: number, chainId: number): Erc20Token {
+  static usdc(amount: number, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
-    return new Erc20Token(address, USDC_DECIMALS, amount);
+    return new AssetToken(address, USDC_DECIMALS, amount);
   }
 
-  static usdcFromRaw(rawAmount: bigint, chainId: number): Erc20Token {
+  static usdcFromRaw(rawAmount: bigint, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
     const dec = Number(rawAmount) / 10 ** USDC_DECIMALS;
-    return new Erc20Token(address, USDC_DECIMALS, dec);
+    return new AssetToken(address, USDC_DECIMALS, dec);
   }
 
   static async fromOnChain(
@@ -35,8 +35,8 @@ export class Erc20Token {
     amount: number,
     chainId: number,
     client: AcpClient
-  ): Promise<Erc20Token> {
+  ): Promise<AssetToken> {
     const decimals = await client.getTokenDecimals(chainId, address);
-    return new Erc20Token(address, decimals, amount);
+    return new AssetToken(address, decimals, amount);
   }
 }

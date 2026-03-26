@@ -1,5 +1,4 @@
 import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
-import { EVM_CHAIN_IDS } from "./chains";
 
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
@@ -18,7 +17,7 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0x3D662fFD6c932E4aaA42d4974f349F78982803b4",
+  [baseSepolia.id]: "0x1cC6C9204D3fD587888b33CeeE97606c9369844B",
   [bscTestnet.id]: "0x1CDf636Fdf2050597De5EC858B559d1a724E10a6",
 };
 

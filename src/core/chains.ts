@@ -11,12 +11,12 @@ export const EVM_CHAINS = [
   ...EVM_TESTNET_CHAINS,
 ] as const;
 
-export const EVM_CHAIN_IDS = [
+export const EVM_CHAIN_NAMES = [
   ...EVM_CHAINS.map((chain) => chain.name),
 ] as const;
 
-export type EvmNetworkName = keyof typeof EVM_CHAIN_IDS;
-export type EvmChainId = (typeof EVM_CHAIN_IDS)[EvmNetworkName];
+export type EvmNetworkName = keyof typeof EVM_CHAIN_NAMES;
+export type EvmChainId = (typeof EVM_CHAIN_NAMES)[EvmNetworkName];
 
 export const SOLANA_CLUSTERS = {
   devnet: "devnet",
@@ -54,27 +54,25 @@ export function isSolanaNetworkContext(
   return context.family === "solana";
 }
 
-export function getEvmNetworkNameByChainId(
-  chainId: number
-): EvmNetworkName | null {
+export function getEvmChainByChainId(chainId: number): Chain | null {
   const chain = EVM_CHAINS.find((chain) => chain.id === chainId);
   if (!chain) {
     return null;
   }
-  return chain.name as EvmNetworkName;
+  return chain;
 }
 
 export function createEvmNetworkContext(chainId: number): NetworkContext {
-  const network = getEvmNetworkNameByChainId(chainId);
-  if (!network) {
+  const chain = getEvmChainByChainId(chainId);
+  if (!chain) {
     throw new Error(`Unsupported EVM chainId: ${chainId}`);
   }
 
   return {
     family: "evm",
-    network,
-    chainId: EVM_CHAIN_IDS[network]!,
-    label: `${network.toString()}:${chainId}`,
+    network: chain.name as EvmNetworkName,
+    chainId: chain.id,
+    label: `${chain.name}:${chainId}`,
   };
 }
 

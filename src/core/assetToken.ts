@@ -1,21 +1,25 @@
-import { parseUnits } from "viem";
+import { Address, parseUnits } from "viem";
 import type { AcpClient } from "../clientFactory";
 import { USDC_ADDRESSES, USDC_DECIMALS, getAddressForChain } from "./constants";
 
 export class AssetToken {
-  readonly address: string;
+  readonly address: Address;
   readonly decimals: number;
   readonly amount: number;
   readonly rawAmount: bigint;
 
-  constructor(address: string, decimals: number, amount: number) {
+  constructor(address: Address, decimals: number, amount: number) {
     this.address = address;
     this.decimals = decimals;
     this.amount = amount;
     this.rawAmount = parseUnits(amount.toString(), decimals);
   }
 
-  static create(address: string, decimals: number, amount: number): AssetToken {
+  static create(
+    address: Address,
+    decimals: number,
+    amount: number
+  ): AssetToken {
     return new AssetToken(address, decimals, amount);
   }
 
@@ -31,7 +35,7 @@ export class AssetToken {
   }
 
   static async fromOnChain(
-    address: string,
+    address: Address,
     amount: number,
     chainId: number,
     client: AcpClient

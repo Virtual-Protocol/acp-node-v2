@@ -136,6 +136,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       chainId,
       this.buildContractCall(chainId, "fund", [
         BigInt(params.jobId),
+        params.expectedBudget,
         params.optParams ?? "0x",
       ])
     );
@@ -209,9 +210,8 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       functionName: "getJob",
       args: [jobId],
     });
-    if (!result || typeof result !== "object" || !("id" in result)) return null;
+
     const raw = result as {
-      id: bigint;
       client: string;
       provider: string;
       evaluator: string;
@@ -222,7 +222,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       hook: string;
     };
     return {
-      id: raw.id,
+      id: jobId,
       client: raw.client,
       provider: raw.provider,
       evaluator: raw.evaluator,

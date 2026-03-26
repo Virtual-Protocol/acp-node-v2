@@ -10,6 +10,7 @@ import type {
 import type { AcpAgent } from "./acpAgent";
 import { AcpJob } from "./acpJob";
 import { AssetToken } from "./core/assetToken";
+import { Address } from "viem";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -313,10 +314,36 @@ export class JobSession {
     });
   }
 
+  async setBudgetWithFundRequest(
+    amount: AssetToken,
+    transferAmount: AssetToken,
+    destination: Address
+  ): Promise<void> {
+    await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
+      jobId: BigInt(this.jobId),
+      amount,
+      transferAmount,
+      destination,
+    });
+  }
+
   async fund(amount: AssetToken): Promise<void> {
     await this.agent.internalFund(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
+    });
+  }
+
+  async fundWithTransfer(
+    amount: AssetToken,
+    transferAmount: AssetToken,
+    destination: Address
+  ): Promise<void> {
+    await this.agent.internalFundWithTransfer(this.chainId, {
+      jobId: BigInt(this.jobId),
+      amount,
+      transferAmount,
+      destination,
     });
   }
 

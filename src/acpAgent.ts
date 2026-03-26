@@ -49,20 +49,18 @@ export type FundJobParams = {
   amount: AssetToken;
 };
 
-export type SetFundTransferBudgetParams = {
+export type SetBudgetWithFundRequestParams = {
   jobId: bigint;
   amount: AssetToken;
   transferAmount: AssetToken;
-  destination: string;
-  subExpiry?: bigint;
-  packageId?: bigint;
+  destination: Address;
 };
 
 export type FundWithTransferParams = {
   jobId: bigint;
   amount: AssetToken;
   transferAmount: AssetToken;
-  targetIntentId: bigint;
+  destination: Address;
   hookAddress?: string;
 };
 
@@ -306,7 +304,7 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   async resolveToken(
-    address: string,
+    address: Address,
     amount: number,
     chainId: number
   ): Promise<AssetToken> {
@@ -374,6 +372,7 @@ export class AcpAgent {
 
     const fundPrepared = await this.client.fund(chainId, {
       jobId: params.jobId,
+      expectedBudget: params.amount.rawAmount,
     });
 
     return this.client.submitPrepared(chainId, [approvePrepared, fundPrepared]);
@@ -407,24 +406,20 @@ export class AcpAgent {
   }
 
   /** @internal */
-  async internalSetFundTransferBudget(
+  async internalSetBudgetWithFundRequest(
     chainId: number,
-    params: SetFundTransferBudgetParams
+    params: SetBudgetWithFundRequestParams
   ): Promise<string | string[]> {
     const optParams = encodeAbiParameters(
       [
         { type: "address", name: "token" },
         { type: "uint256", name: "amount" },
         { type: "address", name: "destination" },
-        { type: "uint256", name: "subExpiry" },
-        { type: "uint256", name: "packageId" },
       ],
       [
         params.transferAmount.address as Address,
         params.transferAmount.rawAmount,
         params.destination as Address,
-        params.subExpiry ?? 0n,
-        params.packageId ?? 0n,
       ]
     );
 
@@ -460,12 +455,21 @@ export class AcpAgent {
     });
 
     const optParams: Hex = encodeAbiParameters(
-      [{ type: "uint256", name: "targetIntentId" }],
-      [params.targetIntentId]
+      [
+        { type: "address", name: "expectedToken" },
+        { type: "uint256", name: "expectedAmount" },
+        { type: "address", name: "expectedRecipient" },
+      ],
+      [
+        params.transferAmount.address,
+        params.transferAmount.rawAmount,
+        params.destination,
+      ]
     );
 
     const fundPrepared = await this.client.fund(chainId, {
       jobId: params.jobId,
+      expectedBudget: params.amount.rawAmount,
       optParams,
     });
 

@@ -14,6 +14,7 @@ export const ACP_ABI = [
     name: "AddressEmptyCode",
     type: "error",
   },
+  { inputs: [], name: "BudgetMismatch", type: "error" },
   {
     inputs: [
       { internalType: "address", name: "implementation", type: "address" },
@@ -45,7 +46,6 @@ export const ACP_ABI = [
   { inputs: [], name: "Unauthorized", type: "error" },
   { inputs: [], name: "WrongStatus", type: "error" },
   { inputs: [], name: "ZeroAddress", type: "error" },
-  { inputs: [], name: "ZeroBudget", type: "error" },
   {
     anonymous: false,
     inputs: [
@@ -88,6 +88,19 @@ export const ACP_ABI = [
       },
     ],
     name: "EvaluatorFeePaid",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "feeBP",
+        type: "uint256",
+      },
+    ],
+    name: "EvaluatorFeeUpdated",
     type: "event",
   },
   {
@@ -297,6 +310,25 @@ export const ACP_ABI = [
     anonymous: false,
     inputs: [
       {
+        indexed: false,
+        internalType: "uint256",
+        name: "feeBP",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "treasury",
+        type: "address",
+      },
+    ],
+    name: "PlatformFeeUpdated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
         indexed: true,
         internalType: "uint256",
         name: "jobId",
@@ -472,6 +504,7 @@ export const ACP_ABI = [
   {
     inputs: [
       { internalType: "uint256", name: "jobId", type: "uint256" },
+      { internalType: "uint256", name: "expectedBudget", type: "uint256" },
       { internalType: "bytes", name: "optParams", type: "bytes" },
     ],
     name: "fund",
@@ -485,19 +518,18 @@ export const ACP_ABI = [
     outputs: [
       {
         components: [
-          { internalType: "uint256", name: "id", type: "uint256" },
           { internalType: "address", name: "client", type: "address" },
-          { internalType: "address", name: "provider", type: "address" },
-          { internalType: "address", name: "evaluator", type: "address" },
-          { internalType: "string", name: "description", type: "string" },
-          { internalType: "uint256", name: "budget", type: "uint256" },
-          { internalType: "uint256", name: "expiredAt", type: "uint256" },
           {
             internalType: "enum AgenticCommerceV3.JobStatus",
             name: "status",
             type: "uint8",
           },
+          { internalType: "address", name: "provider", type: "address" },
+          { internalType: "uint48", name: "expiredAt", type: "uint48" },
+          { internalType: "address", name: "evaluator", type: "address" },
           { internalType: "address", name: "hook", type: "address" },
+          { internalType: "uint256", name: "budget", type: "uint256" },
+          { internalType: "string", name: "description", type: "string" },
         ],
         internalType: "struct AgenticCommerceV3.Job",
         name: "",
@@ -538,6 +570,7 @@ export const ACP_ABI = [
     inputs: [
       { internalType: "address", name: "paymentToken_", type: "address" },
       { internalType: "address", name: "treasury_", type: "address" },
+      { internalType: "address", name: "admin_", type: "address" },
     ],
     name: "initialize",
     outputs: [],
@@ -552,29 +585,21 @@ export const ACP_ABI = [
     type: "function",
   },
   {
-    inputs: [{ internalType: "uint256", name: "jobId", type: "uint256" }],
-    name: "jobHasBudget",
-    outputs: [{ internalType: "bool", name: "hasBudget", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
     inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     name: "jobs",
     outputs: [
-      { internalType: "uint256", name: "id", type: "uint256" },
       { internalType: "address", name: "client", type: "address" },
-      { internalType: "address", name: "provider", type: "address" },
-      { internalType: "address", name: "evaluator", type: "address" },
-      { internalType: "string", name: "description", type: "string" },
-      { internalType: "uint256", name: "budget", type: "uint256" },
-      { internalType: "uint256", name: "expiredAt", type: "uint256" },
       {
         internalType: "enum AgenticCommerceV3.JobStatus",
         name: "status",
         type: "uint8",
       },
+      { internalType: "address", name: "provider", type: "address" },
+      { internalType: "uint48", name: "expiredAt", type: "uint48" },
+      { internalType: "address", name: "evaluator", type: "address" },
       { internalType: "address", name: "hook", type: "address" },
+      { internalType: "uint256", name: "budget", type: "uint256" },
+      { internalType: "string", name: "description", type: "string" },
     ],
     stateMutability: "view",
     type: "function",

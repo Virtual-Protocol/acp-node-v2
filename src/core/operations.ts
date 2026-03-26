@@ -49,6 +49,7 @@ export type ApproveAllowanceParams = {
 
 export type FundParams = {
   jobId: bigint;
+  expectedBudget: bigint;
   optParams?: Hex;
 };
 

@@ -1,4 +1,3 @@
-import { baseSepolia } from "@account-kit/infra";
 import {
   createPublicClient,
   LocalAccount,
@@ -7,6 +6,7 @@ import {
   TypedDataDefinition,
   type Address,
   type Call,
+  type Chain,
   type Hex,
   type Log,
   type SignableMessage,
@@ -38,6 +38,7 @@ interface PrivyAlchemyEvmProviderAdapterParams {
   walletAddress: Address;
   walletId: string;
   signerPrivateKey: string;
+  chain: Chain;
 }
 
 const PRIVY_APP_ID = "cmcw5496d003jl20ng79cgb8l";
@@ -257,26 +258,28 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       signerPrivateKey: params.signerPrivateKey,
     });
 
+    const { chain } = params;
+
     const client = createSmartWalletClient({
       transport: alchemyWalletTransport({
         url: `https://api.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
       }),
-      chain: baseSepolia,
+      chain,
       signer,
       account: params.walletAddress,
       paymaster: { policyId: "186aaa4a-5f57-4156-83fb-e456365a8820" },
     });
 
     const publicClient = createPublicClient({
-      chain: baseSepolia,
+      chain,
       transport: alchemyWalletTransport({
-        url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${baseSepolia.id}`,
+        url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${chain.id}`,
       }),
     });
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
-      baseSepolia.id,
+      chain.id,
       client,
       publicClient
     );

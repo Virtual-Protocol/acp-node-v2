@@ -274,10 +274,10 @@ export class JobSession {
         );
         break;
       case "setBudget":
-        await this.setBudget(Erc20Token.usdc(args.amount as number));
+        await this.setBudget(Erc20Token.usdc(args.amount as number, this.chainId));
         break;
       case "fund":
-        await this.fund(Erc20Token.usdc(args.amount as number));
+        await this.fund(Erc20Token.usdc(args.amount as number, this.chainId));
         break;
       case "submit":
         await this.submit(args.deliverable as string);
@@ -363,7 +363,7 @@ export class JobSession {
           return {
             role: "system" as const,
             content: `The budget for this job is ${
-              Erc20Token.usdcFromRaw(BigInt(event.amount)).amount
+              Erc20Token.usdcFromRaw(BigInt(event.amount), this.chainId).amount
             } USDC.`,
           };
         }

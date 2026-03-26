@@ -1,13 +1,15 @@
+import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
+
 export type ChainFamily = "evm" | "solana";
 
 const EVM_MAINNET_CHAIN_IDS = {
-  base: 8453,
-  polygon: 137,
-  bsc: 56,
+  base: base.id,
+  bsc: bsc.id,
 } as const;
 
 const EVM_TESTNET_CHAIN_IDS = {
-  baseSepolia: 84532,
+  baseSepolia: baseSepolia.id,
+  bscTestnet: bscTestnet.id,
 } as const;
 
 export const EVM_CHAIN_IDS = {

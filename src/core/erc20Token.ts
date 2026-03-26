@@ -1,6 +1,6 @@
 import { parseUnits } from "viem";
 import type { AcpClient } from "../clientFactory";
-import { USDC_ADDRESS, USDC_DECIMALS } from "./constants";
+import { USDC_ADDRESSES, USDC_DECIMALS, getAddressForChain } from "./constants";
 
 export class Erc20Token {
   readonly address: string;
@@ -19,13 +19,15 @@ export class Erc20Token {
     return new Erc20Token(address, decimals, amount);
   }
 
-  static usdc(amount: number, address?: string): Erc20Token {
-    return new Erc20Token(address ?? USDC_ADDRESS, USDC_DECIMALS, amount);
+  static usdc(amount: number, chainId: number): Erc20Token {
+    const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
+    return new Erc20Token(address, USDC_DECIMALS, amount);
   }
 
-  static usdcFromRaw(rawAmount: bigint, address?: string): Erc20Token {
+  static usdcFromRaw(rawAmount: bigint, chainId: number): Erc20Token {
+    const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
     const dec = Number(rawAmount) / 10 ** USDC_DECIMALS;
-    return new Erc20Token(address ?? USDC_ADDRESS, USDC_DECIMALS, dec);
+    return new Erc20Token(address, USDC_DECIMALS, dec);
   }
 
   static async fromOnChain(

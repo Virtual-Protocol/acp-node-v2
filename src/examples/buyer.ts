@@ -1,22 +1,30 @@
 import { AcpAgent } from "../acpAgent";
 import { Erc20Token } from "../core/erc20Token";
-import { ACP_CONTRACT_ADDRESS } from "../core/constants";
+import {
+  ACP_CONTRACT_ADDRESSES,
+  getAddressForChain,
+} from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import type { JobSession, JobRoomEntry } from "../index";
 
 const SELLER_ADDRESS = "0xSellerAddress";
+const chain = baseSepolia;
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    contractAddress: ACP_CONTRACT_ADDRESS,
+    contractAddress: getAddressForChain(
+      ACP_CONTRACT_ADDRESSES,
+      chain.id,
+      "AcpContract"
+    ),
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
       privateKey:
         "0xBuyerPrivateKey",
       entityId: 1,
-      chain: baseSepolia,
+      chain,
     }),
     transport: new SocketTransport(),
   });
@@ -30,7 +38,7 @@ async function main(): Promise<void> {
         case "budget.set":
           console.log(`[buyer] budget set on job ${session.jobId}, funding…`);
           await session.sendMessage("Looks good, funding now.");
-          await session.fund(Erc20Token.usdc(0.1));
+          await session.fund(Erc20Token.usdc(0.1, session.chainId));
           console.log(`[buyer] funded job ${session.jobId}`);
           break;
 

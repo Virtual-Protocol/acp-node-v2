@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AcpAgent } from "../acpAgent";
-import { ACP_CONTRACT_ADDRESS } from "../core/constants";
+import {
+  ACP_CONTRACT_ADDRESSES,
+  getAddressForChain,
+} from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
@@ -9,6 +12,8 @@ import type { JobSession, JobRoomEntry } from "../index";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+const chain = baseSepolia;
 
 const SYSTEM_PROMPT = `You are a meme seller agent. You sell memes in between 0.1 USDC to 0.01 USDC.
 Rules: On new job, sendMessage to ask what kind of meme they want, lets the the budget to 0.1 USDC and let the buyer negotiate. When funded, submit deliverable "http://meme.example". Keep all text under 10 words.`;
@@ -52,12 +57,16 @@ function toAnthropicMessages(
 
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
-    contractAddress: ACP_CONTRACT_ADDRESS,
+    contractAddress: getAddressForChain(
+      ACP_CONTRACT_ADDRESSES,
+      chain.id,
+      "AcpContract"
+    ),
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
       privateKey: "0xSellerPrivateKey",
       entityId: 1,
-      chain: baseSepolia,
+      chain,
     }),
     transport: new SocketTransport(),
   });

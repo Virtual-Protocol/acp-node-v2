@@ -11,7 +11,10 @@ import type {
   RejectParams,
   SubmitParams,
 } from "./core/operations";
-import { FUND_TRANSFER_HOOK_ADDRESS } from "./core/constants";
+import {
+  FUND_TRANSFER_HOOK_ADDRESSES,
+  getAddressForChain,
+} from "./core/constants";
 import { Erc20Token } from "./core/erc20Token";
 import { JobSession } from "./jobSession";
 import { SocketTransport } from "./events/socketTransport";
@@ -95,6 +98,12 @@ export class AcpAgent {
 
   getClient(): AcpClient {
     return this.client;
+  }
+
+  getChainId(): number {
+    const ctx = this.client.getNetworkContext();
+    if (ctx.family === "evm") return ctx.chainId;
+    throw new Error("getChainId() is only supported for EVM networks");
   }
 
   async getAddress(): Promise<string> {
@@ -309,9 +318,14 @@ export class AcpAgent {
   }
 
   async createFundTransferJob(params: CreateJobParams): Promise<bigint> {
+    const defaultHook = getAddressForChain(
+      FUND_TRANSFER_HOOK_ADDRESSES,
+      this.getChainId(),
+      "FundTransferHook"
+    );
     return this.createJob({
       ...params,
-      hookAddress: params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS,
+      hookAddress: params.hookAddress ?? defaultHook,
     });
   }
 
@@ -400,7 +414,13 @@ export class AcpAgent {
       amount: params.amount.rawAmount,
     });
 
-    const hookAddr = params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS;
+    const hookAddr =
+      params.hookAddress ??
+      getAddressForChain(
+        FUND_TRANSFER_HOOK_ADDRESSES,
+        this.getChainId(),
+        "FundTransferHook"
+      );
     const approveHook = await this.client.approveAllowance({
       tokenAddress: params.transferAmount.address,
       spenderAddress: hookAddr,
@@ -424,7 +444,13 @@ export class AcpAgent {
   async internalSubmitWithTransfer(
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
-    const hookAddr = params.hookAddress ?? FUND_TRANSFER_HOOK_ADDRESS;
+    const hookAddr =
+      params.hookAddress ??
+      getAddressForChain(
+        FUND_TRANSFER_HOOK_ADDRESSES,
+        this.getChainId(),
+        "FundTransferHook"
+      );
     const approvePrepared = await this.client.approveAllowance({
       tokenAddress: params.transferAmount.address,
       spenderAddress: hookAddr,

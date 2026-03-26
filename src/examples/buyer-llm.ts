@@ -1,8 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AcpAgent } from "../acpAgent";
-import { ACP_CONTRACT_ADDRESS } from "../core/constants";
+import {
+  ACP_CONTRACT_ADDRESSES,
+  getAddressForChain,
+} from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
-import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import type { AcpTool } from "../events/types";
 import type { JobSession, JobRoomEntry } from "../index";
@@ -12,6 +14,7 @@ import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvm
 dotenv.config();
 
 const SELLER_ADDRESS = "0xSellerAddress";
+const chain = baseSepolia;
 
 const SYSTEM_PROMPT = `You are a buyer agent. You want to buy a funny cat meme.
 Rules: When the seller asks what you want, sendMessage describing your requirement (e.g. "I want a funny cat meme") and ask for a price. Fund any budget under 0.1 USDC. Try to negotation for price below 0.07 USDC. Complete any deliverable. Keep all text under 10 words.`;
@@ -55,10 +58,15 @@ function toAnthropicMessages(
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    contractAddress: ACP_CONTRACT_ADDRESS,
+    contractAddress: getAddressForChain(
+      ACP_CONTRACT_ADDRESSES,
+      chain.id,
+      "AcpContract"
+    ),
     provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
       walletId: "your-privy-wallet-id",
+      chain,
       signerPrivateKey: "your-privy-signer-private-key",
     }),
     transport: new SocketTransport(),

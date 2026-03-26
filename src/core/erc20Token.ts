@@ -33,9 +33,10 @@ export class Erc20Token {
   static async fromOnChain(
     address: string,
     amount: number,
+    chainId: number,
     client: AcpClient
   ): Promise<Erc20Token> {
-    const decimals = await client.getTokenDecimals(address);
+    const decimals = await client.getTokenDecimals(chainId, address);
     return new Erc20Token(address, decimals, amount);
   }
 }

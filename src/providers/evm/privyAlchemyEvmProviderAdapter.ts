@@ -18,7 +18,7 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext } from "../../core/chains";
+import { createEvmNetworkContext, EVM_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -34,14 +34,14 @@ import {
   type SmartWalletClient,
 } from "@alchemy/wallet-apis";
 
-interface PrivyAlchemyEvmProviderAdapterParams {
+export interface PrivyAlchemyChainConfig {
+  chains?: Chain[];
   walletAddress: Address;
   walletId: string;
   signerPrivateKey: string;
-  chain: Chain;
 }
 
-const PRIVY_APP_ID = "cmcw5496d003jl20ng79cgb8l";
+const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -76,7 +76,7 @@ function buildSignInput(
 async function serverPost<T>(
   path: string,
   body: unknown,
-  serverUrl: string = "http://localhost:3000"
+  serverUrl: string = "https://api-dev.acp.virtuals.io"
 ): Promise<T> {
   const base = serverUrl.replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -230,71 +230,82 @@ function createRemoteSigner(params: {
   };
 }
 
+type ChainClients = {
+  smartWalletClient: SmartWalletClient;
+  publicClient: PublicClient;
+};
+
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
-  public readonly chainId: number;
-  public readonly client: SmartWalletClient;
-  public readonly publicClient: PublicClient;
+  private readonly chainClients: Map<number, ChainClients>;
 
-  constructor(
+  private constructor(
     address: Address,
-    chainId: number,
-    client: SmartWalletClient,
-    publicClient: PublicClient
+    chainClients: Map<number, ChainClients>
   ) {
     this.address = address;
-    this.chainId = chainId;
-    this.client = client;
-    this.publicClient = publicClient;
+    this.chainClients = chainClients;
   }
 
   static async create(
-    params: PrivyAlchemyEvmProviderAdapterParams
+    params: PrivyAlchemyChainConfig
   ): Promise<PrivyAlchemyEvmProviderAdapter> {
-    const signer = await createRemoteSigner({
-      address: params.walletAddress,
-      walletId: params.walletId,
-      signerPrivateKey: params.signerPrivateKey,
-    });
+    const chainClients = new Map<number, ChainClients>();
 
-    const { chain } = params;
+    const { chains = EVM_CHAINS } = params;
 
-    const client = createSmartWalletClient({
-      transport: alchemyWalletTransport({
-        url: `https://api.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
-      }),
-      chain,
-      signer,
-      account: params.walletAddress,
-      paymaster: { policyId: "186aaa4a-5f57-4156-83fb-e456365a8820" },
-    });
+    for (const chain of chains) {
+      const signer = createRemoteSigner({
+        address: params.walletAddress,
+        walletId: params.walletId,
+        signerPrivateKey: params.signerPrivateKey,
+      });
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: alchemyWalletTransport({
-        url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${chain.id}`,
-      }),
-    });
+      const smartWalletClient = createSmartWalletClient({
+        transport: alchemyWalletTransport({
+          url: `https://api.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+        }),
+        chain,
+        signer,
+        account: params.walletAddress,
+        paymaster: { policyId: "186aaa4a-5f57-4156-83fb-e456365a8820" },
+      });
+
+      const publicClient = createPublicClient({
+        chain,
+        transport: alchemyWalletTransport({
+          url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${chain.id}`,
+        }),
+      });
+
+      chainClients.set(chain.id, { smartWalletClient, publicClient });
+    }
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
-      chain.id,
-      client,
-      publicClient
+      chainClients
     );
+  }
+
+  private getClients(chainId: number): ChainClients {
+    const c = this.chainClients.get(chainId);
+    if (!c)
+      throw new Error(
+        `PrivyAlchemyEvmProviderAdapter: no clients configured for chainId ${chainId}`
+      );
+    return c;
   }
 
   async getAddress(): Promise<Address> {
     return this.address;
   }
 
-  async getChainId(): Promise<number> {
-    return this.chainId;
+  async getSupportedChainIds(): Promise<number[]> {
+    return Array.from(this.chainClients.keys());
   }
 
-  async getNetworkContext() {
-    const chainId = await this.getChainId();
+  async getNetworkContext(chainId: number) {
     return createEvmNetworkContext(chainId);
   }
 
@@ -309,8 +320,12 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
-  async sendCalls(_calls: Call[]): Promise<Address | Address[]> {
-    const { id } = await this.client.sendCalls({
+  async sendCalls(
+    chainId: number,
+    _calls: Call[]
+  ): Promise<Address | Address[]> {
+    const { smartWalletClient } = this.getClients(chainId);
+    const { id } = await smartWalletClient.sendCalls({
       calls: _calls.map((call) => ({
         to: call.to,
         data: call.data ?? "0x",
@@ -323,7 +338,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    const status = await this.client.waitForCallsStatus({ id });
+    const status = await smartWalletClient.waitForCallsStatus({ id });
 
     if (!status.receipts?.[0]?.transactionHash) {
       throw new Error("Transaction failed");
@@ -332,23 +347,33 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return status.receipts?.[0]?.transactionHash;
   }
 
-  async getTransactionReceipt(hash: Address): Promise<TransactionReceipt> {
-    return getTransactionReceipt(this.publicClient, { hash });
+  async getTransactionReceipt(
+    chainId: number,
+    hash: Address
+  ): Promise<TransactionReceipt> {
+    return getTransactionReceipt(this.getClients(chainId).publicClient, {
+      hash,
+    });
   }
 
-  async readContract(params: ReadContractParams): Promise<unknown> {
-    return readContract(this.publicClient, params);
+  async readContract(
+    chainId: number,
+    params: ReadContractParams
+  ): Promise<unknown> {
+    return readContract(this.getClients(chainId).publicClient, params);
   }
 
-  async getLogs(params: GetLogsParams): Promise<Log[]> {
-    return getLogs(this.publicClient, params);
+  async getLogs(chainId: number, params: GetLogsParams): Promise<Log[]> {
+    return getLogs(this.getClients(chainId).publicClient, params);
   }
 
-  async getBlockNumber(): Promise<bigint> {
-    return getBlockNumber(this.publicClient);
+  async getBlockNumber(chainId: number): Promise<bigint> {
+    return getBlockNumber(this.getClients(chainId).publicClient);
   }
 
-  async signMessage(_message: string): Promise<string> {
-    return this.client.signMessage({ message: _message });
+  async signMessage(chainId: number, _message: string): Promise<string> {
+    return this.getClients(chainId).smartWalletClient.signMessage({
+      message: _message,
+    });
   }
 }

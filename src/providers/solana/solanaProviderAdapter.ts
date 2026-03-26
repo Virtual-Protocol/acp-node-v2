@@ -19,7 +19,11 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     throw new Error("getCluster() not implemented. Override in subclass.");
   }
 
-  async getNetworkContext() {
+  async getSupportedChainIds(): Promise<number[]> {
+    throw new Error("getSupportedChainIds() not implemented. Override in subclass.");
+  }
+
+  async getNetworkContext(_chainId: number) {
     const cluster = await this.getCluster();
     return createSolanaNetworkContext(cluster);
   }

@@ -1,21 +1,19 @@
-import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
+import { base, baseSepolia, bsc, bscTestnet, Chain } from "viem/chains";
 
 export type ChainFamily = "evm" | "solana";
 
-const EVM_MAINNET_CHAIN_IDS = {
-  base: base.id,
-  bsc: bsc.id,
-} as const;
+export const EVM_MAINNET_CHAINS: Chain[] = [base, bsc] as const;
 
-const EVM_TESTNET_CHAIN_IDS = {
-  baseSepolia: baseSepolia.id,
-  bscTestnet: bscTestnet.id,
-} as const;
+export const EVM_TESTNET_CHAINS: Chain[] = [baseSepolia, bscTestnet] as const;
 
-export const EVM_CHAIN_IDS = {
-  ...EVM_MAINNET_CHAIN_IDS,
-  ...EVM_TESTNET_CHAIN_IDS,
-} as const;
+export const EVM_CHAINS = [
+  ...EVM_MAINNET_CHAINS,
+  ...EVM_TESTNET_CHAINS,
+] as const;
+
+export const EVM_CHAIN_IDS = [
+  ...EVM_CHAINS.map((chain) => chain.name),
+] as const;
 
 export type EvmNetworkName = keyof typeof EVM_CHAIN_IDS;
 export type EvmChainId = (typeof EVM_CHAIN_IDS)[EvmNetworkName];
@@ -59,9 +57,11 @@ export function isSolanaNetworkContext(
 export function getEvmNetworkNameByChainId(
   chainId: number
 ): EvmNetworkName | null {
-  const entries = Object.entries(EVM_CHAIN_IDS) as [EvmNetworkName, number][];
-  const match = entries.find(([, id]) => id === chainId);
-  return match?.[0] ?? null;
+  const chain = EVM_CHAINS.find((chain) => chain.id === chainId);
+  if (!chain) {
+    return null;
+  }
+  return chain.name as EvmNetworkName;
 }
 
 export function createEvmNetworkContext(chainId: number): NetworkContext {
@@ -73,8 +73,8 @@ export function createEvmNetworkContext(chainId: number): NetworkContext {
   return {
     family: "evm",
     network,
-    chainId: EVM_CHAIN_IDS[network],
-    label: `${network}:${chainId}`,
+    chainId: EVM_CHAIN_IDS[network]!,
+    label: `${network.toString()}:${chainId}`,
   };
 }
 

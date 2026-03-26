@@ -1,9 +1,6 @@
 import { AcpAgent } from "../acpAgent";
 import { Erc20Token } from "../core/erc20Token";
-import {
-  ACP_CONTRACT_ADDRESSES,
-  getAddressForChain,
-} from "../core/constants";
+import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
@@ -14,17 +11,12 @@ const chain = baseSepolia;
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    contractAddress: getAddressForChain(
-      ACP_CONTRACT_ADDRESSES,
-      chain.id,
-      "AcpContract"
-    ),
+    contractAddresses: ACP_CONTRACT_ADDRESSES,
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
-      privateKey:
-        "0xBuyerPrivateKey",
+      privateKey: "0xBuyerPrivateKey",
       entityId: 1,
-      chain,
+      chains: [chain],
     }),
     transport: new SocketTransport(),
   });
@@ -43,7 +35,9 @@ async function main(): Promise<void> {
           break;
 
         case "job.submitted":
-          console.log(`[buyer] deliverable received on job ${session.jobId}, completing…`);
+          console.log(
+            `[buyer] deliverable received on job ${session.jobId}, completing…`
+          );
           await session.complete("Evaluated");
           console.log(`[buyer] completed job ${session.jobId}`);
           await buyer.stop();
@@ -52,13 +46,15 @@ async function main(): Promise<void> {
     }
 
     if (entry.kind === "message") {
-      console.log(`[buyer] [job ${session.jobId}] ${entry.from}: ${entry.content}`);
+      console.log(
+        `[buyer] [job ${session.jobId}] ${entry.from}: ${entry.content}`
+      );
     }
   });
 
   await buyer.start();
 
-  const jobId = await buyer.createJob({
+  const jobId = await buyer.createJob(chain.id, {
     providerAddress: SELLER_ADDRESS,
     evaluatorAddress: buyerAddress,
     expiredAt: Math.floor(Date.now() / 1000) + 3600,

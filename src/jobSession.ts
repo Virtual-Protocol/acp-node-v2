@@ -274,7 +274,9 @@ export class JobSession {
         );
         break;
       case "setBudget":
-        await this.setBudget(Erc20Token.usdc(args.amount as number, this.chainId));
+        await this.setBudget(
+          Erc20Token.usdc(args.amount as number, this.chainId)
+        );
         break;
       case "fund":
         await this.fund(Erc20Token.usdc(args.amount as number, this.chainId));
@@ -305,35 +307,35 @@ export class JobSession {
   }
 
   async setBudget(amount: Erc20Token): Promise<void> {
-    await this.agent.internalSetBudget({
+    await this.agent.internalSetBudget(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
     });
   }
 
   async fund(amount: Erc20Token): Promise<void> {
-    await this.agent.internalFund({
+    await this.agent.internalFund(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
     });
   }
 
   async submit(deliverable: string): Promise<void> {
-    await this.agent.internalSubmit({
+    await this.agent.internalSubmit(this.chainId, {
       jobId: BigInt(this.jobId),
       deliverable,
     });
   }
 
   async complete(reason: string): Promise<void> {
-    await this.agent.internalComplete({
+    await this.agent.internalComplete(this.chainId, {
       jobId: BigInt(this.jobId),
       reason,
     });
   }
 
   async reject(reason: string): Promise<void> {
-    await this.agent.internalReject({
+    await this.agent.internalReject(this.chainId, {
       jobId: BigInt(this.jobId),
       reason,
     });

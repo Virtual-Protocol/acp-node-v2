@@ -1,3 +1,4 @@
+import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
 import { EVM_CHAIN_IDS } from "./chains";
 
 // ---------------------------------------------------------------------------
@@ -5,20 +6,20 @@ import { EVM_CHAIN_IDS } from "./chains";
 // ---------------------------------------------------------------------------
 
 export const USDC_ADDRESSES: Record<number, string> = {
-  [EVM_CHAIN_IDS.baseSepolia]: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  [EVM_CHAIN_IDS.base]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  [EVM_CHAIN_IDS.bsc]: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
-  [EVM_CHAIN_IDS.bscTestnet]: "0x64544969ed7EBf5f083679233325356EbE738930",
+  [baseSepolia.id]: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  [bsc.id]: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+  [bscTestnet.id]: "0x64544969ed7EBf5f083679233325356EbE738930",
 };
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
-  [EVM_CHAIN_IDS.baseSepolia]: "0x2A58201D603eDFb4F7B0d65edCeFea79E6368541",
-  [EVM_CHAIN_IDS.bscTestnet]: "0x6d8a718Bf031258921A1321d833Cf893B56d6f09",
+  [baseSepolia.id]: "0xeAC3Af001B16b7ca0c0d17A3Cd049961FEb3983D",
+  [bscTestnet.id]: "0x6d8a718Bf031258921A1321d833Cf893B56d6f09",
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [EVM_CHAIN_IDS.baseSepolia]: "0x37F8D776D101094C2c0164803BfA0b731398E411",
-  [EVM_CHAIN_IDS.bscTestnet]: "0x1CDf636Fdf2050597De5EC858B559d1a724E10a6",
+  [baseSepolia.id]: "0x3D662fFD6c932E4aaA42d4974f349F78982803b4",
+  [bscTestnet.id]: "0x1CDf636Fdf2050597De5EC858B559d1a724E10a6",
 };
 
 // ---------------------------------------------------------------------------

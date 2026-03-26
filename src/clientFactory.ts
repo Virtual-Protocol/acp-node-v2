@@ -9,58 +9,44 @@ import type {
 export type AcpClient = EvmAcpClient | SolanaAcpClient;
 
 export type CreateAcpClientInput = {
-  contractAddress: string;
+  contractAddresses: Record<number, string>;
   provider: IProviderAdapter;
 };
 
 export async function createAcpClient(
   input: CreateAcpClientInput
 ): Promise<AcpClient> {
-  const context = await input.provider.getNetworkContext();
-
-  if (context.family === "evm") {
-    const evmProvider = assertEvmProvider(input.provider);
+  if (isEvmProvider(input.provider)) {
     return EvmAcpClient.create({
-      contractAddress: input.contractAddress as `0x${string}`,
-      provider: evmProvider,
+      contractAddresses: input.contractAddresses,
+      provider: input.provider,
     });
   }
 
-  const solanaProvider = assertSolanaProvider(input.provider);
-  return SolanaAcpClient.create({
-    contractAddress: input.contractAddress,
-    provider: solanaProvider,
-  });
-}
-
-function assertEvmProvider(provider: IProviderAdapter): IEvmProviderAdapter {
-  if (
-    "getChainId" in provider &&
-    typeof provider.getChainId === "function" &&
-    "sendCalls" in provider &&
-    typeof provider.sendCalls === "function"
-  ) {
-    return provider as IEvmProviderAdapter;
+  if (isSolanaProvider(input.provider)) {
+    return SolanaAcpClient.create({
+      contractAddresses: input.contractAddresses,
+      provider: input.provider,
+    });
   }
 
   throw new Error(
-    `Provider "${provider.providerName}" resolved as EVM but does not implement IEvmProviderAdapter.`
+    `Provider "${input.provider.providerName}" does not implement a known adapter interface.`
   );
 }
 
-function assertSolanaProvider(
-  provider: IProviderAdapter
-): ISolanaProviderAdapter {
-  if (
-    "getCluster" in provider &&
-    typeof provider.getCluster === "function" &&
-    "sendInstructions" in provider &&
-    typeof provider.sendInstructions === "function"
-  ) {
-    return provider as ISolanaProviderAdapter;
-  }
+function isEvmProvider(provider: IProviderAdapter): provider is IEvmProviderAdapter {
+  return (
+    "sendCalls" in provider &&
+    typeof (provider as any).sendCalls === "function"
+  );
+}
 
-  throw new Error(
-    `Provider "${provider.providerName}" resolved as Solana but does not implement ISolanaProviderAdapter.`
+function isSolanaProvider(provider: IProviderAdapter): provider is ISolanaProviderAdapter {
+  return (
+    "getCluster" in provider &&
+    typeof (provider as any).getCluster === "function" &&
+    "sendInstructions" in provider &&
+    typeof (provider as any).sendInstructions === "function"
   );
 }

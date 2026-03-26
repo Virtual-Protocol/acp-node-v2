@@ -100,10 +100,8 @@ export class AcpAgent {
     return this.client;
   }
 
-  getChainId(): number {
-    const ctx = this.client.getNetworkContext();
-    if (ctx.family === "evm") return ctx.chainId;
-    throw new Error("getChainId() is only supported for EVM networks");
+  getSupportedChainIds(): number[] {
+    return this.client.getSupportedChainIds();
   }
 
   async getAddress(): Promise<string> {
@@ -136,11 +134,11 @@ export class AcpAgent {
 
     const ctx: TransportContext = {
       agentAddress: this.address,
-      contractAddress: this.client.getContractAddress(),
+      contractAddresses: this.client.getContractAddresses(),
       client: this.client,
-      signMessage: (msg: string) => {
+      signMessage: (chainId: number, msg: string) => {
         if (this.client instanceof EvmAcpClient) {
-          return this.client.getProvider().signMessage(msg);
+          return this.client.getProvider().signMessage(chainId, msg);
         }
         throw new Error("signMessage is not supported for this provider");
       },
@@ -297,33 +295,40 @@ export class AcpAgent {
   // Token helpers
   // -------------------------------------------------------------------------
 
-  async resolveToken(address: string, amount: number): Promise<Erc20Token> {
-    return Erc20Token.fromOnChain(address, amount, this.client);
+  async resolveToken(
+    address: string,
+    amount: number,
+    chainId: number
+  ): Promise<Erc20Token> {
+    return Erc20Token.fromOnChain(address, amount, chainId, this.client);
   }
 
   // -------------------------------------------------------------------------
   // Job creation (on-chain, room is created by the observer)
   // -------------------------------------------------------------------------
 
-  async createJob(params: CreateJobParams): Promise<bigint> {
-    const prepared = await this.client.createJob(params);
-    const result = await this.client.submitPrepared([prepared]);
+  async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
+    const prepared = await this.client.createJob(chainId, params);
+    const result = await this.client.submitPrepared(chainId, [prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
 
     console.log("txHash", txHash);
 
-    const jobId = await this.client.getJobIdFromTxHash(txHash);
+    const jobId = await this.client.getJobIdFromTxHash(chainId, txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
     return jobId;
   }
 
-  async createFundTransferJob(params: CreateJobParams): Promise<bigint> {
+  async createFundTransferJob(
+    chainId: number,
+    params: CreateJobParams
+  ): Promise<bigint> {
     const defaultHook = getAddressForChain(
       FUND_TRANSFER_HOOK_ADDRESSES,
-      this.getChainId(),
+      chainId,
       "FundTransferHook"
     );
-    return this.createJob({
+    return this.createJob(chainId, {
       ...params,
       hookAddress: params.hookAddress ?? defaultHook,
     });
@@ -334,50 +339,66 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   /** @internal */
-  async internalSetBudget(params: SetBudgetParams): Promise<string | string[]> {
-    const prepared = await this.client.setBudget({
+  async internalSetBudget(
+    chainId: number,
+    params: SetBudgetParams
+  ): Promise<string | string[]> {
+    const prepared = await this.client.setBudget(chainId, {
       jobId: params.jobId,
       amount: params.amount.rawAmount,
       optParams: params.optParams ?? "0x",
     });
-    return this.client.submitPrepared([prepared]);
+    return this.client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
-  async internalFund(params: FundJobParams): Promise<string | string[]> {
-    const approvePrepared = await this.client.approveAllowance({
+  async internalFund(
+    chainId: number,
+    params: FundJobParams
+  ): Promise<string | string[]> {
+    const approvePrepared = await this.client.approveAllowance(chainId, {
       tokenAddress: params.amount.address,
-      spenderAddress: this.client.getContractAddress(),
+      spenderAddress: this.client.getContractAddress(chainId),
       amount: params.amount.rawAmount,
     });
 
-    const fundPrepared = await this.client.fund({
+    const fundPrepared = await this.client.fund(chainId, {
       jobId: params.jobId,
     });
 
-    return this.client.submitPrepared([approvePrepared, fundPrepared]);
+    return this.client.submitPrepared(chainId, [approvePrepared, fundPrepared]);
   }
 
   /** @internal */
-  async internalSubmit(params: SubmitParams): Promise<string | string[]> {
-    const prepared = await this.client.submit(params);
-    return this.client.submitPrepared([prepared]);
+  async internalSubmit(
+    chainId: number,
+    params: SubmitParams
+  ): Promise<string | string[]> {
+    const prepared = await this.client.submit(chainId, params);
+    return this.client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
-  async internalComplete(params: CompleteParams): Promise<string | string[]> {
-    const prepared = await this.client.complete(params);
-    return this.client.submitPrepared([prepared]);
+  async internalComplete(
+    chainId: number,
+    params: CompleteParams
+  ): Promise<string | string[]> {
+    const prepared = await this.client.complete(chainId, params);
+    return this.client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
-  async internalReject(params: RejectParams): Promise<string | string[]> {
-    const prepared = await this.client.reject(params);
-    return this.client.submitPrepared([prepared]);
+  async internalReject(
+    chainId: number,
+    params: RejectParams
+  ): Promise<string | string[]> {
+    const prepared = await this.client.reject(chainId, params);
+    return this.client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
   async internalSetFundTransferBudget(
+    chainId: number,
     params: SetFundTransferBudgetParams
   ): Promise<string | string[]> {
     const optParams = encodeAbiParameters(
@@ -397,7 +418,7 @@ export class AcpAgent {
       ]
     );
 
-    return this.internalSetBudget({
+    return this.internalSetBudget(chainId, {
       jobId: params.jobId,
       amount: params.amount,
       optParams,
@@ -406,11 +427,12 @@ export class AcpAgent {
 
   /** @internal */
   async internalFundWithTransfer(
+    chainId: number,
     params: FundWithTransferParams
   ): Promise<string | string[]> {
-    const approveAcp = await this.client.approveAllowance({
+    const approveAcp = await this.client.approveAllowance(chainId, {
       tokenAddress: params.amount.address,
-      spenderAddress: this.client.getContractAddress(),
+      spenderAddress: this.client.getContractAddress(chainId),
       amount: params.amount.rawAmount,
     });
 
@@ -418,10 +440,10 @@ export class AcpAgent {
       params.hookAddress ??
       getAddressForChain(
         FUND_TRANSFER_HOOK_ADDRESSES,
-        this.getChainId(),
+        chainId,
         "FundTransferHook"
       );
-    const approveHook = await this.client.approveAllowance({
+    const approveHook = await this.client.approveAllowance(chainId, {
       tokenAddress: params.transferAmount.address,
       spenderAddress: hookAddr,
       amount: params.transferAmount.rawAmount,
@@ -432,26 +454,31 @@ export class AcpAgent {
       [params.targetIntentId]
     );
 
-    const fundPrepared = await this.client.fund({
+    const fundPrepared = await this.client.fund(chainId, {
       jobId: params.jobId,
       optParams,
     });
 
-    return this.client.submitPrepared([approveAcp, approveHook, fundPrepared]);
+    return this.client.submitPrepared(chainId, [
+      approveAcp,
+      approveHook,
+      fundPrepared,
+    ]);
   }
 
   /** @internal */
   async internalSubmitWithTransfer(
+    chainId: number,
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
     const hookAddr =
       params.hookAddress ??
       getAddressForChain(
         FUND_TRANSFER_HOOK_ADDRESSES,
-        this.getChainId(),
+        chainId,
         "FundTransferHook"
       );
-    const approvePrepared = await this.client.approveAllowance({
+    const approvePrepared = await this.client.approveAllowance(chainId, {
       tokenAddress: params.transferAmount.address,
       spenderAddress: hookAddr,
       amount: params.transferAmount.rawAmount,
@@ -468,12 +495,15 @@ export class AcpAgent {
       ]
     );
 
-    const submitPrepared = await this.client.submit({
+    const submitPrepared = await this.client.submit(chainId, {
       jobId: params.jobId,
       deliverable: params.deliverable,
       optParams,
     });
 
-    return this.client.submitPrepared([approvePrepared, submitPrepared]);
+    return this.client.submitPrepared(chainId, [
+      approvePrepared,
+      submitPrepared,
+    ]);
   }
 }

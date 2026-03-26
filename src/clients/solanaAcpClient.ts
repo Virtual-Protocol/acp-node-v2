@@ -1,5 +1,4 @@
 import { BaseAcpClient } from "./baseAcpClient";
-import type { NetworkContext } from "../core/chains";
 import type {
   ApproveAllowanceParams,
   CapabilityFlags,
@@ -22,26 +21,18 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
 
   private constructor(
-    contractAddress: string,
-    provider: ISolanaProviderAdapter,
-    networkContext: Extract<NetworkContext, { family: "solana" }>
+    contractAddresses: Record<number, string>,
+    provider: ISolanaProviderAdapter
   ) {
-    super(contractAddress, networkContext);
+    super(contractAddresses);
     this.provider = provider;
   }
 
   static async create(input: {
-    contractAddress: string;
+    contractAddresses: Record<number, string>;
     provider: ISolanaProviderAdapter;
   }): Promise<SolanaAcpClient> {
-    const context = await input.provider.getNetworkContext();
-    if (context.family !== "solana") {
-      throw new Error(
-        `SolanaAcpClient requires Solana context, received "${context.family}".`
-      );
-    }
-
-    return new SolanaAcpClient(input.contractAddress, input.provider, context);
+    return new SolanaAcpClient(input.contractAddresses, input.provider);
   }
 
   override async getAddress(): Promise<string> {
@@ -62,6 +53,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async submitPrepared(
+    _chainId: number,
     prepared: PreparedTxInput
   ): Promise<string | string[]> {
     const instructions: SolanaInstructionLike[] = [];
@@ -78,9 +70,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return this.execute(instructions);
   }
 
-  override async createJob(params: CreateJobParams): Promise<PreparedSolanaTx> {
+  override async createJob(
+    chainId: number,
+    params: CreateJobParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("createJob", {
+      chainId,
+      this.makeIx(chainId, "createJob", {
         providerAddress: params.providerAddress,
         evaluatorAddress: params.evaluatorAddress,
         expiredAt: params.expiredAt,
@@ -90,9 +86,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
-  override async setBudget(params: SetBudgetParams): Promise<PreparedSolanaTx> {
+  override async setBudget(
+    chainId: number,
+    params: SetBudgetParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("setBudget", {
+      chainId,
+      this.makeIx(chainId, "setBudget", {
         jobId: params.jobId,
         amount: params.amount.toString(),
       })
@@ -100,6 +100,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async approveAllowance(
+    _chainId: number,
     _params: ApproveAllowanceParams
   ): Promise<PreparedSolanaTx> {
     throw new Error(
@@ -107,42 +108,60 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
-  override async fund(params: FundParams): Promise<PreparedSolanaTx> {
+  override async fund(
+    chainId: number,
+    params: FundParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("fund", {
+      chainId,
+      this.makeIx(chainId, "fund", {
         jobId: params.jobId,
       })
     );
   }
 
-  override async submit(params: SubmitParams): Promise<PreparedSolanaTx> {
+  override async submit(
+    chainId: number,
+    params: SubmitParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("submit", {
+      chainId,
+      this.makeIx(chainId, "submit", {
         jobId: params.jobId,
         deliverable: params.deliverable,
       })
     );
   }
 
-  override async complete(params: CompleteParams): Promise<PreparedSolanaTx> {
+  override async complete(
+    chainId: number,
+    params: CompleteParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("complete", {
+      chainId,
+      this.makeIx(chainId, "complete", {
         jobId: params.jobId,
         reason: params.reason,
       })
     );
   }
 
-  override async reject(params: RejectParams): Promise<PreparedSolanaTx> {
+  override async reject(
+    chainId: number,
+    params: RejectParams
+  ): Promise<PreparedSolanaTx> {
     return this.wrap(
-      this.makeIx("reject", {
+      chainId,
+      this.makeIx(chainId, "reject", {
         jobId: params.jobId,
         reason: params.reason,
       })
     );
   }
 
-  override async getJobIdFromTxHash(): Promise<bigint | null> {
+  override async getJobIdFromTxHash(
+    _chainId: number
+  ): Promise<bigint | null> {
     throw new Error(
       "getJobIdFromTxHash is not implemented for SolanaAcpClient."
     );
@@ -155,25 +174,32 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     throw new Error("getJob is not implemented for SolanaAcpClient.");
   }
 
-  override async getTokenDecimals(_tokenAddress: string): Promise<number> {
+  override async getTokenDecimals(
+    _chainId: number,
+    _tokenAddress: string
+  ): Promise<number> {
     throw new Error(
       "getTokenDecimals is only supported on EVM. Use Erc20Token.create with explicit decimals for Solana."
     );
   }
 
   private makeIx(
+    chainId: number,
     method: string,
     payload: Record<string, unknown>
   ): SolanaInstructionLike {
     return {
-      programId: this.contractAddress,
+      programId: this.getContractAddress(chainId),
       keys: [],
       data: JSON.stringify({ method, payload }),
     };
   }
 
-  private wrap(instruction: SolanaInstructionLike): PreparedSolanaTx {
-    const context = this.getNetworkContext();
+  private async wrap(
+    chainId: number,
+    instruction: SolanaInstructionLike
+  ): Promise<PreparedSolanaTx> {
+    const context = await this.provider.getNetworkContext(chainId);
     return {
       tx: [instruction],
       chain: "solana",

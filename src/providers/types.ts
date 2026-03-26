@@ -11,7 +11,8 @@ export type SolanaInstructionLike = {
 export interface IProviderAdapter {
   readonly providerName: string;
   getAddress(): Promise<string>;
-  getNetworkContext(): Promise<NetworkContext>;
+  getSupportedChainIds(): Promise<number[]>;
+  getNetworkContext(chainId: number): Promise<NetworkContext>;
 }
 
 export type ReadContractParams = {
@@ -30,13 +31,15 @@ export type GetLogsParams = {
 
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
-  getChainId(): Promise<number>;
-  sendCalls(calls: Call[]): Promise<Address | Address[]>;
-  getTransactionReceipt(hash: Address): Promise<TransactionReceipt>;
-  readContract(params: ReadContractParams): Promise<unknown>;
-  getLogs(params: GetLogsParams): Promise<Log[]>;
-  getBlockNumber(): Promise<bigint>;
-  signMessage(message: string): Promise<string>;
+  sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
+  getTransactionReceipt(
+    chainId: number,
+    hash: Address
+  ): Promise<TransactionReceipt>;
+  readContract(chainId: number, params: ReadContractParams): Promise<unknown>;
+  getLogs(chainId: number, params: GetLogsParams): Promise<Log[]>;
+  getBlockNumber(chainId: number): Promise<bigint>;
+  signMessage(chainId: number, message: string): Promise<string>;
 }
 
 export interface ISolanaProviderAdapter extends IProviderAdapter {

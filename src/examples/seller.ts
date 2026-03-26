@@ -1,28 +1,19 @@
 import { AcpAgent } from "../acpAgent";
 import { Erc20Token } from "../core/erc20Token";
-import {
-  ACP_CONTRACT_ADDRESSES,
-  getAddressForChain,
-} from "../core/constants";
+import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import type { JobSession, JobRoomEntry } from "../index";
 
-const chain = baseSepolia;
-
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
-    contractAddress: getAddressForChain(
-      ACP_CONTRACT_ADDRESSES,
-      chain.id,
-      "AcpContract"
-    ),
+    contractAddresses: ACP_CONTRACT_ADDRESSES,
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
       privateKey: "0xSellerPrivateKey",
       entityId: 1,
-      chain,
+      chains: [baseSepolia],
     }),
     transport: new SocketTransport(),
   });

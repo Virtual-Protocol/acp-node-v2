@@ -18,38 +18,43 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
     throw new Error("getAddress() not implemented. Override in subclass.");
   }
 
-  async getChainId(): Promise<number> {
-    throw new Error("getChainId() not implemented. Override in subclass.");
+  async getSupportedChainIds(): Promise<number[]> {
+    throw new Error("getSupportedChainIds() not implemented. Override in subclass.");
   }
 
-  async getNetworkContext() {
-    const chainId = await this.getChainId();
+  async getNetworkContext(chainId: number) {
     return createEvmNetworkContext(chainId);
   }
 
-  async sendCalls(_calls: Call[]): Promise<Address | Address[]> {
+  async sendCalls(_chainId: number, _calls: Call[]): Promise<Address | Address[]> {
     throw new Error("sendCalls() not implemented. Override in subclass.");
   }
 
-  async getTransactionReceipt(_hash: Address): Promise<TransactionReceipt> {
+  async getTransactionReceipt(
+    _chainId: number,
+    _hash: Address
+  ): Promise<TransactionReceipt> {
     throw new Error(
       "getTransactionReceipt() not implemented. Override in subclass."
     );
   }
 
-  async readContract(_params: ReadContractParams): Promise<unknown> {
+  async readContract(
+    _chainId: number,
+    _params: ReadContractParams
+  ): Promise<unknown> {
     throw new Error("readContract() not implemented. Override in subclass.");
   }
 
-  async getLogs(_params: GetLogsParams): Promise<Log[]> {
+  async getLogs(_chainId: number, _params: GetLogsParams): Promise<Log[]> {
     throw new Error("getLogs() not implemented. Override in subclass.");
   }
 
-  async getBlockNumber(): Promise<bigint> {
+  async getBlockNumber(_chainId: number): Promise<bigint> {
     throw new Error("getBlockNumber() not implemented. Override in subclass.");
   }
 
-  async signMessage(_message: string): Promise<string> {
+  async signMessage(_chainId: number, _message: string): Promise<string> {
     throw new Error("signMessage() not implemented. Override in subclass.");
   }
 }

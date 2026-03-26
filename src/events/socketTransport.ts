@@ -24,7 +24,10 @@ export class SocketTransport implements AcpTransport {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async connect(ctx: TransportContext, onConnected?: () => void): Promise<void> {
+  async connect(
+    ctx: TransportContext,
+    onConnected?: () => void
+  ): Promise<void> {
     this.ctx = ctx;
     this.token = await this.authenticate();
 
@@ -77,12 +80,11 @@ export class SocketTransport implements AcpTransport {
   private async authenticate(): Promise<string> {
     if (!this.ctx) throw new Error("Transport not connected");
 
-    const networkCtx = this.ctx.client.getNetworkContext();
-    const chainId =
-      networkCtx.family === "evm" ? networkCtx.chainId : undefined;
+    const supportedChains = this.ctx.client.getSupportedChainIds();
+    const chainId = supportedChains[0];
 
     const message = `acp-auth:${Date.now()}`;
-    const signature = await this.ctx.signMessage(message);
+    const signature = await this.ctx.signMessage(chainId!, message);
 
     const res = await fetch(`${this.opts.serverUrl}/auth/agent`, {
       method: "POST",
@@ -108,9 +110,7 @@ export class SocketTransport implements AcpTransport {
     try {
       const parts = this.token.split(".");
       if (!parts[1]) return true;
-      const payload = JSON.parse(
-        Buffer.from(parts[1], "base64url").toString()
-      );
+      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
       return (payload.exp ?? 0) * 1000 - Date.now() < 60_000;
     } catch {
       return true;

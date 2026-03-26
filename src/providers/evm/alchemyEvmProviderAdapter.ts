@@ -1,78 +1,94 @@
 import { LocalAccountSigner, type SmartAccountSigner } from "@aa-sdk/core";
-import { alchemy } from "@account-kit/infra";
+import { alchemy, defineAlchemyChain } from "@account-kit/infra";
 import {
   createModularAccountV2Client,
   ModularAccountV2Client,
 } from "@account-kit/smart-contracts";
 import type { Address, Call, Chain, Hex, Log, TransactionReceipt } from "viem";
-import { createEvmNetworkContext } from "../../core/chains";
+import { createEvmNetworkContext, EVM_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
 } from "../types";
 
-interface AlchemyEvmProviderAdapterParams {
+export interface AlchemyChainConfig {
+  chains?: Chain[];
   walletAddress: Address;
   privateKey: Hex;
   entityId: number;
-  chain: Chain;
 }
 
 export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Alchemy";
   public readonly address: Address;
-  public readonly chainId: number;
-  public readonly client: ModularAccountV2Client;
+  private readonly clients: Map<number, ModularAccountV2Client>;
 
-  constructor(
+  private constructor(
     address: Address,
-    chainId: number,
-    client: ModularAccountV2Client
+    clients: Map<number, ModularAccountV2Client>
   ) {
     this.address = address;
-    this.chainId = chainId;
-    this.client = client;
+    this.clients = clients;
   }
 
   static async create(
-    params: AlchemyEvmProviderAdapterParams
+    params: AlchemyChainConfig
   ): Promise<AlchemyEvmProviderAdapter> {
-    const sessionKeySigner: SmartAccountSigner =
-      LocalAccountSigner.privateKeyToAccountSigner(params.privateKey);
+    const clients = new Map<number, ModularAccountV2Client>();
 
-    const client = await createModularAccountV2Client({
-      chain: params.chain,
-      transport: alchemy({
-        rpcUrl: "https://alchemy-proxy.virtuals.io/api/proxy/rpc",
-      }),
-      signer: sessionKeySigner,
-      policyId: "186aaa4a-5f57-4156-83fb-e456365a8820",
-      accountAddress: params.walletAddress,
-      signerEntity: {
-        entityId: params.entityId,
-        isGlobalValidation: true,
-      },
-    });
+    const { chains = EVM_CHAINS } = params;
 
-    const provider = new AlchemyEvmProviderAdapter(
-      client.account.address,
-      client.chain.id,
-      client
+    const alchemyChains = chains.map((chain) =>
+      defineAlchemyChain({
+        chain: chain,
+        rpcBaseUrl: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${chain.id}`,
+      })
     );
-    return provider;
+
+    for (const chain of alchemyChains) {
+      const signer: SmartAccountSigner =
+        LocalAccountSigner.privateKeyToAccountSigner(params.privateKey);
+
+      const client = await createModularAccountV2Client({
+        chain: chain,
+        transport: alchemy({
+          rpcUrl: "https://alchemy-proxy.virtuals.io/api/proxy/rpc",
+        }),
+        signer,
+        policyId: "186aaa4a-5f57-4156-83fb-e456365a8820",
+        accountAddress: params.walletAddress,
+        signerEntity: {
+          entityId: params.entityId,
+          isGlobalValidation: true,
+        },
+      });
+
+      clients.set(client.chain.id, client);
+    }
+
+    const address = params.walletAddress;
+    return new AlchemyEvmProviderAdapter(address, clients);
+  }
+
+  private getClient(chainId: number): ModularAccountV2Client {
+    const c = this.clients.get(chainId);
+    if (!c)
+      throw new Error(
+        `AlchemyEvmProviderAdapter: no client configured for chainId ${chainId}`
+      );
+    return c;
   }
 
   async getAddress(): Promise<Address> {
     return this.address;
   }
 
-  async getChainId(): Promise<number> {
-    return this.chainId;
+  async getSupportedChainIds(): Promise<number[]> {
+    return Array.from(this.clients.keys());
   }
 
-  async getNetworkContext() {
-    const chainId = await this.getChainId();
+  async getNetworkContext(chainId: number) {
     return createEvmNetworkContext(chainId);
   }
 
@@ -87,8 +103,12 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return BigInt("0x" + hex);
   }
 
-  async sendCalls(_calls: Call[]): Promise<Address | Address[]> {
-    const { hash } = await this.client.sendUserOperation({
+  async sendCalls(
+    chainId: number,
+    _calls: Call[]
+  ): Promise<Address | Address[]> {
+    const client = this.getClient(chainId);
+    const { hash } = await client.sendUserOperation({
       uo: _calls.map((call) => ({
         target: call.to,
         data: call.data ?? "0x",
@@ -99,7 +119,7 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    const receiptHash = await this.client.waitForUserOperationTransaction({
+    const receiptHash = await client.waitForUserOperationTransaction({
       hash,
       tag: "pending",
       retries: {
@@ -112,17 +132,24 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return receiptHash;
   }
 
-  async getTransactionReceipt(hash: Address): Promise<TransactionReceipt> {
-    return this.client.getTransactionReceipt({ hash });
+  async getTransactionReceipt(
+    chainId: number,
+    hash: Address
+  ): Promise<TransactionReceipt> {
+    return this.getClient(chainId).getTransactionReceipt({ hash });
   }
 
-  async readContract(params: ReadContractParams): Promise<unknown> {
-    return this.client.readContract(params);
+  async readContract(
+    chainId: number,
+    params: ReadContractParams
+  ): Promise<unknown> {
+    return this.getClient(chainId).readContract(params);
   }
 
-  async getLogs(params: GetLogsParams): Promise<Log[]> {
-    return this.client.getFilterLogs({
-      filter: await this.client.createEventFilter({
+  async getLogs(chainId: number, params: GetLogsParams): Promise<Log[]> {
+    const client = this.getClient(chainId);
+    return client.getFilterLogs({
+      filter: await client.createEventFilter({
         address: params.address,
         events: params.events as any,
         fromBlock: params.fromBlock,
@@ -131,11 +158,11 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     });
   }
 
-  async getBlockNumber(): Promise<bigint> {
-    return this.client.getBlockNumber();
+  async getBlockNumber(chainId: number): Promise<bigint> {
+    return this.getClient(chainId).getBlockNumber();
   }
 
-  async signMessage(_message: string): Promise<string> {
-    return this.client.signMessage({ message: _message });
+  async signMessage(chainId: number, _message: string): Promise<string> {
+    return this.getClient(chainId).signMessage({ message: _message });
   }
 }

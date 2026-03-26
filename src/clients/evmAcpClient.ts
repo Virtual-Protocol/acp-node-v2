@@ -12,7 +12,6 @@ import {
 
 import { BaseAcpClient } from "./baseAcpClient";
 import { ACP_ABI } from "../core/acpAbi";
-import type { NetworkContext } from "../core/chains";
 import type {
   ApproveAllowanceParams,
   CapabilityFlags,
@@ -20,7 +19,6 @@ import type {
   CreateJobParams,
   FundParams,
   OnChainJob,
-  OperationResult,
   PreparedEvmTx,
   PreparedTxInput,
   RejectParams,
@@ -34,26 +32,18 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
   private readonly provider: IEvmProviderAdapter;
 
   private constructor(
-    contractAddress: Address,
-    provider: IEvmProviderAdapter,
-    networkContext: Extract<NetworkContext, { family: "evm" }>
+    contractAddresses: Record<number, string>,
+    provider: IEvmProviderAdapter
   ) {
-    super(contractAddress, networkContext);
+    super(contractAddresses);
     this.provider = provider;
   }
 
   static async create(input: {
-    contractAddress: Address;
+    contractAddresses: Record<number, string>;
     provider: IEvmProviderAdapter;
   }): Promise<EvmAcpClient> {
-    const context = await input.provider.getNetworkContext();
-    if (context.family !== "evm") {
-      throw new Error(
-        `EvmAcpClient requires EVM context, received "${context.family}".`
-      );
-    }
-
-    return new EvmAcpClient(input.contractAddress, input.provider, context);
+    return new EvmAcpClient(input.contractAddresses, input.provider);
   }
 
   override async getAddress(): Promise<string> {
@@ -71,11 +61,12 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     };
   }
 
-  async execute(calls: Call[]): Promise<Address | Address[]> {
-    return this.provider.sendCalls(calls);
+  async execute(chainId: number, calls: Call[]): Promise<Address | Address[]> {
+    return this.provider.sendCalls(chainId, calls);
   }
 
   override async submitPrepared(
+    chainId: number,
     prepared: PreparedTxInput
   ): Promise<string | string[]> {
     const evmCalls: Call[] = [];
@@ -89,23 +80,30 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       evmCalls.push(...item.tx);
     }
 
-    return this.execute(evmCalls);
+    return this.execute(chainId, evmCalls);
   }
 
-  override async createJob(params: CreateJobParams): Promise<PreparedEvmTx> {
-    const call = this.buildContractCall("createJob", [
+  override async createJob(
+    chainId: number,
+    params: CreateJobParams
+  ): Promise<PreparedEvmTx> {
+    const call = this.buildContractCall(chainId, "createJob", [
       params.providerAddress as Address,
       params.evaluatorAddress as Address,
       BigInt(params.expiredAt),
       params.description,
       (params.hookAddress ?? zeroAddress) as Address,
     ]);
-    return this.wrap(call);
+    return this.wrap(chainId, call);
   }
 
-  override async setBudget(params: SetBudgetParams): Promise<PreparedEvmTx> {
+  override async setBudget(
+    chainId: number,
+    params: SetBudgetParams
+  ): Promise<PreparedEvmTx> {
     return this.wrap(
-      this.buildContractCall("setBudget", [
+      chainId,
+      this.buildContractCall(chainId, "setBudget", [
         BigInt(params.jobId),
         params.amount,
         params.optParams ?? "0x",
@@ -114,6 +112,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
   }
 
   override async approveAllowance(
+    chainId: number,
     params: ApproveAllowanceParams
   ): Promise<PreparedEvmTx> {
     const data = encodeFunctionData({
@@ -122,25 +121,33 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       args: [params.spenderAddress as Address, params.amount],
     });
 
-    return this.wrap({
+    return this.wrap(chainId, {
       to: params.tokenAddress as Address,
       data,
       value: 0n,
     });
   }
 
-  override async fund(params: FundParams): Promise<PreparedEvmTx> {
+  override async fund(
+    chainId: number,
+    params: FundParams
+  ): Promise<PreparedEvmTx> {
     return this.wrap(
-      this.buildContractCall("fund", [
+      chainId,
+      this.buildContractCall(chainId, "fund", [
         BigInt(params.jobId),
         params.optParams ?? "0x",
       ])
     );
   }
 
-  override async submit(params: SubmitParams): Promise<PreparedEvmTx> {
+  override async submit(
+    chainId: number,
+    params: SubmitParams
+  ): Promise<PreparedEvmTx> {
     return this.wrap(
-      this.buildContractCall("submit", [
+      chainId,
+      this.buildContractCall(chainId, "submit", [
         BigInt(params.jobId),
         EvmAcpClient.toBytes32(params.deliverable),
         params.optParams ?? "0x",
@@ -148,9 +155,13 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     );
   }
 
-  override async complete(params: CompleteParams): Promise<PreparedEvmTx> {
+  override async complete(
+    chainId: number,
+    params: CompleteParams
+  ): Promise<PreparedEvmTx> {
     return this.wrap(
-      this.buildContractCall("complete", [
+      chainId,
+      this.buildContractCall(chainId, "complete", [
         BigInt(params.jobId),
         EvmAcpClient.toBytes32(params.reason),
         params.optParams ?? "0x",
@@ -158,9 +169,13 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     );
   }
 
-  override async reject(params: RejectParams): Promise<PreparedEvmTx> {
+  override async reject(
+    chainId: number,
+    params: RejectParams
+  ): Promise<PreparedEvmTx> {
     return this.wrap(
-      this.buildContractCall("reject", [
+      chainId,
+      this.buildContractCall(chainId, "reject", [
         BigInt(params.jobId),
         EvmAcpClient.toBytes32(params.reason),
         params.optParams ?? "0x",
@@ -169,15 +184,17 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
   }
 
   override async getJobIdFromTxHash(
+    chainId: number,
     txHash: string,
     filter?: JobCreatedFilter
   ): Promise<bigint | null> {
     const receipt = await this.provider.getTransactionReceipt(
+      chainId,
       txHash as Address
     );
     return parseJobIdFromReceipt(
       receipt,
-      this.contractAddress as Address,
+      this.getContractAddress(chainId) as Address,
       filter
     );
   }
@@ -186,8 +203,8 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     chainId: number,
     jobId: bigint
   ): Promise<OnChainJob | null> {
-    const result = await this.provider.readContract({
-      address: this.contractAddress as Address,
+    const result = await this.provider.readContract(chainId, {
+      address: this.getContractAddress(chainId) as Address,
       abi: ACP_ABI as readonly unknown[],
       functionName: "getJob",
       args: [jobId],
@@ -217,8 +234,11 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     };
   }
 
-  override async getTokenDecimals(tokenAddress: string): Promise<number> {
-    const result = await this.provider.readContract({
+  override async getTokenDecimals(
+    chainId: number,
+    tokenAddress: string
+  ): Promise<number> {
+    const result = await this.provider.readContract(chainId, {
       address: tokenAddress as Address,
       abi: erc20Abi,
       functionName: "decimals",
@@ -234,6 +254,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
   }
 
   private buildContractCall(
+    chainId: number,
     functionName:
       | "createJob"
       | "setBudget"
@@ -250,14 +271,14 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     });
 
     return {
-      to: this.contractAddress as Address,
+      to: this.getContractAddress(chainId) as Address,
       data,
       value: 0n,
     };
   }
 
-  private wrap(call: Call): PreparedEvmTx {
-    const context = this.getNetworkContext();
+  private async wrap(chainId: number, call: Call): Promise<PreparedEvmTx> {
+    const context = await this.provider.getNetworkContext(chainId);
     return {
       tx: [call],
       chain: "evm",

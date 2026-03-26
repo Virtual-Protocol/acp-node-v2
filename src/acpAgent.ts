@@ -180,8 +180,12 @@ export class AcpAgent {
   // Session management
   // -------------------------------------------------------------------------
 
-  getSession(jobId: string): JobSession | undefined {
-    return this.sessions.get(jobId);
+  private getSessionKey(chainId: number, jobId: string): string {
+    return `${chainId}-${jobId}`;
+  }
+
+  getSession(chainId: number, jobId: string): JobSession | undefined {
+    return this.sessions.get(this.getSessionKey(chainId, jobId));
   }
 
   private getOrCreateSession(
@@ -189,7 +193,7 @@ export class AcpAgent {
     chainId: number,
     initialEntries: JobRoomEntry[] = []
   ): JobSession {
-    let session = this.sessions.get(jobId);
+    let session = this.sessions.get(this.getSessionKey(chainId, jobId));
     if (session) return session;
 
     const roles = this.inferRoles(initialEntries);
@@ -201,7 +205,7 @@ export class AcpAgent {
       roles,
       initialEntries
     );
-    this.sessions.set(jobId, session);
+    this.sessions.set(this.getSessionKey(chainId, jobId), session);
     return session;
   }
 
@@ -252,7 +256,7 @@ export class AcpAgent {
           roles,
           session.entries
         );
-        this.sessions.set(jobId, newSession);
+        this.sessions.set(this.getSessionKey(chainId, jobId), newSession);
         this.fireHandler(newSession, entry);
         return;
       }

@@ -182,6 +182,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
+  override async getTokenSymbol(
+    _chainId: number,
+    _tokenAddress: string
+  ): Promise<string> {
+    throw new Error(
+      "getTokenSymbol is only supported on EVM. Use Erc20Token.create with explicit symbol for Solana."
+    );
+  }
+
   private makeIx(
     chainId: number,
     method: string,

@@ -1,15 +1,17 @@
 import { Address, parseUnits } from "viem";
 import type { AcpClient } from "../clientFactory";
-import { USDC_ADDRESSES, USDC_DECIMALS, getAddressForChain } from "./constants";
+import { USDC_ADDRESSES, USDC_DECIMALS, USDC_SYMBOL, getAddressForChain } from "./constants";
 
 export class AssetToken {
   readonly address: Address;
+  readonly symbol: string;
   readonly decimals: number;
   readonly amount: number;
   readonly rawAmount: bigint;
 
-  constructor(address: Address, decimals: number, amount: number) {
+  constructor(address: Address, symbol: string, decimals: number, amount: number) {
     this.address = address;
+    this.symbol = symbol;
     this.decimals = decimals;
     this.amount = amount;
     this.rawAmount = parseUnits(amount.toString(), decimals);
@@ -17,21 +19,22 @@ export class AssetToken {
 
   static create(
     address: Address,
+    symbol: string,
     decimals: number,
     amount: number
   ): AssetToken {
-    return new AssetToken(address, decimals, amount);
+    return new AssetToken(address, symbol, decimals, amount);
   }
 
   static usdc(amount: number, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
-    return new AssetToken(address, USDC_DECIMALS, amount);
+    return new AssetToken(address, USDC_SYMBOL, USDC_DECIMALS, amount);
   }
 
   static usdcFromRaw(rawAmount: bigint, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
     const dec = Number(rawAmount) / 10 ** USDC_DECIMALS;
-    return new AssetToken(address, USDC_DECIMALS, dec);
+    return new AssetToken(address, USDC_SYMBOL, USDC_DECIMALS, dec);
   }
 
   static async fromOnChain(
@@ -44,8 +47,11 @@ export class AssetToken {
       return AssetToken.usdc(amount, chainId);
     }
 
-    const decimals = await client.getTokenDecimals(chainId, address);
-    return new AssetToken(address, decimals, amount);
+    const [decimals, symbol] = await Promise.all([
+      client.getTokenDecimals(chainId, address),
+      client.getTokenSymbol(chainId, address),
+    ]);
+    return new AssetToken(address, symbol, decimals, amount);
   }
 
   static async fromOnChainRaw(
@@ -58,9 +64,13 @@ export class AssetToken {
       return AssetToken.usdcFromRaw(rawAmount, chainId);
     }
 
-    const decimals = await client.getTokenDecimals(chainId, address);
+    const [decimals, symbol] = await Promise.all([
+      client.getTokenDecimals(chainId, address),
+      client.getTokenSymbol(chainId, address),
+    ]);
     return new AssetToken(
       address,
+      symbol,
       decimals,
       Number(rawAmount) / 10 ** decimals
     );

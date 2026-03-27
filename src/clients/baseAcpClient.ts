@@ -100,4 +100,9 @@ export abstract class BaseAcpClient<TTx> {
     chainId: number,
     tokenAddress: string
   ): Promise<number>;
+
+  abstract getTokenSymbol(
+    chainId: number,
+    tokenAddress: string
+  ): Promise<string>;
 }

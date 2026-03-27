@@ -246,6 +246,18 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     return Number(result);
   }
 
+  override async getTokenSymbol(
+    chainId: number,
+    tokenAddress: string
+  ): Promise<string> {
+    const result = await this.provider.readContract(chainId, {
+      address: tokenAddress as Address,
+      abi: erc20Abi,
+      functionName: "symbol",
+    });
+    return result as string;
+  }
+
   private static toBytes32(value: string): Hex {
     if (value.startsWith("0x") && value.length === 66) return value as Hex;
     const hex = toHex(value);

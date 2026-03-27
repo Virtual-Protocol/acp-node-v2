@@ -75,7 +75,7 @@ async function main(): Promise<void> {
     }
 
     const tools = toAnthropicTools(session.availableTools());
-    const messages = toAnthropicMessages(session.toMessages());
+    const messages = toAnthropicMessages(await session.toMessages());
 
     console.log("messages", messages);
 

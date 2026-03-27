@@ -398,41 +398,101 @@ export class JobSession {
   // Context serialization
   // -------------------------------------------------------------------------
 
-  toContext(): string {
-    return this.entries
-      .map((e) => {
-        if (e.kind === "system") {
-          return `[system]  ${e.event.type} — ${JSON.stringify(e.event)}`;
+  async toContext(): Promise<string> {
+    const lines: string[] = [];
+    for (const e of this.entries) {
+      if (e.kind === "system") {
+        let line = `[system]  ${e.event.type} — ${JSON.stringify(e.event)}`;
+        if (e.event.type === "budget.set" && this._job) {
+          const fundRequest = this._job.getFundRequestIntent();
+          if (fundRequest) {
+            const resolved = await fundRequest.resolveAmount(
+              this.chainId,
+              this.agent.getClient()
+            );
+            if (resolved) {
+              line += ` | fund request: ${resolved.amount} ${resolved.symbol} to ${fundRequest.recipientAddress}`;
+            }
+          }
         }
-        return `[${e.from}]  ${e.content}`;
-      })
-      .join("\n");
+        if (e.event.type === "job.submitted" && this._job) {
+          const fundTransfer = this._job.getFundTransferIntent();
+          if (fundTransfer) {
+            const resolved = await fundTransfer.resolveAmount(
+              this.chainId,
+              this.agent.getClient()
+            );
+            if (resolved) {
+              line += ` | fund transfer: ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress}`;
+            }
+          }
+        }
+        lines.push(line);
+      } else {
+        lines.push(`[${e.from}]  ${e.content}`);
+      }
+    }
+    return lines.join("\n");
   }
 
-  toMessages(): { role: "system" | "user" | "assistant"; content: string }[] {
-    return this.entries.map((e) => {
+  async toMessages(): Promise<
+    { role: "system" | "user" | "assistant"; content: string }[]
+  > {
+    const result: {
+      role: "system" | "user" | "assistant";
+      content: string;
+    }[] = [];
+    for (const e of this.entries) {
       if (e.kind === "system") {
         const event = e.event;
-
         if (event.type === "budget.set") {
-          return {
-            role: "system" as const,
-            content: `The budget for this job is ${
-              AssetToken.usdcFromRaw(BigInt(event.amount), this.chainId).amount
-            } USDC.`,
-          };
+          const budget = AssetToken.usdcFromRaw(
+            BigInt(event.amount),
+            this.chainId
+          ).amount;
+          let content = `The budget for this job is ${budget} USDC.`;
+          if (this._job) {
+            const fundRequest = this._job.getFundRequestIntent();
+            if (fundRequest) {
+              const resolved = await fundRequest.resolveAmount(
+                this.chainId,
+                this.agent.getClient()
+              );
+              if (resolved) {
+                content += ` A fund transfer of ${resolved.amount} ${resolved.symbol} to ${fundRequest.recipientAddress} is requested.`;
+              }
+            }
+          }
+          result.push({ role: "system", content });
+        } else if (event.type === "job.submitted") {
+          let content = `The provider has submitted a deliverable: ${event.deliverable}`;
+          if (this._job) {
+            const fundTransfer = this._job.getFundTransferIntent();
+            if (fundTransfer) {
+              const resolved = await fundTransfer.resolveAmount(
+                this.chainId,
+                this.agent.getClient()
+              );
+              if (resolved) {
+                content += ` A fund transfer of ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress} will be executed on completion.`;
+              }
+            }
+          }
+          result.push({ role: "system", content });
+        } else {
+          result.push({
+            role: "system",
+            content: `[${event.type}] ${JSON.stringify(event)}`,
+          });
         }
-
-        return {
-          role: "system" as const,
-          content: `[${event.type}] ${JSON.stringify(event)}`,
-        };
+      } else {
+        const isOwnMessage = e.from.toLowerCase() === this.agentAddress;
+        result.push({
+          role: isOwnMessage ? "assistant" : "user",
+          content: isOwnMessage ? e.content : `[${e.from}]: ${e.content}`,
+        });
       }
-      const isOwnMessage = e.from.toLowerCase() === this.agentAddress;
-      return {
-        role: isOwnMessage ? ("assistant" as const) : ("user" as const),
-        content: isOwnMessage ? e.content : `[${e.from}]: ${e.content}`,
-      };
-    });
+    }
+    return result;
   }
 }

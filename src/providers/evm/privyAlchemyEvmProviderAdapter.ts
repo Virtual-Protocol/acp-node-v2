@@ -149,7 +149,7 @@ function createRemoteSigner(params: {
         "/wallets/sign-message",
         walletId,
         rpcBody,
-        { walletId, ...encoded },
+        { walletAddress: address, walletId, ...encoded },
         signerPrivateKey,
         serverUrl
       );
@@ -183,7 +183,7 @@ function createRemoteSigner(params: {
         "/wallets/sign-typed-data",
         walletId,
         rpcBody,
-        { walletId, typedData },
+        { walletAddress: address, walletId, typedData },
         signerPrivateKey,
         serverUrl
       );
@@ -221,7 +221,13 @@ function createRemoteSigner(params: {
         "/wallets/sign-authorization",
         walletId,
         rpcBody,
-        { walletId, contract, chainId, ...(nonce != null ? { nonce } : {}) },
+        {
+          walletAddress: address,
+          walletId,
+          contract,
+          chainId,
+          ...(nonce != null ? { nonce } : {}),
+        },
         signerPrivateKey,
         serverUrl
       );

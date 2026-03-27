@@ -124,6 +124,24 @@ export type TransportContext = {
 };
 
 // ---------------------------------------------------------------------------
+// Off-chain job shape (returned by the backend REST API)
+// ---------------------------------------------------------------------------
+
+export type OffChainJob = {
+  chainId: number;
+  onChainJobId: string;
+  jobStatus: string;
+  clientAddress: string;
+  providerAddress: string;
+  evaluatorAddress: string;
+  description: string | null;
+  budget: string | null;
+  expiredAt: string;
+  hookAddress: string | null;
+  deliverable: string | null;
+};
+
+// ---------------------------------------------------------------------------
 // Transport interface
 // ---------------------------------------------------------------------------
 
@@ -140,5 +158,6 @@ export interface AcpTransport {
   ): void;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
   getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
+  getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;
 }
 

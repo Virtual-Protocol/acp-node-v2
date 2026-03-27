@@ -1,5 +1,10 @@
 import { io, type Socket } from "socket.io-client";
-import type { AcpTransport, JobRoomEntry, TransportContext } from "./types";
+import type {
+  AcpTransport,
+  JobRoomEntry,
+  OffChainJob,
+  TransportContext,
+} from "./types";
 import { SOCKET_SERVER_URL } from "../core/constants";
 
 export type SocketTransportOptions = {
@@ -189,5 +194,17 @@ export class SocketTransport implements AcpTransport {
     );
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;
+  }
+
+  async getJob(
+    chainId: number,
+    jobId: string
+  ): Promise<OffChainJob | null> {
+    const res = await this.authedFetch(
+      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}`
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data: OffChainJob | null };
+    return body.data ?? null;
   }
 }

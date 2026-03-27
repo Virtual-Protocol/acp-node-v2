@@ -46,7 +46,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     return new EvmAcpClient(input.contractAddresses, input.provider);
   }
 
-  override async getAddress(): Promise<string> {
+  override async getAddress(): Promise<Address> {
     return this.provider.getAddress();
   }
 

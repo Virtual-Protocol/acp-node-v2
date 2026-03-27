@@ -43,6 +43,7 @@ export type {
   AcpToolParameter,
   AgentRole,
   AcpTransport,
+  OffChainJob,
 } from "./events/types";
 
 // Utilities

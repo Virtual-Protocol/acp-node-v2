@@ -98,6 +98,10 @@ export class AcpAgent {
     return this.client;
   }
 
+  getTransport(): AcpTransport {
+    return this.transport;
+  }
+
   getSupportedChainIds(): number[] {
     return this.client.getSupportedChainIds();
   }
@@ -176,7 +180,12 @@ export class AcpAgent {
         job.chainId,
         job.onChainJobId
       );
-      this.getOrCreateSession(job.onChainJobId, job.chainId, entries);
+      const session = this.getOrCreateSession(
+        job.onChainJobId,
+        job.chainId,
+        entries
+      );
+      this.fireHandler(session, entries[entries.length - 1]!);
     }
   }
 

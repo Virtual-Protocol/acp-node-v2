@@ -32,9 +32,7 @@ export abstract class BaseAcpClient<TTx> {
   getContractAddress(chainId: number): string {
     const addr = this.contractAddresses[chainId];
     if (!addr)
-      throw new Error(
-        `No contract address configured for chainId ${chainId}`
-      );
+      throw new Error(`No contract address configured for chainId ${chainId}`);
     return addr;
   }
 

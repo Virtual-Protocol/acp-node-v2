@@ -166,18 +166,20 @@ export class JobSession {
     this.entries.push(...initialEntries);
   }
 
-  async fetchJob(): Promise<AcpJob | null> {
+  async fetchJob(): Promise<AcpJob> {
     try {
       const data = await this.agent
-        .getClient()
-        .getJob(this.chainId, BigInt(this.jobId));
-      if (data) return new AcpJob(data);
+        .getTransport()
+        .getJob(this.chainId, this.jobId);
+      if (!data) {
+        throw new Error(`Job ${this.jobId} not found on chain ${this.chainId}`);
+      }
+      return AcpJob.fromOffChain(data);
     } catch {
-      console.error(
+      throw new Error(
         `Failed to fetch job ${this.jobId} on chain ${this.chainId}`
       );
     }
-    return null;
   }
 
   // -------------------------------------------------------------------------
@@ -351,6 +353,17 @@ export class JobSession {
     await this.agent.internalSubmit(this.chainId, {
       jobId: BigInt(this.jobId),
       deliverable,
+    });
+  }
+
+  async submitWithTransfer(
+    deliverable: string,
+    transferAmount: AssetToken
+  ): Promise<void> {
+    await this.agent.internalSubmitWithTransfer(this.chainId, {
+      jobId: BigInt(this.jobId),
+      deliverable,
+      transferAmount,
     });
   }
 

@@ -17,6 +17,7 @@ import type {
   SolanaInstructionLike,
 } from "../providers/types";
 
+
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
 
@@ -159,9 +160,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
   }
 
-  override async getJobIdFromTxHash(
-    _chainId: number
-  ): Promise<bigint | null> {
+  override async getJobIdFromTxHash(_chainId: number): Promise<bigint | null> {
     throw new Error(
       "getJobIdFromTxHash is not implemented for SolanaAcpClient."
     );

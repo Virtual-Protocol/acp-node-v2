@@ -172,6 +172,13 @@ export interface AcpTransport {
     content: string,
     contentType?: string
   ): void;
+  postMessage(
+    ctx: TransportContext,
+    chainId: number,
+    jobId: string,
+    content: string,
+    contentType?: string
+  ): Promise<void>;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
   getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
   getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;

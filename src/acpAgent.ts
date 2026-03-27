@@ -126,20 +126,17 @@ export class AcpAgent {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async start(onConnected?: () => void): Promise<void> {
-    if (this.started) {
-      throw new Error("Agent already started. Call stop() first.");
+  private async buildTransportContext(): Promise<TransportContext> {
+    if (!this.address) {
+      this.address = await this.client.getAddress();
     }
-
-    this.started = true;
-    this.address = await this.client.getAddress();
 
     const providerChainIds =
       this.client instanceof EvmAcpClient
         ? await this.client.getProvider().getSupportedChainIds()
         : [];
 
-    const ctx: TransportContext = {
+    return {
       agentAddress: this.address,
       contractAddresses: this.client.getContractAddresses(),
       providerSupportedChainIds: providerChainIds,
@@ -151,6 +148,15 @@ export class AcpAgent {
         throw new Error("signMessage is not supported for this provider");
       },
     };
+  }
+
+  async start(onConnected?: () => void): Promise<void> {
+    if (this.started) {
+      throw new Error("Agent already started. Call stop() first.");
+    }
+
+    this.started = true;
+    const ctx = await this.buildTransportContext();
 
     this.transport.onEntry((entry) =>
       this.dispatch(entry).catch(console.error)
@@ -311,6 +317,20 @@ export class AcpAgent {
   ): void {
     if (!this.started) throw new Error("Agent not started");
     this.transport.sendMessage(chainId, jobId, content, contentType);
+  }
+
+  /**
+   * One-shot message send via REST. Does not require start()/stop().
+   * Authenticates, POSTs the message, and returns.
+   */
+  async sendMessage(
+    chainId: number,
+    jobId: string,
+    content: string,
+    contentType: string = "text"
+  ): Promise<void> {
+    const ctx = await this.buildTransportContext();
+    await this.transport.postMessage(ctx, chainId, jobId, content, contentType);
   }
 
   // -------------------------------------------------------------------------

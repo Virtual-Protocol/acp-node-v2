@@ -131,16 +131,23 @@ export class SocketTransport implements AcpTransport {
   // REST helpers
   // -------------------------------------------------------------------------
 
-  private async authedFetch(url: string): Promise<Response> {
-    let res = await fetch(url, {
-      headers: { Authorization: `Bearer ${this.token}` },
-    });
+  private async authedFetch(
+    url: string,
+    init?: RequestInit
+  ): Promise<Response> {
+    const doFetch = () =>
+      fetch(url, {
+        ...init,
+        headers: {
+          ...init?.headers,
+          Authorization: `Bearer ${this.token}`,
+        },
+      });
 
+    let res = await doFetch();
     if (res.status === 401) {
       this.token = await this.authenticate();
-      res = await fetch(url, {
-        headers: { Authorization: `Bearer ${this.token}` },
-      });
+      res = await doFetch();
     }
 
     return res;
@@ -171,6 +178,36 @@ export class SocketTransport implements AcpTransport {
       content,
       contentType,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // One-shot REST messaging (no socket connection needed)
+  // -------------------------------------------------------------------------
+
+  async postMessage(
+    ctx: TransportContext,
+    chainId: number,
+    jobId: string,
+    content: string,
+    contentType: string = "text"
+  ): Promise<void> {
+    if (!this.token) {
+      this.ctx = ctx;
+      this.token = await this.authenticate();
+    }
+
+    const res = await this.authedFetch(
+      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/message`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, contentType }),
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error(`postMessage failed: ${res.status} ${res.statusText}`);
+    }
   }
 
   // -------------------------------------------------------------------------

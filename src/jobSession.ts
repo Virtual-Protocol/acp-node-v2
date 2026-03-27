@@ -415,15 +415,22 @@ export class JobSession {
             }
           }
         }
-        if (e.event.type === "job.submitted" && this._job) {
-          const fundTransfer = this._job.getFundTransferIntent();
-          if (fundTransfer) {
-            const resolved = await fundTransfer.resolveAmount(
-              this.chainId,
-              this.agent.getClient()
-            );
-            if (resolved) {
-              line += ` | fund transfer: ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress}`;
+        if (e.event.type === "job.submitted") {
+          const deliverable =
+            this._job?.deliverable ?? (e.event as any).deliverable;
+          if (deliverable) {
+            line += ` | deliverable: ${deliverable}`;
+          }
+          if (this._job) {
+            const fundTransfer = this._job.getFundTransferIntent();
+            if (fundTransfer) {
+              const resolved = await fundTransfer.resolveAmount(
+                this.chainId,
+                this.agent.getClient()
+              );
+              if (resolved) {
+                line += ` | fund transfer: ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress}`;
+              }
             }
           }
         }

@@ -62,8 +62,9 @@ export class AcpJob {
   readonly status: number;
   readonly hookAddress: string;
   readonly intents: AcpIntent[];
+  readonly deliverable: string | null;
 
-  constructor(chainId: number, data: OnChainJob, intents: AcpIntent[] = []) {
+  constructor(chainId: number, data: OnChainJob, intents: AcpIntent[] = [], deliverable: string | null = null) {
     this.chainId = chainId;
     this.id = data.id;
     this.clientAddress = data.client;
@@ -75,6 +76,7 @@ export class AcpJob {
     this.status = data.status;
     this.hookAddress = data.hook;
     this.intents = intents;
+    this.deliverable = deliverable;
   }
 
   getFundRequestIntent(): AcpIntent | null {
@@ -106,7 +108,8 @@ export class AcpJob {
         status: STATUS_MAP[data.jobStatus] ?? 0,
         hook: data.hookAddress ?? ZERO_ADDRESS,
       },
-      intents
+      intents,
+      data.deliverable ?? null
     );
   }
 }

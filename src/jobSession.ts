@@ -416,8 +416,7 @@ export class JobSession {
           }
         }
         if (e.event.type === "job.submitted") {
-          const deliverable =
-            this._job?.deliverable ?? (e.event as any).deliverable;
+          const deliverable = this._job?.deliverable;
           if (deliverable) {
             line += ` | deliverable: ${deliverable}`;
           }
@@ -472,7 +471,7 @@ export class JobSession {
           }
           result.push({ role: "system", content });
         } else if (event.type === "job.submitted") {
-          let content = `The provider has submitted a deliverable: ${event.deliverable}`;
+          let content = `The provider has submitted a deliverable: ${this._job?.deliverable ?? "(pending)"}`;
           if (this._job) {
             const fundTransfer = this._job.getFundTransferIntent();
             if (fundTransfer) {

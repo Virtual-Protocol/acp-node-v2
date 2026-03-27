@@ -1,3 +1,4 @@
+import { keccak256, toHex } from "viem";
 import { BaseAcpClient } from "./baseAcpClient";
 import type {
   ApproveAllowanceParams,
@@ -129,7 +130,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       chainId,
       this.makeIx(chainId, "submit", {
         jobId: params.jobId,
-        deliverable: params.deliverable,
+        deliverable: keccak256(toHex(params.deliverable)),
       })
     );
   }

@@ -425,6 +425,11 @@ export class AcpAgent {
     chainId: number,
     params: SubmitParams
   ): Promise<string | string[]> {
+    await this.transport.postDeliverable(
+      chainId,
+      params.jobId.toString(),
+      params.deliverable
+    );
     const prepared = await this.client.submit(chainId, params);
     return this.client.submitPrepared(chainId, [prepared]);
   }
@@ -527,6 +532,12 @@ export class AcpAgent {
     chainId: number,
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
+    await this.transport.postDeliverable(
+      chainId,
+      params.jobId.toString(),
+      params.deliverable
+    );
+
     const hookAddr =
       params.hookAddress ??
       getAddressForChain(

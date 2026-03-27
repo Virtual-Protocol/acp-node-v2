@@ -31,7 +31,7 @@ export type JobSubmittedEvent = {
   type: "job.submitted";
   jobId: string;
   provider: string;
-  deliverable: string;
+  deliverableHash: string;
 };
 
 export type JobCompletedEvent = {
@@ -178,6 +178,11 @@ export interface AcpTransport {
     jobId: string,
     content: string,
     contentType?: string
+  ): Promise<void>;
+  postDeliverable(
+    chainId: number,
+    jobId: string,
+    deliverable: string
   ): Promise<void>;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
   getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;

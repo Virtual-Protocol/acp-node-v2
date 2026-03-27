@@ -210,6 +210,27 @@ export class SocketTransport implements AcpTransport {
     }
   }
 
+  async postDeliverable(
+    chainId: number,
+    jobId: string,
+    deliverable: string
+  ): Promise<void> {
+    const res = await this.authedFetch(
+      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/deliverable`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deliverable }),
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error(
+        `postDeliverable failed: ${res.status} ${res.statusText}`
+      );
+    }
+  }
+
   // -------------------------------------------------------------------------
   // REST queries
   // -------------------------------------------------------------------------

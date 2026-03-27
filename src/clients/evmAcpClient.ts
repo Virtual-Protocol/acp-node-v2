@@ -150,7 +150,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       chainId,
       this.buildContractCall(chainId, "submit", [
         BigInt(params.jobId),
-        EvmAcpClient.toBytes32(params.deliverable),
+        keccak256(toHex(params.deliverable)),
         params.optParams ?? "0x",
       ])
     );

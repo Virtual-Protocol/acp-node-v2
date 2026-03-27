@@ -44,6 +44,7 @@ export type {
   AgentRole,
   AcpTransport,
   OffChainJob,
+  OffChainIntent,
 } from "./events/types";
 
 // Utilities

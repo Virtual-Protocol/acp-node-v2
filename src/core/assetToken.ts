@@ -40,7 +40,29 @@ export class AssetToken {
     chainId: number,
     client: AcpClient
   ): Promise<AssetToken> {
+    if (address === USDC_ADDRESSES[chainId]) {
+      return AssetToken.usdc(amount, chainId);
+    }
+
     const decimals = await client.getTokenDecimals(chainId, address);
     return new AssetToken(address, decimals, amount);
+  }
+
+  static async fromOnChainRaw(
+    address: Address,
+    rawAmount: bigint,
+    chainId: number,
+    client: AcpClient
+  ): Promise<AssetToken> {
+    if (address === USDC_ADDRESSES[chainId]) {
+      return AssetToken.usdcFromRaw(rawAmount, chainId);
+    }
+
+    const decimals = await client.getTokenDecimals(chainId, address);
+    return new AssetToken(
+      address,
+      decimals,
+      Number(rawAmount) / 10 ** decimals
+    );
   }
 }

@@ -124,6 +124,21 @@ export type TransportContext = {
 };
 
 // ---------------------------------------------------------------------------
+// Off-chain intent shape (returned by the backend REST API)
+// ---------------------------------------------------------------------------
+
+export type OffChainIntent = {
+  intentId: string;
+  actor: string;
+  isEscrow: boolean;
+  isSigned: boolean;
+  fromAddress: string;
+  recipientAddress: string;
+  amount: string | null;
+  tokenAddress: string | null;
+};
+
+// ---------------------------------------------------------------------------
 // Off-chain job shape (returned by the backend REST API)
 // ---------------------------------------------------------------------------
 
@@ -139,6 +154,7 @@ export type OffChainJob = {
   expiredAt: string;
   hookAddress: string | null;
   deliverable: string | null;
+  intents?: OffChainIntent[];
 };
 
 // ---------------------------------------------------------------------------

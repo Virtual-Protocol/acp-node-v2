@@ -312,12 +312,20 @@ export class AcpAgent {
   // Token helpers
   // -------------------------------------------------------------------------
 
-  async resolveToken(
+  async resolveAssetToken(
     address: Address,
     amount: number,
     chainId: number
   ): Promise<AssetToken> {
     return AssetToken.fromOnChain(address, amount, chainId, this.client);
+  }
+
+  async resolveRawAssetToken(
+    address: Address,
+    rawAmount: bigint,
+    chainId: number
+  ): Promise<AssetToken> {
+    return AssetToken.fromOnChainRaw(address, rawAmount, chainId, this.client);
   }
 
   // -------------------------------------------------------------------------

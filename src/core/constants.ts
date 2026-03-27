@@ -18,8 +18,8 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0xED00B591DffFcf0A4724eF11e6BCD1f343a5c4b7",
-  [bscTestnet.id]: "0x1CDf636Fdf2050597De5EC858B559d1a724E10a6",
+  [baseSepolia.id]: "0x17DcAC666DB5958d80Ec99A1d372dd9686237c7C",
+  [bscTestnet.id]: "0xfd966805D55a3445092F0285b25658a22b5f0985",
 };
 
 // ---------------------------------------------------------------------------

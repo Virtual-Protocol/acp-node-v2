@@ -152,7 +152,9 @@ export class AcpAgent {
       },
     };
 
-    this.transport.onEntry((entry) => this.dispatch(entry));
+    this.transport.onEntry((entry) =>
+      this.dispatch(entry).catch(console.error)
+    );
     await this.transport.connect(ctx, onConnected);
 
     await this.hydrateSessions();
@@ -185,6 +187,7 @@ export class AcpAgent {
         job.chainId,
         entries
       );
+      await session.fetchJob();
       this.fireHandler(session, entries[entries.length - 1]!);
     }
   }
@@ -246,7 +249,7 @@ export class AcpAgent {
   // Dispatch
   // -------------------------------------------------------------------------
 
-  private dispatch(entry: JobRoomEntry): void {
+  private async dispatch(entry: JobRoomEntry): Promise<void> {
     const jobId = entry.onChainJobId;
     const chainId = entry.chainId;
     const session = this.getOrCreateSession(jobId, chainId, []);
@@ -270,11 +273,13 @@ export class AcpAgent {
           session.entries
         );
         this.sessions.set(this.getSessionKey(chainId, jobId), newSession);
+        await newSession.fetchJob();
         this.fireHandler(newSession, entry);
         return;
       }
     }
 
+    await session.fetchJob();
     this.fireHandler(session, entry);
   }
 

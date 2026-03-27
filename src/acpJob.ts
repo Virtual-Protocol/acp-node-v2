@@ -78,13 +78,13 @@ export class AcpJob {
   }
 
   getFundRequestIntent(): AcpIntent | null {
-    const intent = this.intents.find((i) => i.isEscrow);
+    const intent = this.intents.find((i) => !i.isEscrow);
     if (intent == null) return null;
     return intent;
   }
 
   getFundTransferIntent(): AcpIntent | null {
-    const intent = this.intents.find((i) => !i.isEscrow);
+    const intent = this.intents.find((i) => i.isEscrow);
     if (intent == null) return null;
     return intent;
   }

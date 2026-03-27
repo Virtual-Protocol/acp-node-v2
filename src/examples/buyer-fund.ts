@@ -1,5 +1,4 @@
 import { AcpAgent } from "../acpAgent";
-import { AssetToken } from "../core/assetToken";
 import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia, bscTestnet } from "@account-kit/infra";
 import {
@@ -30,18 +29,12 @@ async function main(): Promise<void> {
   buyer.on("entry", async (session: JobSession, entry: JobRoomEntry) => {
     console.log("entry", entry.kind);
 
-    const job = await session.fetchJob();
-
     if (entry.kind === "system") {
       switch (entry.event.type) {
         case "budget.set":
           console.log(`[buyer] budget set on job ${session.jobId}, funding…`);
           await session.sendMessage("Looks good, funding now.");
-          await session.fundWithTransfer(
-            job.budget,
-            AssetToken.usdc(0.022, session.chainId),
-            SELLER_ADDRESS
-          );
+          await session.fund();
           console.log(`[buyer] funded job ${session.jobId}`);
           break;
 

@@ -146,7 +146,7 @@ export class JobSession {
   readonly roles: AgentRole[];
   readonly entries: JobRoomEntry[] = [];
 
-  // private _job: AcpJob | null = null;
+  private _job: AcpJob | null = null;
   private readonly agent: AcpAgent;
   private readonly agentAddress: string;
 
@@ -166,6 +166,10 @@ export class JobSession {
     this.entries.push(...initialEntries);
   }
 
+  get job(): AcpJob | null {
+    return this._job;
+  }
+
   async fetchJob(): Promise<AcpJob> {
     try {
       const data = await this.agent
@@ -174,7 +178,8 @@ export class JobSession {
       if (!data) {
         throw new Error(`Job ${this.jobId} not found on chain ${this.chainId}`);
       }
-      return AcpJob.fromOffChain(data);
+      this._job = AcpJob.fromOffChain(data);
+      return this._job;
     } catch {
       throw new Error(
         `Failed to fetch job ${this.jobId} on chain ${this.chainId}`
@@ -329,42 +334,50 @@ export class JobSession {
     });
   }
 
-  async fund(amount: AssetToken): Promise<void> {
-    await this.agent.internalFund(this.chainId, {
-      jobId: BigInt(this.jobId),
-      amount,
-    });
+  async fund(amount?: AssetToken): Promise<void> {
+    if (!this._job) throw new Error("Job not loaded");
+    const effectiveAmount = amount ?? this._job.budget;
+    const intent = this._job.getFundRequestIntent();
+
+    if (intent) {
+      const transferAmount = await intent.resolveAmount(
+        this.chainId,
+        this.agent.getClient()
+      );
+
+      if (!transferAmount) throw new Error("Could not resolve intent amount");
+      await this.agent.internalFundWithTransfer(this.chainId, {
+        jobId: BigInt(this.jobId),
+        amount: effectiveAmount,
+        transferAmount,
+        destination: intent.recipientAddress as Address,
+      });
+    } else {
+      await this.agent.internalFund(this.chainId, {
+        jobId: BigInt(this.jobId),
+        amount: effectiveAmount,
+      });
+    }
   }
 
-  async fundWithTransfer(
-    amount: AssetToken,
-    transferAmount: AssetToken,
-    destination: Address
-  ): Promise<void> {
-    await this.agent.internalFundWithTransfer(this.chainId, {
-      jobId: BigInt(this.jobId),
-      amount,
-      transferAmount,
-      destination,
-    });
-  }
-
-  async submit(deliverable: string): Promise<void> {
-    await this.agent.internalSubmit(this.chainId, {
-      jobId: BigInt(this.jobId),
-      deliverable,
-    });
-  }
-
-  async submitWithTransfer(
+  async submit(
     deliverable: string,
-    transferAmount: AssetToken
+    transferAmount?: AssetToken
   ): Promise<void> {
-    await this.agent.internalSubmitWithTransfer(this.chainId, {
-      jobId: BigInt(this.jobId),
-      deliverable,
-      transferAmount,
-    });
+    if (!this._job) throw new Error("Job not loaded");
+
+    if (transferAmount) {
+      await this.agent.internalSubmitWithTransfer(this.chainId, {
+        jobId: BigInt(this.jobId),
+        deliverable,
+        transferAmount,
+      });
+    } else {
+      await this.agent.internalSubmit(this.chainId, {
+        jobId: BigInt(this.jobId),
+        deliverable,
+      });
+    }
   }
 
   async complete(reason: string): Promise<void> {

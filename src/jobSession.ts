@@ -173,7 +173,7 @@ export class JobSession {
   async fetchJob(): Promise<AcpJob> {
     try {
       const data = await this.agent
-        .getTransport()
+        .getApi()
         .getJob(this.chainId, this.jobId);
       if (!data) {
         throw new Error(`Job ${this.jobId} not found on chain ${this.chainId}`);

@@ -40,4 +40,4 @@ export function getAddressForChain(
 export const USDC_DECIMALS = 6;
 export const USDC_SYMBOL = "USDC";
 
-export const SOCKET_SERVER_URL = "https://api-dev.acp.virtuals.io";
+export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";

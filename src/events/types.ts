@@ -158,11 +158,11 @@ export type OffChainJob = {
 };
 
 // ---------------------------------------------------------------------------
-// Transport interface
+// Transport interfaces
 // ---------------------------------------------------------------------------
 
-export interface AcpTransport {
-  connect(ctx: TransportContext, onConnected?: () => void): Promise<void>;
+export interface AcpChatTransport {
+  connect(onConnected?: () => void): Promise<void>;
   disconnect(): Promise<void>;
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;
@@ -173,19 +173,21 @@ export interface AcpTransport {
     contentType?: string
   ): void;
   postMessage(
-    ctx: TransportContext,
     chainId: number,
     jobId: string,
     content: string,
     contentType?: string
   ): Promise<void>;
+  getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
+}
+
+export interface AcpJobApi {
+  getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
+  getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;
   postDeliverable(
     chainId: number,
     jobId: string,
     deliverable: string
   ): Promise<void>;
-  getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
-  getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
-  getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;
 }
 

@@ -1,42 +1,30 @@
 import { io, type Socket } from "socket.io-client";
 import type {
-  AcpTransport,
+  AcpChatTransport,
   JobRoomEntry,
-  OffChainJob,
   TransportContext,
 } from "./types";
-import { SOCKET_SERVER_URL } from "../core/constants";
+import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
 
-export type SocketTransportOptions = {
-  serverUrl?: string;
-};
+export type SocketTransportOptions = AcpHttpClientOptions;
 
-export class SocketTransport implements AcpTransport {
+export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
   private socket: Socket | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
-  private ctx: TransportContext | null = null;
-  private token = "";
-  private readonly opts: Required<SocketTransportOptions>;
 
   constructor(opts: SocketTransportOptions = {}) {
-    this.opts = {
-      serverUrl: opts.serverUrl ?? SOCKET_SERVER_URL,
-    };
+    super(opts);
   }
 
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async connect(
-    ctx: TransportContext,
-    onConnected?: () => void
-  ): Promise<void> {
-    this.ctx = ctx;
-    this.token = await this.authenticate();
+  async connect(onConnected?: () => void): Promise<void> {
+    await this.ensureAuthenticated();
 
-    this.socket = io(this.opts.serverUrl, {
+    this.socket = io(this.serverUrl, {
       auth: async (cb) => {
         try {
           await this.refreshTokenIfNeeded();
@@ -79,81 +67,6 @@ export class SocketTransport implements AcpTransport {
   }
 
   // -------------------------------------------------------------------------
-  // Authentication
-  // -------------------------------------------------------------------------
-
-  private async authenticate(): Promise<string> {
-    if (!this.ctx) throw new Error("Transport not connected");
-
-    const chainId = this.ctx.providerSupportedChainIds[0];
-
-    const message = `acp-auth:${Date.now()}`;
-    const signature = await this.ctx.signMessage(chainId!, message);
-
-    const res = await fetch(`${this.opts.serverUrl}/auth/agent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        walletAddress: this.ctx.agentAddress,
-        signature,
-        message,
-        chainId,
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Agent auth failed: ${res.status} ${res.statusText}`);
-    }
-
-    const body = (await res.json()) as { data: { token: string } };
-    return body.data.token;
-  }
-
-  /** Returns true if the token expiry is within 60 s (or unparseable). */
-  private isTokenExpiring(): boolean {
-    try {
-      const parts = this.token.split(".");
-      if (!parts[1]) return true;
-      const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
-      return (payload.exp ?? 0) * 1000 - Date.now() < 60_000;
-    } catch {
-      return true;
-    }
-  }
-
-  private async refreshTokenIfNeeded(): Promise<void> {
-    if (this.isTokenExpiring()) {
-      this.token = await this.authenticate();
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // REST helpers
-  // -------------------------------------------------------------------------
-
-  private async authedFetch(
-    url: string,
-    init?: RequestInit
-  ): Promise<Response> {
-    const doFetch = () =>
-      fetch(url, {
-        ...init,
-        headers: {
-          ...init?.headers,
-          Authorization: `Bearer ${this.token}`,
-        },
-      });
-
-    let res = await doFetch();
-    if (res.status === 401) {
-      this.token = await this.authenticate();
-      res = await doFetch();
-    }
-
-    return res;
-  }
-
-  // -------------------------------------------------------------------------
   // Entry handler
   // -------------------------------------------------------------------------
 
@@ -185,19 +98,14 @@ export class SocketTransport implements AcpTransport {
   // -------------------------------------------------------------------------
 
   async postMessage(
-    ctx: TransportContext,
     chainId: number,
     jobId: string,
     content: string,
     contentType: string = "text"
   ): Promise<void> {
-    if (!this.token) {
-      this.ctx = ctx;
-      this.token = await this.authenticate();
-    }
-
+    await this.ensureAuthenticated();
     const res = await this.authedFetch(
-      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/message`,
+      `${this.serverUrl}/chats/${chainId}/${jobId}/message`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,59 +118,16 @@ export class SocketTransport implements AcpTransport {
     }
   }
 
-  async postDeliverable(
-    chainId: number,
-    jobId: string,
-    deliverable: string
-  ): Promise<void> {
-    const res = await this.authedFetch(
-      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/deliverable`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deliverable }),
-      }
-    );
-
-    if (!res.ok) {
-      throw new Error(
-        `postDeliverable failed: ${res.status} ${res.statusText}`
-      );
-    }
-  }
-
   // -------------------------------------------------------------------------
-  // REST queries
+  // Chat history
   // -------------------------------------------------------------------------
-
-  async getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]> {
-    const res = await this.authedFetch(`${this.opts.serverUrl}/jobs`);
-    const data = (await res.json()) as {
-      jobs: {
-        chainId: number;
-        onChainJobId: string;
-      }[];
-    };
-    return data.jobs || [];
-  }
 
   async getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]> {
+    await this.ensureAuthenticated();
     const res = await this.authedFetch(
-      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}/history`
+      `${this.serverUrl}/chats/${chainId}/${jobId}/history`
     );
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;
-  }
-
-  async getJob(
-    chainId: number,
-    jobId: string
-  ): Promise<OffChainJob | null> {
-    const res = await this.authedFetch(
-      `${this.opts.serverUrl}/jobs/${chainId}/${jobId}`
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as { data: OffChainJob | null };
-    return body.data ?? null;
   }
 }

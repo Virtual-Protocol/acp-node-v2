@@ -18,8 +18,11 @@ import {
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
 import { SocketTransport } from "./events/socketTransport";
+import { AcpApiClient } from "./events/acpApiClient";
+import { AcpHttpClient } from "./events/acpHttpClient";
 import type {
-  AcpTransport,
+  AcpChatTransport,
+  AcpJobApi,
   AgentRole,
   JobRoomEntry,
   TransportContext,
@@ -35,7 +38,8 @@ export type EntryHandler = (
 // ---------------------------------------------------------------------------
 
 export type CreateAgentInput = CreateAcpClientInput & {
-  transport?: AcpTransport;
+  transport?: AcpChatTransport;
+  api?: AcpJobApi;
 };
 
 export type SetBudgetParams = {
@@ -77,29 +81,45 @@ export type SubmitWithTransferParams = {
 
 export class AcpAgent {
   private readonly client: AcpClient;
-  private readonly transport: AcpTransport;
+  private readonly transport: AcpChatTransport;
+  private readonly api: AcpJobApi;
   private started = false;
   private entryHandler: EntryHandler | null = null;
   private sessions = new Map<string, JobSession>();
   private address: string | null = null;
 
-  constructor(client: AcpClient, transport: AcpTransport) {
+  constructor(client: AcpClient, transport: AcpChatTransport, api: AcpJobApi) {
     this.client = client;
     this.transport = transport;
+    this.api = api;
   }
 
   static async create(input: CreateAgentInput): Promise<AcpAgent> {
-    const { transport = new SocketTransport(), ...clientInput } = input;
+    const {
+      transport = new SocketTransport(),
+      api = new AcpApiClient(),
+      ...clientInput
+    } = input;
     const client = await createAcpClient(clientInput);
-    return new AcpAgent(client, transport);
+    const agent = new AcpAgent(client, transport, api);
+
+    const ctx = await agent.buildTransportContext();
+    if (transport instanceof AcpHttpClient) transport.setContext(ctx);
+    if (api instanceof AcpHttpClient) api.setContext(ctx);
+
+    return agent;
   }
 
   getClient(): AcpClient {
     return this.client;
   }
 
-  getTransport(): AcpTransport {
+  getTransport(): AcpChatTransport {
     return this.transport;
+  }
+
+  getApi(): AcpJobApi {
+    return this.api;
   }
 
   getSupportedChainIds(): number[] {
@@ -156,12 +176,11 @@ export class AcpAgent {
     }
 
     this.started = true;
-    const ctx = await this.buildTransportContext();
 
     this.transport.onEntry((entry) =>
       this.dispatch(entry).catch(console.error)
     );
-    await this.transport.connect(ctx, onConnected);
+    await this.transport.connect(onConnected);
 
     await this.hydrateSessions();
   }
@@ -181,7 +200,7 @@ export class AcpAgent {
   private async hydrateSessions(): Promise<void> {
     if (!this.started) return;
 
-    const jobs = await this.transport.getActiveJobs();
+    const jobs = await this.api.getActiveJobs();
 
     for (const job of jobs) {
       const entries = await this.transport.getHistory(
@@ -329,8 +348,7 @@ export class AcpAgent {
     content: string,
     contentType: string = "text"
   ): Promise<void> {
-    const ctx = await this.buildTransportContext();
-    await this.transport.postMessage(ctx, chainId, jobId, content, contentType);
+    await this.transport.postMessage(chainId, jobId, content, contentType);
   }
 
   // -------------------------------------------------------------------------
@@ -425,7 +443,7 @@ export class AcpAgent {
     chainId: number,
     params: SubmitParams
   ): Promise<string | string[]> {
-    await this.transport.postDeliverable(
+    await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
       params.deliverable
@@ -532,7 +550,7 @@ export class AcpAgent {
     chainId: number,
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
-    await this.transport.postDeliverable(
+    await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
       params.deliverable

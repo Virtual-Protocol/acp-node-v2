@@ -41,3 +41,7 @@ export const USDC_DECIMALS = 6;
 export const USDC_SYMBOL = "USDC";
 
 export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";
+
+export const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
+
+export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";

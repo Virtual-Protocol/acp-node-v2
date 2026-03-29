@@ -1,5 +1,6 @@
 import {
   createPublicClient,
+  http,
   LocalAccount,
   PublicClient,
   toHex,
@@ -30,19 +31,23 @@ import {
 } from "@privy-io/node";
 import {
   createSmartWalletClient,
-  alchemyWalletTransport,
   type SmartWalletClient,
+  alchemyWalletTransport,
 } from "@alchemy/wallet-apis";
+import {
+  ACP_SERVER_URL,
+  ALCHEMY_POLICY_ID,
+  PRIVY_APP_ID,
+} from "../../core/constants";
+import { ProviderAuthClient } from "../providerAuthClient";
 
 export interface PrivyAlchemyChainConfig {
   chains?: Chain[];
   walletAddress: Address;
   walletId: string;
   signerPrivateKey: string;
+  serverUrl?: string;
 }
-
-const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
-const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 
 function encodeSignableMessage(message: SignableMessage): {
   message: string;
@@ -260,28 +265,48 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const chainClients = new Map<number, ChainClients>();
 
     const { chains = EVM_CHAINS } = params;
+    const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
+
+    const signer = createRemoteSigner({
+      address: params.walletAddress,
+      walletId: params.walletId,
+      signerPrivateKey: params.signerPrivateKey,
+      serverUrl,
+    });
+
+    const authClient = new ProviderAuthClient({
+      serverUrl,
+      walletAddress: params.walletAddress,
+      signMessage: (msg) => signer.signMessage({ message: msg }),
+      chainId: chains[0]!.id,
+    });
+
+    const getToken = () => authClient.getAuthToken();
 
     for (const chain of chains) {
-      const signer = createRemoteSigner({
-        address: params.walletAddress,
-        walletId: params.walletId,
-        signerPrivateKey: params.signerPrivateKey,
-      });
-
       const smartWalletClient = createSmartWalletClient({
         transport: alchemyWalletTransport({
-          url: `https://api.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+          url: `${serverUrl}/wallets/alchemy-rpc`,
+          fetchOptions: {
+            headers: {
+              Authorization: `Bearer ${await getToken()}`,
+            },
+          },
         }),
         chain,
         signer,
         account: params.walletAddress,
-        paymaster: { policyId: "186aaa4a-5f57-4156-83fb-e456365a8820" },
+        paymaster: { policyId: ALCHEMY_POLICY_ID },
       });
 
       const publicClient = createPublicClient({
         chain,
-        transport: alchemyWalletTransport({
-          url: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${chain.id}`,
+        transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
+          fetchOptions: {
+            headers: {
+              Authorization: `Bearer ${await getToken()}`,
+            },
+          },
         }),
       });
 

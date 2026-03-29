@@ -81,7 +81,7 @@ function buildSignInput(
 async function serverPost<T>(
   path: string,
   body: unknown,
-  serverUrl: string = "https://api-dev.acp.virtuals.io"
+  serverUrl: string
 ): Promise<T> {
   const base = serverUrl.replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -104,7 +104,7 @@ function signedServerCall<T>(
   rpcBody: Record<string, unknown>,
   payload: Record<string, unknown>,
   signerPrivateKey: string,
-  serverUrl?: string
+  serverUrl: string
 ): Promise<T> {
   const input = buildSignInput(walletId, rpcBody);
   const authorizationSignature = generateAuthorizationSignature({
@@ -133,7 +133,7 @@ function createRemoteSigner(params: {
   address: Hex;
   walletId: string;
   signerPrivateKey: string;
-  serverUrl?: string;
+  serverUrl: string;
 }): LocalAccount<"privy-remote"> {
   const { address, walletId, signerPrivateKey, serverUrl } = params;
 

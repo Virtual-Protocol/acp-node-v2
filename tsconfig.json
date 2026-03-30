@@ -42,5 +42,6 @@
     "skipLibCheck": true,
 
     "esModuleInterop": true,
-  }
+  },
+  "exclude": ["scripts", "dist"]
 }

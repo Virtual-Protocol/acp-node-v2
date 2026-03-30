@@ -1,9 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import type {
-  AcpChatTransport,
-  JobRoomEntry,
-  TransportContext,
-} from "./types";
+import type { AcpChatTransport, JobRoomEntry, TransportContext } from "./types";
 import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
 
 export type SocketTransportOptions = AcpHttpClientOptions;
@@ -25,6 +21,12 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     await this.ensureAuthenticated();
 
     this.socket = io(this.serverUrl, {
+      transports: ["websocket"],
+      extraHeaders: {
+        "x-supported-chains": JSON.stringify(
+          this.ctx?.providerSupportedChainIds ?? []
+        ),
+      },
       auth: async (cb) => {
         try {
           await this.refreshTokenIfNeeded();

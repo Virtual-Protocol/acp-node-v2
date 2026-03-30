@@ -41,7 +41,8 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { findAcpStatePda } from "../pdas";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const INITIALIZE_DISCRIMINATOR = new Uint8Array([
   175, 175, 109, 31, 13, 152, 155, 237,
@@ -52,7 +53,7 @@ export function getInitializeDiscriminatorBytes() {
 }
 
 export type InitializeInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountProgramData extends string | AccountMeta<string> = string,
@@ -156,8 +157,7 @@ export async function getInitializeInstructionAsync<
   TAccountProgramData extends string,
   TAccountPaymentToken extends string,
   TAccountSystemProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: InitializeAsyncInput<
     TAccountAuthority,
@@ -179,7 +179,7 @@ export async function getInitializeInstructionAsync<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -199,14 +199,7 @@ export async function getInitializeInstructionAsync<
 
   // Resolve default values.
   if (!accounts.acpState.value) {
-    accounts.acpState.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([97, 99, 112, 95, 115, 116, 97, 116, 101]),
-        ),
-      ],
-    });
+    accounts.acpState.value = await findAcpStatePda();
   }
   if (!accounts.programData.value) {
     accounts.programData.value = await getProgramDerivedAddress({
@@ -275,8 +268,7 @@ export function getInitializeInstruction<
   TAccountProgramData extends string,
   TAccountPaymentToken extends string,
   TAccountSystemProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: InitializeInput<
     TAccountAuthority,
@@ -296,7 +288,7 @@ export function getInitializeInstruction<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -344,7 +336,7 @@ export function getInitializeInstruction<
 }
 
 export type ParsedInitializeInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

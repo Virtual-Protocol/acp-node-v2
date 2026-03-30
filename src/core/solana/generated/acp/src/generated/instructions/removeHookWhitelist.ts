@@ -14,7 +14,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -40,7 +39,8 @@ import {
   getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { findAcpStatePda, findHookWhitelistPda } from "../pdas";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const REMOVE_HOOK_WHITELIST_DISCRIMINATOR = new Uint8Array([
   110, 220, 154, 1, 141, 191, 150, 74,
@@ -53,7 +53,7 @@ export function getRemoveHookWhitelistDiscriminatorBytes() {
 }
 
 export type RemoveHookWhitelistInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
@@ -128,8 +128,7 @@ export async function getRemoveHookWhitelistInstructionAsync<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountHookWhitelist extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: RemoveHookWhitelistAsyncInput<
     TAccountAuthority,
@@ -147,7 +146,7 @@ export async function getRemoveHookWhitelistInstructionAsync<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -165,28 +164,11 @@ export async function getRemoveHookWhitelistInstructionAsync<
 
   // Resolve default values.
   if (!accounts.acpState.value) {
-    accounts.acpState.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([97, 99, 112, 95, 115, 116, 97, 116, 101]),
-        ),
-      ],
-    });
+    accounts.acpState.value = await findAcpStatePda();
   }
   if (!accounts.hookWhitelist.value) {
-    accounts.hookWhitelist.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            104, 111, 111, 107, 95, 119, 104, 105, 116, 101, 108, 105, 115, 116,
-          ]),
-        ),
-        getAddressEncoder().encode(
-          getNonNullResolvedInstructionInput("hook", args.hook),
-        ),
-      ],
+    accounts.hookWhitelist.value = await findHookWhitelistPda({
+      hook: getNonNullResolvedInstructionInput("hook", args.hook),
     });
   }
 
@@ -224,8 +206,7 @@ export function getRemoveHookWhitelistInstruction<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountHookWhitelist extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: RemoveHookWhitelistInput<
     TAccountAuthority,
@@ -241,7 +222,7 @@ export function getRemoveHookWhitelistInstruction<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -277,7 +258,7 @@ export function getRemoveHookWhitelistInstruction<
 }
 
 export type ParsedRemoveHookWhitelistInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;

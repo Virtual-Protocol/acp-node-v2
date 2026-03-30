@@ -25,6 +25,7 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/** Emitted when a job is rejected by an evaluator, client, or provider. */
 export type JobRejected = {
   jobId: bigint;
   rejector: Address;

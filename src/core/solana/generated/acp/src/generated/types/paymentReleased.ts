@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the net payment is transferred to the provider on completion. */
 export type PaymentReleased = {
   jobId: bigint;
   provider: Address;

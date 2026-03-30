@@ -17,6 +17,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the evaluator fee rate is updated. */
 export type EvaluatorFeeUpdated = { feeBp: bigint };
 
 export type EvaluatorFeeUpdatedArgs = { feeBp: number | bigint };

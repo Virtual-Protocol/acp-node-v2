@@ -18,6 +18,8 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
+  getU64Decoder,
+  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -40,7 +42,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const FUND_DISCRIMINATOR = new Uint8Array([
   218, 188, 111, 221, 152, 113, 174, 7,
@@ -51,7 +53,7 @@ export function getFundDiscriminatorBytes() {
 }
 
 export type FundInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountClient extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
   TAccountClientTokenAccount extends string | AccountMeta<string> = string,
@@ -63,6 +65,8 @@ export type FundInstruction<
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TAccountHookProgram extends string | AccountMeta<string> = string,
+  TAccountHookWhitelist extends string | AccountMeta<string> = string,
+  TAccountHookDelegate extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -94,21 +98,32 @@ export type FundInstruction<
       TAccountHookProgram extends string
         ? ReadonlyAccount<TAccountHookProgram>
         : TAccountHookProgram,
+      TAccountHookWhitelist extends string
+        ? ReadonlyAccount<TAccountHookWhitelist>
+        : TAccountHookWhitelist,
+      TAccountHookDelegate extends string
+        ? ReadonlyAccount<TAccountHookDelegate>
+        : TAccountHookDelegate,
       ...TRemainingAccounts,
     ]
   >;
 
 export type FundInstructionData = {
   discriminator: ReadonlyUint8Array;
+  expectedBudget: bigint;
   optParams: ReadonlyUint8Array;
 };
 
-export type FundInstructionDataArgs = { optParams: ReadonlyUint8Array };
+export type FundInstructionDataArgs = {
+  expectedBudget: number | bigint;
+  optParams: ReadonlyUint8Array;
+};
 
 export function getFundInstructionDataEncoder(): Encoder<FundInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["expectedBudget", getU64Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: FUND_DISCRIMINATOR }),
@@ -118,6 +133,7 @@ export function getFundInstructionDataEncoder(): Encoder<FundInstructionDataArgs
 export function getFundInstructionDataDecoder(): Decoder<FundInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["expectedBudget", getU64Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
@@ -142,6 +158,8 @@ export type FundInput<
   TAccountTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
+  TAccountHookDelegate extends string = string,
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
@@ -154,6 +172,13 @@ export type FundInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
+  /**
+   * Required when hook is present and budget > 0. The ACP program approves this
+   * PDA as delegate on client_token_account for budget_amount (F-25 fix).
+   */
+  hookDelegate?: Address<TAccountHookDelegate>;
+  expectedBudget: FundInstructionDataArgs["expectedBudget"];
   optParams: FundInstructionDataArgs["optParams"];
 };
 
@@ -167,8 +192,9 @@ export function getFundInstruction<
   TAccountTokenProgram extends string,
   TAccountSystemProgram extends string,
   TAccountHookProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TAccountHookWhitelist extends string,
+  TAccountHookDelegate extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: FundInput<
     TAccountClient,
@@ -179,7 +205,9 @@ export function getFundInstruction<
     TAccountMint,
     TAccountTokenProgram,
     TAccountSystemProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate
   >,
   config?: { programAddress?: TProgramAddress },
 ): FundInstruction<
@@ -192,11 +220,13 @@ export function getFundInstruction<
   TAccountMint,
   TAccountTokenProgram,
   TAccountSystemProgram,
-  TAccountHookProgram
+  TAccountHookProgram,
+  TAccountHookWhitelist,
+  TAccountHookDelegate
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -212,6 +242,8 @@ export function getFundInstruction<
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
+    hookDelegate: { value: input.hookDelegate ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -243,6 +275,8 @@ export function getFundInstruction<
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
+      getAccountMeta("hookDelegate", accounts.hookDelegate),
     ],
     data: getFundInstructionDataEncoder().encode(
       args as FundInstructionDataArgs,
@@ -258,12 +292,14 @@ export function getFundInstruction<
     TAccountMint,
     TAccountTokenProgram,
     TAccountSystemProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate
   >);
 }
 
 export type ParsedFundInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
@@ -279,6 +315,12 @@ export type ParsedFundInstruction<
     tokenProgram?: TAccountMetas[6] | undefined;
     systemProgram: TAccountMetas[7];
     hookProgram?: TAccountMetas[8] | undefined;
+    hookWhitelist?: TAccountMetas[9] | undefined;
+    /**
+     * Required when hook is present and budget > 0. The ACP program approves this
+     * PDA as delegate on client_token_account for budget_amount (F-25 fix).
+     */
+    hookDelegate?: TAccountMetas[10] | undefined;
   };
   data: FundInstructionData;
 };
@@ -291,12 +333,12 @@ export function parseFundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -308,7 +350,7 @@ export function parseFundInstruction<
   };
   const getNextOptionalAccount = () => {
     const accountMeta = getNextAccount();
-    return accountMeta.address === AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS
+    return accountMeta.address === AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS
       ? undefined
       : accountMeta;
   };
@@ -324,6 +366,8 @@ export function parseFundInstruction<
       tokenProgram: getNextOptionalAccount(),
       systemProgram: getNextAccount(),
       hookProgram: getNextOptionalAccount(),
+      hookWhitelist: getNextOptionalAccount(),
+      hookDelegate: getNextOptionalAccount(),
     },
     data: getFundInstructionDataDecoder().decode(instruction.data),
   };

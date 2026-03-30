@@ -1,0 +1,2299 @@
+{
+  "address": "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi",
+  "metadata": {
+    "name": "agentic_commerce_v3",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "accept_authority",
+      "docs": [
+        "Accepts a pending authority nomination, completing ownership transfer."
+      ],
+      "discriminator": [
+        107,
+        86,
+        198,
+        91,
+        33,
+        12,
+        107,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "new_authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "add_hook_whitelist",
+      "docs": [
+        "Whitelists a hook program by creating its `HookWhitelist` PDA. Authority-only."
+      ],
+      "discriminator": [
+        155,
+        81,
+        232,
+        227,
+        41,
+        160,
+        231,
+        189
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "hook_whitelist",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "hook"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "hook",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "claim_refund",
+      "docs": [
+        "Permissionless refund for expired jobs. Tokens always go to `job.client`."
+      ],
+      "discriminator": [
+        15,
+        16,
+        30,
+        161,
+        255,
+        228,
+        97,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "docs": [
+            "Anyone can call — tokens always go to job.client (matches Solidity)"
+          ],
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.client",
+                "account": "Job"
+              },
+              {
+                "kind": "account",
+                "path": "job.job_id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "vault_authority"
+        },
+        {
+          "name": "client_token_account",
+          "writable": true
+        },
+        {
+          "name": "platform_treasury",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "complete",
+      "docs": [
+        "Evaluator approves a submitted job, distributing escrowed funds."
+      ],
+      "discriminator": [
+        0,
+        77,
+        224,
+        147,
+        136,
+        25,
+        88,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "evaluator",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Optional: required when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vault_authority",
+          "optional": true
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "Optional: required when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "treasury_token_account",
+          "docs": [
+            "Optional: required when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "evaluator_token_account",
+          "docs": [
+            "Optional: required when evaluator_fee_bp > 0 and budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_treasury",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "create_job",
+      "docs": [
+        "Creates a new job in the Open state. Caller becomes the client."
+      ],
+      "discriminator": [
+        178,
+        130,
+        217,
+        110,
+        100,
+        27,
+        82,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "client",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "client"
+              },
+              {
+                "kind": "account",
+                "path": "acp_state.job_counter",
+                "account": "AcpState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hook_whitelist",
+          "docs": [
+            "Optional: must be provided if hook_address is Some"
+          ],
+          "optional": true
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "provider",
+          "type": "pubkey"
+        },
+        {
+          "name": "evaluator",
+          "type": "pubkey"
+        },
+        {
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "name": "expired_at",
+          "type": "i64"
+        },
+        {
+          "name": "hook_address",
+          "type": {
+            "option": "pubkey"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fund",
+      "docs": [
+        "Escrows tokens from the client into the vault and transitions the job to Funded."
+      ],
+      "discriminator": [
+        218,
+        188,
+        111,
+        221,
+        152,
+        113,
+        174,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "client",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "client_token_account",
+          "docs": [
+            "Optional: required when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Optional: required when budget > 0 (init vault for escrow)"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vault_authority",
+          "optional": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        },
+        {
+          "name": "hook_delegate",
+          "docs": [
+            "Required when hook is present and budget > 0. The ACP program approves this",
+            "PDA as delegate on client_token_account for budget_amount (F-25 fix)."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "expected_budget",
+          "type": "u64"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "Initializes the global `AcpState` PDA. Caller must be the program's upgrade authority."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "program_data",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  166,
+                  40,
+                  76,
+                  242,
+                  119,
+                  58,
+                  225,
+                  177,
+                  173,
+                  61,
+                  24,
+                  149,
+                  243,
+                  103,
+                  21,
+                  247,
+                  31,
+                  173,
+                  73,
+                  25,
+                  126,
+                  236,
+                  194,
+                  144,
+                  189,
+                  19,
+                  229,
+                  243,
+                  158,
+                  126,
+                  198,
+                  217
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "name": "payment_token"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "platform_treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "platform_fee_bp",
+          "type": "u64"
+        },
+        {
+          "name": "evaluator_fee_bp",
+          "type": "u64"
+        },
+        {
+          "name": "job_counter",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "nominate_authority",
+      "docs": [
+        "Nominates a new authority (first step of two-step transfer). Authority-only."
+      ],
+      "discriminator": [
+        148,
+        182,
+        144,
+        91,
+        186,
+        12,
+        118,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "reject",
+      "docs": [
+        "Rejects a job, refunding any escrowed tokens to the client."
+      ],
+      "discriminator": [
+        135,
+        7,
+        63,
+        85,
+        131,
+        114,
+        111,
+        224
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.client",
+                "account": "Job"
+              },
+              {
+                "kind": "account",
+                "path": "job.job_id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vault_authority",
+          "optional": true
+        },
+        {
+          "name": "client_token_account",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_treasury",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "remove_hook_whitelist",
+      "docs": [
+        "Removes a hook program from the whitelist by closing its PDA. Authority-only."
+      ],
+      "discriminator": [
+        110,
+        220,
+        154,
+        1,
+        141,
+        191,
+        150,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "hook_whitelist",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  119,
+                  104,
+                  105,
+                  116,
+                  101,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "hook"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "hook",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_budget",
+      "docs": [
+        "Sets the budget amount and payment mint on an Open job. Provider-only."
+      ],
+      "discriminator": [
+        148,
+        121,
+        226,
+        12,
+        183,
+        120,
+        26,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "budget_mint"
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "set_evaluator_fee",
+      "docs": [
+        "Updates the evaluator fee rate. Authority-only."
+      ],
+      "discriminator": [
+        81,
+        212,
+        20,
+        60,
+        184,
+        238,
+        205,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_bp",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_platform_fee",
+      "docs": [
+        "Updates the platform fee rate and treasury address. Authority-only."
+      ],
+      "discriminator": [
+        19,
+        70,
+        111,
+        182,
+        156,
+        58,
+        208,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_bp",
+          "type": "u64"
+        },
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_provider",
+      "docs": [
+        "Assigns a provider to an Open job whose provider is currently unset."
+      ],
+      "discriminator": [
+        42,
+        159,
+        3,
+        191,
+        52,
+        175,
+        112,
+        88
+      ],
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "provider",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "submit",
+      "docs": [
+        "Records the provider's deliverable. Auto-completes if no evaluator is set."
+      ],
+      "discriminator": [
+        88,
+        166,
+        102,
+        181,
+        162,
+        127,
+        170,
+        48
+      ],
+      "accounts": [
+        {
+          "name": "provider",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Optional: required for auto-complete when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vault_authority",
+          "optional": true
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "Optional: required for auto-complete when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "treasury_token_account",
+          "docs": [
+            "Optional: required for auto-complete when budget > 0"
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_treasury",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "hook_program",
+          "optional": true
+        },
+        {
+          "name": "hook_whitelist",
+          "optional": true
+        },
+        {
+          "name": "hook_delegate",
+          "docs": [
+            "Required when hook is present and budget > 0. The ACP program approves this",
+            "PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix)."
+          ],
+          "optional": true
+        },
+        {
+          "name": "provider_hook_token_account",
+          "docs": [
+            "Optional: provider's token account used by the hook for escrow transfer.",
+            "Required when hook is present and budget > 0 and evaluator is set.",
+            "The ACP approves hook_delegate on this account for budget_amount."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "deliverable",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AcpState",
+      "discriminator": [
+        182,
+        32,
+        157,
+        40,
+        114,
+        224,
+        13,
+        39
+      ]
+    },
+    {
+      "name": "HookWhitelist",
+      "discriminator": [
+        5,
+        224,
+        69,
+        103,
+        41,
+        89,
+        183,
+        3
+      ]
+    },
+    {
+      "name": "Job",
+      "discriminator": [
+        75,
+        124,
+        80,
+        203,
+        161,
+        180,
+        202,
+        80
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AuthorityNominated",
+      "discriminator": [
+        83,
+        253,
+        94,
+        222,
+        179,
+        41,
+        95,
+        127
+      ]
+    },
+    {
+      "name": "AuthorityTransferred",
+      "discriminator": [
+        245,
+        109,
+        179,
+        54,
+        135,
+        92,
+        22,
+        64
+      ]
+    },
+    {
+      "name": "BudgetSet",
+      "discriminator": [
+        151,
+        45,
+        229,
+        243,
+        179,
+        219,
+        252,
+        60
+      ]
+    },
+    {
+      "name": "EvaluatorFeePaid",
+      "discriminator": [
+        178,
+        236,
+        127,
+        234,
+        245,
+        207,
+        235,
+        25
+      ]
+    },
+    {
+      "name": "EvaluatorFeeUpdated",
+      "discriminator": [
+        104,
+        212,
+        170,
+        200,
+        39,
+        244,
+        192,
+        182
+      ]
+    },
+    {
+      "name": "HookWhitelistUpdated",
+      "discriminator": [
+        112,
+        220,
+        175,
+        129,
+        195,
+        163,
+        32,
+        72
+      ]
+    },
+    {
+      "name": "JobCompleted",
+      "discriminator": [
+        176,
+        207,
+        246,
+        115,
+        95,
+        179,
+        9,
+        132
+      ]
+    },
+    {
+      "name": "JobCreated",
+      "discriminator": [
+        48,
+        110,
+        162,
+        177,
+        67,
+        74,
+        159,
+        131
+      ]
+    },
+    {
+      "name": "JobExpired",
+      "discriminator": [
+        213,
+        123,
+        115,
+        173,
+        157,
+        242,
+        12,
+        71
+      ]
+    },
+    {
+      "name": "JobFunded",
+      "discriminator": [
+        109,
+        177,
+        206,
+        113,
+        255,
+        142,
+        11,
+        19
+      ]
+    },
+    {
+      "name": "JobRejected",
+      "discriminator": [
+        23,
+        78,
+        227,
+        57,
+        28,
+        0,
+        197,
+        216
+      ]
+    },
+    {
+      "name": "JobSubmitted",
+      "discriminator": [
+        129,
+        204,
+        35,
+        127,
+        38,
+        50,
+        131,
+        248
+      ]
+    },
+    {
+      "name": "PaymentReleased",
+      "discriminator": [
+        160,
+        132,
+        155,
+        232,
+        46,
+        254,
+        69,
+        219
+      ]
+    },
+    {
+      "name": "PlatformFeeUpdated",
+      "discriminator": [
+        210,
+        134,
+        201,
+        4,
+        92,
+        228,
+        80,
+        26
+      ]
+    },
+    {
+      "name": "ProviderSet",
+      "discriminator": [
+        10,
+        148,
+        30,
+        104,
+        250,
+        235,
+        161,
+        159
+      ]
+    },
+    {
+      "name": "Refunded",
+      "discriminator": [
+        35,
+        103,
+        149,
+        246,
+        196,
+        123,
+        221,
+        99
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6001,
+      "name": "OnlyClientOrProvider",
+      "msg": "Only client or provider"
+    },
+    {
+      "code": 6002,
+      "name": "OnlyEvaluator",
+      "msg": "Only evaluator"
+    },
+    {
+      "code": 6003,
+      "name": "OnlyProvider",
+      "msg": "Only provider"
+    },
+    {
+      "code": 6004,
+      "name": "OnlyClient",
+      "msg": "Only client"
+    },
+    {
+      "code": 6005,
+      "name": "ZeroAddress",
+      "msg": "ZeroAddress"
+    },
+    {
+      "code": 6006,
+      "name": "ZeroAddressEvaluator",
+      "msg": "ZeroAddressEvaluator"
+    },
+    {
+      "code": 6007,
+      "name": "ZeroAddressProvider",
+      "msg": "ZeroAddressProvider"
+    },
+    {
+      "code": 6008,
+      "name": "DescriptionTooLong",
+      "msg": "Description too long"
+    },
+    {
+      "code": 6009,
+      "name": "ProviderCannotBeClient",
+      "msg": "Provider cannot be the client"
+    },
+    {
+      "code": 6010,
+      "name": "EvaluatorCannotBeProvider",
+      "msg": "Evaluator cannot be the provider"
+    },
+    {
+      "code": 6011,
+      "name": "EvaluatorCannotBeClient",
+      "msg": "Evaluator cannot be the client"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidHookProgram",
+      "msg": "Invalid hook program"
+    },
+    {
+      "code": 6013,
+      "name": "HookNotWhitelisted",
+      "msg": "Hook not whitelisted"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidJob",
+      "msg": "Invalid job"
+    },
+    {
+      "code": 6015,
+      "name": "WrongStatus",
+      "msg": "Wrong job status"
+    },
+    {
+      "code": 6016,
+      "name": "AmountMustBeGreaterThanZero",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidPaymentToken",
+      "msg": "Invalid payment token"
+    },
+    {
+      "code": 6018,
+      "name": "BudgetNotSet",
+      "msg": "Budget not set"
+    },
+    {
+      "code": 6019,
+      "name": "BudgetMismatch",
+      "msg": "Budget mismatch"
+    },
+    {
+      "code": 6020,
+      "name": "ProviderNotSet",
+      "msg": "Provider not set"
+    },
+    {
+      "code": 6021,
+      "name": "ExpiryTooShort",
+      "msg": "Expiry too short"
+    },
+    {
+      "code": 6022,
+      "name": "ExpiredAtMustBeInTheFuture",
+      "msg": "ExpiredAt must be in the future"
+    },
+    {
+      "code": 6023,
+      "name": "PlatformFeeTooHigh",
+      "msg": "Platform fee too high"
+    },
+    {
+      "code": 6024,
+      "name": "FeesTooHigh",
+      "msg": "Combined fees too high"
+    },
+    {
+      "code": 6025,
+      "name": "InvalidDestination",
+      "msg": "Invalid destination account"
+    },
+    {
+      "code": 6026,
+      "name": "InvalidVaultAuthority",
+      "msg": "Invalid vault authority"
+    },
+    {
+      "code": 6027,
+      "name": "InvalidVaultOwner",
+      "msg": "Invalid vault owner"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidVaultMint",
+      "msg": "Invalid vault mint"
+    },
+    {
+      "code": 6029,
+      "name": "BudgetMintNotSet",
+      "msg": "Budget mint must be set when budget amount is nonzero"
+    },
+    {
+      "code": 6030,
+      "name": "InvalidJobCounter",
+      "msg": "Job counter must be >= 1"
+    },
+    {
+      "code": 6031,
+      "name": "InsufficientVaultBalance",
+      "msg": "Insufficient vault balance"
+    },
+    {
+      "code": 6032,
+      "name": "MissingRequiredAccount",
+      "msg": "Missing required account for funded job"
+    },
+    {
+      "code": 6033,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "AcpState",
+      "docs": [
+        "Global program configuration. Singleton PDA seeded by `[\"acp_state\"]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Current program authority; can create/remove hook whitelists and update fees."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "docs": [
+              "Nominated successor (two-step transfer). `None` until `nominate_authority` is called."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "payment_token",
+            "docs": [
+              "SPL mint accepted for job budgets."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "platform_treasury",
+            "docs": [
+              "Wallet that receives platform fees and reclaimed vault rent."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "platform_fee_bp",
+            "docs": [
+              "Platform fee in basis points (0-10000). Applied to vault balance on completion."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "evaluator_fee_bp",
+            "docs": [
+              "Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "job_counter",
+            "docs": [
+              "Monotonically increasing counter; next job receives this ID."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuthorityNominated",
+      "docs": [
+        "Emitted when a new authority is nominated (first step of two-step transfer)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuthorityTransferred",
+      "docs": [
+        "Emitted when a pending authority accepts ownership (second step of two-step transfer)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BudgetSet",
+      "docs": [
+        "Emitted when the budget is set on a job via `set_budget`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvaluatorFeePaid",
+      "docs": [
+        "Emitted when the evaluator fee is transferred on evaluator-confirmed completion."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "evaluator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvaluatorFeeUpdated",
+      "docs": [
+        "Emitted when the evaluator fee rate is updated."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_bp",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HookWhitelist",
+      "docs": [
+        "Whitelist entry for an approved hook program. PDA seeded by `[\"hook_whitelist\", hook]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hook",
+            "docs": [
+              "The whitelisted hook program ID."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HookWhitelistUpdated",
+      "docs": [
+        "Emitted when a hook program is added to or removed from the whitelist."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hook",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Job",
+      "docs": [
+        "A single job. PDA seeded by `[\"job\", client, job_id_le_bytes]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "docs": [
+              "Unique identifier assigned from `AcpState.job_counter` at creation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "docs": [
+              "The party that created and funds the job."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "provider",
+            "docs": [
+              "The agent fulfilling the job. `Pubkey::default()` until set via `set_provider`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "evaluator",
+            "docs": [
+              "The adjudicator who completes or rejects. `Pubkey::default()` enables auto-complete on submit."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "state",
+            "docs": [
+              "Current lifecycle state (see `JobState`)."
+            ],
+            "type": {
+              "defined": {
+                "name": "JobState"
+              }
+            }
+          },
+          {
+            "name": "budget_amount",
+            "docs": [
+              "Token amount escrowed on fund. Zero for zero-budget jobs."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "budget_mint",
+            "docs": [
+              "SPL mint for the budget. `None` until `set_budget` is called."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "description",
+            "docs": [
+              "Human-readable description (max 256 bytes)."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "expired_at",
+            "docs": [
+              "Unix timestamp after which the job may be claimed as expired."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of job creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "hook_address",
+            "docs": [
+              "Optional hook program invoked on before/after action callbacks."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "deliverable",
+            "docs": [
+              "32-byte hash/identifier of the work product, set on submit."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "completion_reason",
+            "docs": [
+              "32-byte completion or rejection reason, set on complete/reject."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "vault_bump",
+            "docs": [
+              "PDA bump for the per-job vault authority. Set during fund."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed for this job account."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobCompleted",
+      "docs": [
+        "Emitted when a job is completed (evaluator approval or auto-complete)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "evaluator",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobCreated",
+      "docs": [
+        "Emitted when a new job is created via `create_job`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "evaluator",
+            "type": "pubkey"
+          },
+          {
+            "name": "expired_at",
+            "type": "i64"
+          },
+          {
+            "name": "hook",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobExpired",
+      "docs": [
+        "Emitted when an expired job is claimed via `claim_refund`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobFunded",
+      "docs": [
+        "Emitted when a client funds a job, escrowing tokens in the vault."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobRejected",
+      "docs": [
+        "Emitted when a job is rejected by an evaluator, client, or provider."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "rejector",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobState",
+      "docs": [
+        "Job lifecycle states. Two valid paths exist (L-15):",
+        "Funded path:      Open -> Funded -> Submitted -> Completed | Rejected | Expired",
+        "Zero-budget path: Open -> Submitted -> Completed | Rejected  (budget_amount == 0)",
+        "Open jobs can also be Rejected directly by client or provider."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Funded"
+          },
+          {
+            "name": "Submitted"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "Rejected"
+          },
+          {
+            "name": "Expired"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobSubmitted",
+      "docs": [
+        "Emitted when a provider submits a deliverable."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "deliverable",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PaymentReleased",
+      "docs": [
+        "Emitted when the net payment is transferred to the provider on completion."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeeUpdated",
+      "docs": [
+        "Emitted when the platform fee rate or treasury address is updated."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee_bp",
+            "type": "u64"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderSet",
+      "docs": [
+        "Emitted when a provider is assigned to a job via `set_provider`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Refunded",
+      "docs": [
+        "Emitted when escrowed tokens are returned to the client (rejection or expiry)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

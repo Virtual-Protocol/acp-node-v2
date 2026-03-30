@@ -12,7 +12,6 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -37,7 +36,8 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { findAcpStatePda } from "../pdas";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const CLAIM_REFUND_DISCRIMINATOR = new Uint8Array([
   15, 16, 30, 161, 255, 228, 97, 60,
@@ -50,7 +50,7 @@ export function getClaimRefundDiscriminatorBytes() {
 }
 
 export type ClaimRefundInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
@@ -129,6 +129,7 @@ export type ClaimRefundAsyncInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
+  /** Anyone can call — tokens always go to job.client (matches Solidity) */
   caller: TransactionSigner<TAccountCaller>;
   acpState?: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
@@ -148,8 +149,7 @@ export async function getClaimRefundInstructionAsync<
   TAccountClientTokenAccount extends string,
   TAccountPlatformTreasury extends string,
   TAccountTokenProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: ClaimRefundAsyncInput<
     TAccountCaller,
@@ -177,7 +177,7 @@ export async function getClaimRefundInstructionAsync<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -203,14 +203,7 @@ export async function getClaimRefundInstructionAsync<
 
   // Resolve default values.
   if (!accounts.acpState.value) {
-    accounts.acpState.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([97, 99, 112, 95, 115, 116, 97, 116, 101]),
-        ),
-      ],
-    });
+    accounts.acpState.value = await findAcpStatePda();
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -254,6 +247,7 @@ export type ClaimRefundInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
+  /** Anyone can call — tokens always go to job.client (matches Solidity) */
   caller: TransactionSigner<TAccountCaller>;
   acpState: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
@@ -273,8 +267,7 @@ export function getClaimRefundInstruction<
   TAccountClientTokenAccount extends string,
   TAccountPlatformTreasury extends string,
   TAccountTokenProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: ClaimRefundInput<
     TAccountCaller,
@@ -300,7 +293,7 @@ export function getClaimRefundInstruction<
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -358,11 +351,12 @@ export function getClaimRefundInstruction<
 }
 
 export type ParsedClaimRefundInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /** Anyone can call — tokens always go to job.client (matches Solidity) */
     caller: TAccountMetas[0];
     acpState: TAccountMetas[1];
     job: TAccountMetas[2];

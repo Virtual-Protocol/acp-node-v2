@@ -55,7 +55,7 @@ import {
   getJobStateEncoder,
   type JobState,
   type JobStateArgs,
-} from "../types/index";
+} from "../types";
 
 export const JOB_DISCRIMINATOR = new Uint8Array([
   75, 124, 80, 203, 161, 180, 202, 80,
@@ -67,38 +67,68 @@ export function getJobDiscriminatorBytes() {
 
 export type Job = {
   discriminator: ReadonlyUint8Array;
+  /** Unique identifier assigned from `AcpState.job_counter` at creation. */
   jobId: bigint;
+  /** The party that created and funds the job. */
   client: Address;
+  /** The agent fulfilling the job. `Pubkey::default()` until set via `set_provider`. */
   provider: Address;
+  /** The adjudicator who completes or rejects. `Pubkey::default()` enables auto-complete on submit. */
   evaluator: Address;
+  /** Current lifecycle state (see `JobState`). */
   state: JobState;
+  /** Token amount escrowed on fund. Zero for zero-budget jobs. */
   budgetAmount: bigint;
+  /** SPL mint for the budget. `None` until `set_budget` is called. */
   budgetMint: Option<Address>;
+  /** Human-readable description (max 256 bytes). */
   description: string;
+  /** Unix timestamp after which the job may be claimed as expired. */
   expiredAt: bigint;
+  /** Unix timestamp of job creation. */
   createdAt: bigint;
+  /** Optional hook program invoked on before/after action callbacks. */
   hookAddress: Option<Address>;
+  /** 32-byte hash/identifier of the work product, set on submit. */
   deliverable: ReadonlyUint8Array;
+  /** 32-byte completion or rejection reason, set on complete/reject. */
   completionReason: ReadonlyUint8Array;
+  /** PDA bump for the per-job vault authority. Set during fund. */
   vaultBump: number;
+  /** PDA bump seed for this job account. */
   bump: number;
 };
 
 export type JobArgs = {
+  /** Unique identifier assigned from `AcpState.job_counter` at creation. */
   jobId: number | bigint;
+  /** The party that created and funds the job. */
   client: Address;
+  /** The agent fulfilling the job. `Pubkey::default()` until set via `set_provider`. */
   provider: Address;
+  /** The adjudicator who completes or rejects. `Pubkey::default()` enables auto-complete on submit. */
   evaluator: Address;
+  /** Current lifecycle state (see `JobState`). */
   state: JobStateArgs;
+  /** Token amount escrowed on fund. Zero for zero-budget jobs. */
   budgetAmount: number | bigint;
+  /** SPL mint for the budget. `None` until `set_budget` is called. */
   budgetMint: OptionOrNullable<Address>;
+  /** Human-readable description (max 256 bytes). */
   description: string;
+  /** Unix timestamp after which the job may be claimed as expired. */
   expiredAt: number | bigint;
+  /** Unix timestamp of job creation. */
   createdAt: number | bigint;
+  /** Optional hook program invoked on before/after action callbacks. */
   hookAddress: OptionOrNullable<Address>;
+  /** 32-byte hash/identifier of the work product, set on submit. */
   deliverable: ReadonlyUint8Array;
+  /** 32-byte completion or rejection reason, set on complete/reject. */
   completionReason: ReadonlyUint8Array;
+  /** PDA bump for the per-job vault authority. Set during fund. */
   vaultBump: number;
+  /** PDA bump seed for this job account. */
   bump: number;
 };
 

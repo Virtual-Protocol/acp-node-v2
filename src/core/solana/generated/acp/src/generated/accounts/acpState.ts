@@ -53,24 +53,40 @@ export function getAcpStateDiscriminatorBytes() {
 
 export type AcpState = {
   discriminator: ReadonlyUint8Array;
+  /** Current program authority; can create/remove hook whitelists and update fees. */
   authority: Address;
+  /** Nominated successor (two-step transfer). `None` until `nominate_authority` is called. */
   pendingAuthority: Option<Address>;
+  /** SPL mint accepted for job budgets. */
   paymentToken: Address;
+  /** Wallet that receives platform fees and reclaimed vault rent. */
   platformTreasury: Address;
+  /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: bigint;
+  /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: bigint;
+  /** Monotonically increasing counter; next job receives this ID. */
   jobCounter: bigint;
+  /** PDA bump seed. */
   bump: number;
 };
 
 export type AcpStateArgs = {
+  /** Current program authority; can create/remove hook whitelists and update fees. */
   authority: Address;
+  /** Nominated successor (two-step transfer). `None` until `nominate_authority` is called. */
   pendingAuthority: OptionOrNullable<Address>;
+  /** SPL mint accepted for job budgets. */
   paymentToken: Address;
+  /** Wallet that receives platform fees and reclaimed vault rent. */
   platformTreasury: Address;
+  /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: number | bigint;
+  /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: number | bigint;
+  /** Monotonically increasing counter; next job receives this ID. */
   jobCounter: number | bigint;
+  /** PDA bump seed. */
   bump: number;
 };
 

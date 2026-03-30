@@ -25,6 +25,7 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/** Emitted when a provider submits a deliverable. */
 export type JobSubmitted = {
   jobId: bigint;
   provider: Address;

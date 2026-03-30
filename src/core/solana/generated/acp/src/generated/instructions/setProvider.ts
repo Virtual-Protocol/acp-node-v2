@@ -38,7 +38,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const SET_PROVIDER_DISCRIMINATOR = new Uint8Array([
   42, 159, 3, 191, 52, 175, 112, 88,
@@ -51,10 +51,11 @@ export function getSetProviderDiscriminatorBytes() {
 }
 
 export type SetProviderInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountClient extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
   TAccountHookProgram extends string | AccountMeta<string> = string,
+  TAccountHookWhitelist extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -68,6 +69,9 @@ export type SetProviderInstruction<
       TAccountHookProgram extends string
         ? ReadonlyAccount<TAccountHookProgram>
         : TAccountHookProgram,
+      TAccountHookWhitelist extends string
+        ? ReadonlyAccount<TAccountHookWhitelist>
+        : TAccountHookWhitelist,
       ...TRemainingAccounts,
     ]
   >;
@@ -110,10 +114,12 @@ export type SetProviderInput<
   TAccountClient extends string = string,
   TAccountJob extends string = string,
   TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
   hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
   provider: SetProviderInstructionDataArgs["provider"];
 };
 
@@ -121,26 +127,33 @@ export function getSetProviderInstruction<
   TAccountClient extends string,
   TAccountJob extends string,
   TAccountHookProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TAccountHookWhitelist extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: SetProviderInput<TAccountClient, TAccountJob, TAccountHookProgram>,
+  input: SetProviderInput<
+    TAccountClient,
+    TAccountJob,
+    TAccountHookProgram,
+    TAccountHookWhitelist
+  >,
   config?: { programAddress?: TProgramAddress },
 ): SetProviderInstruction<
   TProgramAddress,
   TAccountClient,
   TAccountJob,
-  TAccountHookProgram
+  TAccountHookProgram,
+  TAccountHookWhitelist
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     client: { value: input.client ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -156,6 +169,7 @@ export function getSetProviderInstruction<
       getAccountMeta("client", accounts.client),
       getAccountMeta("job", accounts.job),
       getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
     ],
     data: getSetProviderInstructionDataEncoder().encode(
       args as SetProviderInstructionDataArgs,
@@ -165,12 +179,13 @@ export function getSetProviderInstruction<
     TProgramAddress,
     TAccountClient,
     TAccountJob,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >);
 }
 
 export type ParsedSetProviderInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
@@ -178,6 +193,7 @@ export type ParsedSetProviderInstruction<
     client: TAccountMetas[0];
     job: TAccountMetas[1];
     hookProgram?: TAccountMetas[2] | undefined;
+    hookWhitelist?: TAccountMetas[3] | undefined;
   };
   data: SetProviderInstructionData;
 };
@@ -190,12 +206,12 @@ export function parseSetProviderInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSetProviderInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 4) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 3,
+        expectedAccountMetas: 4,
       },
     );
   }
@@ -207,7 +223,7 @@ export function parseSetProviderInstruction<
   };
   const getNextOptionalAccount = () => {
     const accountMeta = getNextAccount();
-    return accountMeta.address === AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS
+    return accountMeta.address === AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS
       ? undefined
       : accountMeta;
   };
@@ -217,6 +233,7 @@ export function parseSetProviderInstruction<
       client: getNextAccount(),
       job: getNextAccount(),
       hookProgram: getNextOptionalAccount(),
+      hookWhitelist: getNextOptionalAccount(),
     },
     data: getSetProviderInstructionDataDecoder().decode(instruction.data),
   };

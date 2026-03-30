@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the evaluator fee is transferred on evaluator-confirmed completion. */
 export type EvaluatorFeePaid = {
   jobId: bigint;
   evaluator: Address;

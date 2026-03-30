@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when escrowed tokens are returned to the client (rejection or expiry). */
 export type Refunded = { jobId: bigint; client: Address; amount: bigint };
 
 export type RefundedArgs = {

@@ -22,6 +22,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a new job is created via `create_job`. */
 export type JobCreated = {
   jobId: bigint;
   client: Address;

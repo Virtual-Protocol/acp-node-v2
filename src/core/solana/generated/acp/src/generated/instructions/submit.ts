@@ -40,7 +40,8 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { findAcpStatePda } from "../pdas";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const SUBMIT_DISCRIMINATOR = new Uint8Array([
   88, 166, 102, 181, 162, 127, 170, 48,
@@ -51,10 +52,22 @@ export function getSubmitDiscriminatorBytes() {
 }
 
 export type SubmitInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountProvider extends string | AccountMeta<string> = string,
+  TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
+  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountVaultAuthority extends string | AccountMeta<string> = string,
+  TAccountProviderTokenAccount extends string | AccountMeta<string> = string,
+  TAccountTreasuryTokenAccount extends string | AccountMeta<string> = string,
+  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
+  TAccountTokenProgram extends string | AccountMeta<string> =
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountHookProgram extends string | AccountMeta<string> = string,
+  TAccountHookWhitelist extends string | AccountMeta<string> = string,
+  TAccountHookDelegate extends string | AccountMeta<string> = string,
+  TAccountProviderHookTokenAccount extends string | AccountMeta<string> =
+    string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -64,10 +77,40 @@ export type SubmitInstruction<
         ? ReadonlySignerAccount<TAccountProvider> &
             AccountSignerMeta<TAccountProvider>
         : TAccountProvider,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
       TAccountJob extends string ? WritableAccount<TAccountJob> : TAccountJob,
+      TAccountVault extends string
+        ? WritableAccount<TAccountVault>
+        : TAccountVault,
+      TAccountVaultAuthority extends string
+        ? ReadonlyAccount<TAccountVaultAuthority>
+        : TAccountVaultAuthority,
+      TAccountProviderTokenAccount extends string
+        ? WritableAccount<TAccountProviderTokenAccount>
+        : TAccountProviderTokenAccount,
+      TAccountTreasuryTokenAccount extends string
+        ? WritableAccount<TAccountTreasuryTokenAccount>
+        : TAccountTreasuryTokenAccount,
+      TAccountPlatformTreasury extends string
+        ? WritableAccount<TAccountPlatformTreasury>
+        : TAccountPlatformTreasury,
+      TAccountTokenProgram extends string
+        ? ReadonlyAccount<TAccountTokenProgram>
+        : TAccountTokenProgram,
       TAccountHookProgram extends string
         ? ReadonlyAccount<TAccountHookProgram>
         : TAccountHookProgram,
+      TAccountHookWhitelist extends string
+        ? ReadonlyAccount<TAccountHookWhitelist>
+        : TAccountHookWhitelist,
+      TAccountHookDelegate extends string
+        ? ReadonlyAccount<TAccountHookDelegate>
+        : TAccountHookDelegate,
+      TAccountProviderHookTokenAccount extends string
+        ? WritableAccount<TAccountProviderHookTokenAccount>
+        : TAccountProviderHookTokenAccount,
       ...TRemainingAccounts,
     ]
   >;
@@ -112,42 +155,131 @@ export function getSubmitInstructionDataCodec(): Codec<
   );
 }
 
-export type SubmitInput<
+export type SubmitAsyncInput<
   TAccountProvider extends string = string,
+  TAccountAcpState extends string = string,
   TAccountJob extends string = string,
+  TAccountVault extends string = string,
+  TAccountVaultAuthority extends string = string,
+  TAccountProviderTokenAccount extends string = string,
+  TAccountTreasuryTokenAccount extends string = string,
+  TAccountPlatformTreasury extends string = string,
+  TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
+  TAccountHookDelegate extends string = string,
+  TAccountProviderHookTokenAccount extends string = string,
 > = {
   provider: TransactionSigner<TAccountProvider>;
+  acpState?: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
+  /** Optional: required for auto-complete when budget > 0 */
+  vault?: Address<TAccountVault>;
+  vaultAuthority?: Address<TAccountVaultAuthority>;
+  /** Optional: required for auto-complete when budget > 0 */
+  providerTokenAccount?: Address<TAccountProviderTokenAccount>;
+  /** Optional: required for auto-complete when budget > 0 */
+  treasuryTokenAccount?: Address<TAccountTreasuryTokenAccount>;
+  platformTreasury?: Address<TAccountPlatformTreasury>;
+  tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
+  /**
+   * Required when hook is present and budget > 0. The ACP program approves this
+   * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+   */
+  hookDelegate?: Address<TAccountHookDelegate>;
+  /**
+   * Optional: provider's token account used by the hook for escrow transfer.
+   * Required when hook is present and budget > 0 and evaluator is set.
+   * The ACP approves hook_delegate on this account for budget_amount.
+   */
+  providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
   deliverable: SubmitInstructionDataArgs["deliverable"];
   optParams: SubmitInstructionDataArgs["optParams"];
 };
 
-export function getSubmitInstruction<
+export async function getSubmitInstructionAsync<
   TAccountProvider extends string,
+  TAccountAcpState extends string,
   TAccountJob extends string,
+  TAccountVault extends string,
+  TAccountVaultAuthority extends string,
+  TAccountProviderTokenAccount extends string,
+  TAccountTreasuryTokenAccount extends string,
+  TAccountPlatformTreasury extends string,
+  TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TAccountHookWhitelist extends string,
+  TAccountHookDelegate extends string,
+  TAccountProviderHookTokenAccount extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: SubmitInput<TAccountProvider, TAccountJob, TAccountHookProgram>,
+  input: SubmitAsyncInput<
+    TAccountProvider,
+    TAccountAcpState,
+    TAccountJob,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountProviderTokenAccount,
+    TAccountTreasuryTokenAccount,
+    TAccountPlatformTreasury,
+    TAccountTokenProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountProviderHookTokenAccount
+  >,
   config?: { programAddress?: TProgramAddress },
-): SubmitInstruction<
-  TProgramAddress,
-  TAccountProvider,
-  TAccountJob,
-  TAccountHookProgram
+): Promise<
+  SubmitInstruction<
+    TProgramAddress,
+    TAccountProvider,
+    TAccountAcpState,
+    TAccountJob,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountProviderTokenAccount,
+    TAccountTreasuryTokenAccount,
+    TAccountPlatformTreasury,
+    TAccountTokenProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountProviderHookTokenAccount
+  >
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     provider: { value: input.provider ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
+    vault: { value: input.vault ?? null, isWritable: true },
+    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
+    providerTokenAccount: {
+      value: input.providerTokenAccount ?? null,
+      isWritable: true,
+    },
+    treasuryTokenAccount: {
+      value: input.treasuryTokenAccount ?? null,
+      isWritable: true,
+    },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
+    hookDelegate: { value: input.hookDelegate ?? null, isWritable: false },
+    providerHookTokenAccount: {
+      value: input.providerHookTokenAccount ?? null,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -157,12 +289,34 @@ export function getSubmitInstruction<
   // Original args.
   const args = { ...input };
 
+  // Resolve default values.
+  if (!accounts.acpState.value) {
+    accounts.acpState.value = await findAcpStatePda();
+  }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta("provider", accounts.provider),
+      getAccountMeta("acpState", accounts.acpState),
       getAccountMeta("job", accounts.job),
+      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("vaultAuthority", accounts.vaultAuthority),
+      getAccountMeta("providerTokenAccount", accounts.providerTokenAccount),
+      getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("platformTreasury", accounts.platformTreasury),
+      getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
+      getAccountMeta("hookDelegate", accounts.hookDelegate),
+      getAccountMeta(
+        "providerHookTokenAccount",
+        accounts.providerHookTokenAccount,
+      ),
     ],
     data: getSubmitInstructionDataEncoder().encode(
       args as SubmitInstructionDataArgs,
@@ -171,20 +325,232 @@ export function getSubmitInstruction<
   } as SubmitInstruction<
     TProgramAddress,
     TAccountProvider,
+    TAccountAcpState,
     TAccountJob,
-    TAccountHookProgram
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountProviderTokenAccount,
+    TAccountTreasuryTokenAccount,
+    TAccountPlatformTreasury,
+    TAccountTokenProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountProviderHookTokenAccount
+  >);
+}
+
+export type SubmitInput<
+  TAccountProvider extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountJob extends string = string,
+  TAccountVault extends string = string,
+  TAccountVaultAuthority extends string = string,
+  TAccountProviderTokenAccount extends string = string,
+  TAccountTreasuryTokenAccount extends string = string,
+  TAccountPlatformTreasury extends string = string,
+  TAccountTokenProgram extends string = string,
+  TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
+  TAccountHookDelegate extends string = string,
+  TAccountProviderHookTokenAccount extends string = string,
+> = {
+  provider: TransactionSigner<TAccountProvider>;
+  acpState: Address<TAccountAcpState>;
+  job: Address<TAccountJob>;
+  /** Optional: required for auto-complete when budget > 0 */
+  vault?: Address<TAccountVault>;
+  vaultAuthority?: Address<TAccountVaultAuthority>;
+  /** Optional: required for auto-complete when budget > 0 */
+  providerTokenAccount?: Address<TAccountProviderTokenAccount>;
+  /** Optional: required for auto-complete when budget > 0 */
+  treasuryTokenAccount?: Address<TAccountTreasuryTokenAccount>;
+  platformTreasury?: Address<TAccountPlatformTreasury>;
+  tokenProgram?: Address<TAccountTokenProgram>;
+  hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
+  /**
+   * Required when hook is present and budget > 0. The ACP program approves this
+   * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+   */
+  hookDelegate?: Address<TAccountHookDelegate>;
+  /**
+   * Optional: provider's token account used by the hook for escrow transfer.
+   * Required when hook is present and budget > 0 and evaluator is set.
+   * The ACP approves hook_delegate on this account for budget_amount.
+   */
+  providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
+  deliverable: SubmitInstructionDataArgs["deliverable"];
+  optParams: SubmitInstructionDataArgs["optParams"];
+};
+
+export function getSubmitInstruction<
+  TAccountProvider extends string,
+  TAccountAcpState extends string,
+  TAccountJob extends string,
+  TAccountVault extends string,
+  TAccountVaultAuthority extends string,
+  TAccountProviderTokenAccount extends string,
+  TAccountTreasuryTokenAccount extends string,
+  TAccountPlatformTreasury extends string,
+  TAccountTokenProgram extends string,
+  TAccountHookProgram extends string,
+  TAccountHookWhitelist extends string,
+  TAccountHookDelegate extends string,
+  TAccountProviderHookTokenAccount extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
+>(
+  input: SubmitInput<
+    TAccountProvider,
+    TAccountAcpState,
+    TAccountJob,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountProviderTokenAccount,
+    TAccountTreasuryTokenAccount,
+    TAccountPlatformTreasury,
+    TAccountTokenProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountProviderHookTokenAccount
+  >,
+  config?: { programAddress?: TProgramAddress },
+): SubmitInstruction<
+  TProgramAddress,
+  TAccountProvider,
+  TAccountAcpState,
+  TAccountJob,
+  TAccountVault,
+  TAccountVaultAuthority,
+  TAccountProviderTokenAccount,
+  TAccountTreasuryTokenAccount,
+  TAccountPlatformTreasury,
+  TAccountTokenProgram,
+  TAccountHookProgram,
+  TAccountHookWhitelist,
+  TAccountHookDelegate,
+  TAccountProviderHookTokenAccount
+> {
+  // Program address.
+  const programAddress =
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    provider: { value: input.provider ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    job: { value: input.job ?? null, isWritable: true },
+    vault: { value: input.vault ?? null, isWritable: true },
+    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
+    providerTokenAccount: {
+      value: input.providerTokenAccount ?? null,
+      isWritable: true,
+    },
+    treasuryTokenAccount: {
+      value: input.treasuryTokenAccount ?? null,
+      isWritable: true,
+    },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
+    hookDelegate: { value: input.hookDelegate ?? null, isWritable: false },
+    providerHookTokenAccount: {
+      value: input.providerHookTokenAccount ?? null,
+      isWritable: true,
+    },
+  };
+  const accounts = originalAccounts as Record<
+    keyof typeof originalAccounts,
+    ResolvedInstructionAccount
+  >;
+
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
+  return Object.freeze({
+    accounts: [
+      getAccountMeta("provider", accounts.provider),
+      getAccountMeta("acpState", accounts.acpState),
+      getAccountMeta("job", accounts.job),
+      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("vaultAuthority", accounts.vaultAuthority),
+      getAccountMeta("providerTokenAccount", accounts.providerTokenAccount),
+      getAccountMeta("treasuryTokenAccount", accounts.treasuryTokenAccount),
+      getAccountMeta("platformTreasury", accounts.platformTreasury),
+      getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
+      getAccountMeta("hookDelegate", accounts.hookDelegate),
+      getAccountMeta(
+        "providerHookTokenAccount",
+        accounts.providerHookTokenAccount,
+      ),
+    ],
+    data: getSubmitInstructionDataEncoder().encode(
+      args as SubmitInstructionDataArgs,
+    ),
+    programAddress,
+  } as SubmitInstruction<
+    TProgramAddress,
+    TAccountProvider,
+    TAccountAcpState,
+    TAccountJob,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountProviderTokenAccount,
+    TAccountTreasuryTokenAccount,
+    TAccountPlatformTreasury,
+    TAccountTokenProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountProviderHookTokenAccount
   >);
 }
 
 export type ParsedSubmitInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     provider: TAccountMetas[0];
-    job: TAccountMetas[1];
-    hookProgram?: TAccountMetas[2] | undefined;
+    acpState: TAccountMetas[1];
+    job: TAccountMetas[2];
+    /** Optional: required for auto-complete when budget > 0 */
+    vault?: TAccountMetas[3] | undefined;
+    vaultAuthority?: TAccountMetas[4] | undefined;
+    /** Optional: required for auto-complete when budget > 0 */
+    providerTokenAccount?: TAccountMetas[5] | undefined;
+    /** Optional: required for auto-complete when budget > 0 */
+    treasuryTokenAccount?: TAccountMetas[6] | undefined;
+    platformTreasury?: TAccountMetas[7] | undefined;
+    tokenProgram?: TAccountMetas[8] | undefined;
+    hookProgram?: TAccountMetas[9] | undefined;
+    hookWhitelist?: TAccountMetas[10] | undefined;
+    /**
+     * Required when hook is present and budget > 0. The ACP program approves this
+     * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+     */
+    hookDelegate?: TAccountMetas[11] | undefined;
+    /**
+     * Optional: provider's token account used by the hook for escrow transfer.
+     * Required when hook is present and budget > 0 and evaluator is set.
+     * The ACP approves hook_delegate on this account for budget_amount.
+     */
+    providerHookTokenAccount?: TAccountMetas[12] | undefined;
   };
   data: SubmitInstructionData;
 };
@@ -197,12 +563,12 @@ export function parseSubmitInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSubmitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 13) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 3,
+        expectedAccountMetas: 13,
       },
     );
   }
@@ -214,7 +580,7 @@ export function parseSubmitInstruction<
   };
   const getNextOptionalAccount = () => {
     const accountMeta = getNextAccount();
-    return accountMeta.address === AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS
+    return accountMeta.address === AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS
       ? undefined
       : accountMeta;
   };
@@ -222,8 +588,18 @@ export function parseSubmitInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       provider: getNextAccount(),
+      acpState: getNextAccount(),
       job: getNextAccount(),
+      vault: getNextOptionalAccount(),
+      vaultAuthority: getNextOptionalAccount(),
+      providerTokenAccount: getNextOptionalAccount(),
+      treasuryTokenAccount: getNextOptionalAccount(),
+      platformTreasury: getNextOptionalAccount(),
+      tokenProgram: getNextOptionalAccount(),
       hookProgram: getNextOptionalAccount(),
+      hookWhitelist: getNextOptionalAccount(),
+      hookDelegate: getNextOptionalAccount(),
+      providerHookTokenAccount: getNextOptionalAccount(),
     },
     data: getSubmitInstructionDataDecoder().decode(instruction.data),
   };

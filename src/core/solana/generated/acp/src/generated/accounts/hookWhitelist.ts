@@ -49,11 +49,18 @@ export function getHookWhitelistDiscriminatorBytes() {
 
 export type HookWhitelist = {
   discriminator: ReadonlyUint8Array;
+  /** The whitelisted hook program ID. */
   hook: Address;
+  /** PDA bump seed. */
   bump: number;
 };
 
-export type HookWhitelistArgs = { hook: Address; bump: number };
+export type HookWhitelistArgs = {
+  /** The whitelisted hook program ID. */
+  hook: Address;
+  /** PDA bump seed. */
+  bump: number;
+};
 
 /** Gets the encoder for {@link HookWhitelistArgs} account data. */
 export function getHookWhitelistEncoder(): FixedSizeEncoder<HookWhitelistArgs> {

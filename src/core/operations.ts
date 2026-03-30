@@ -51,7 +51,6 @@ export type FundParams = {
   jobId: bigint;
   expectedBudget: bigint;
   optParams?: Hex;
-  hookMemoAddress?: string; // Memo account address created by createFundRequest (memo hook only)
 };
 
 export type SubmitParams = {

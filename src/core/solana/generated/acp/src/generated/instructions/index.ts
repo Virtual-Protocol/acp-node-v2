@@ -9,7 +9,6 @@
 export * from "./acceptAuthority";
 export * from "./addHookWhitelist";
 export * from "./claimRefund";
-export * from "./closeAcpState";
 export * from "./complete";
 export * from "./createJob";
 export * from "./fund";

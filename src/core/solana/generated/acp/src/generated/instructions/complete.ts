@@ -14,7 +14,6 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -41,7 +40,8 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/program-client-core";
-import { AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS } from "../programs/index";
+import { findAcpStatePda } from "../pdas";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
 
 export const COMPLETE_DISCRIMINATOR = new Uint8Array([
   0, 77, 224, 147, 136, 25, 88, 76,
@@ -52,7 +52,7 @@ export function getCompleteDiscriminatorBytes() {
 }
 
 export type CompleteInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountEvaluator extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
@@ -65,6 +65,7 @@ export type CompleteInstruction<
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountHookProgram extends string | AccountMeta<string> = string,
+  TAccountHookWhitelist extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -102,6 +103,9 @@ export type CompleteInstruction<
       TAccountHookProgram extends string
         ? ReadonlyAccount<TAccountHookProgram>
         : TAccountHookProgram,
+      TAccountHookWhitelist extends string
+        ? ReadonlyAccount<TAccountHookWhitelist>
+        : TAccountHookWhitelist,
       ...TRemainingAccounts,
     ]
   >;
@@ -158,6 +162,7 @@ export type CompleteAsyncInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
 > = {
   evaluator: TransactionSigner<TAccountEvaluator>;
   acpState?: Address<TAccountAcpState>;
@@ -174,6 +179,7 @@ export type CompleteAsyncInput<
   platformTreasury?: Address<TAccountPlatformTreasury>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
   reason: CompleteInstructionDataArgs["reason"];
   optParams: CompleteInstructionDataArgs["optParams"];
 };
@@ -190,8 +196,8 @@ export async function getCompleteInstructionAsync<
   TAccountPlatformTreasury extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TAccountHookWhitelist extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: CompleteAsyncInput<
     TAccountEvaluator,
@@ -204,7 +210,8 @@ export async function getCompleteInstructionAsync<
     TAccountEvaluatorTokenAccount,
     TAccountPlatformTreasury,
     TAccountTokenProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -220,12 +227,13 @@ export async function getCompleteInstructionAsync<
     TAccountEvaluatorTokenAccount,
     TAccountPlatformTreasury,
     TAccountTokenProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -252,6 +260,7 @@ export async function getCompleteInstructionAsync<
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -263,14 +272,7 @@ export async function getCompleteInstructionAsync<
 
   // Resolve default values.
   if (!accounts.acpState.value) {
-    accounts.acpState.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([97, 99, 112, 95, 115, 116, 97, 116, 101]),
-        ),
-      ],
-    });
+    accounts.acpState.value = await findAcpStatePda();
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -291,6 +293,7 @@ export async function getCompleteInstructionAsync<
       getAccountMeta("platformTreasury", accounts.platformTreasury),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
     ],
     data: getCompleteInstructionDataEncoder().encode(
       args as CompleteInstructionDataArgs,
@@ -308,7 +311,8 @@ export async function getCompleteInstructionAsync<
     TAccountEvaluatorTokenAccount,
     TAccountPlatformTreasury,
     TAccountTokenProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >);
 }
 
@@ -324,6 +328,7 @@ export type CompleteInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
 > = {
   evaluator: TransactionSigner<TAccountEvaluator>;
   acpState: Address<TAccountAcpState>;
@@ -340,6 +345,7 @@ export type CompleteInput<
   platformTreasury?: Address<TAccountPlatformTreasury>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
   reason: CompleteInstructionDataArgs["reason"];
   optParams: CompleteInstructionDataArgs["optParams"];
 };
@@ -356,8 +362,8 @@ export function getCompleteInstruction<
   TAccountPlatformTreasury extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
-  TProgramAddress extends Address =
-    typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TAccountHookWhitelist extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: CompleteInput<
     TAccountEvaluator,
@@ -370,7 +376,8 @@ export function getCompleteInstruction<
     TAccountEvaluatorTokenAccount,
     TAccountPlatformTreasury,
     TAccountTokenProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >,
   config?: { programAddress?: TProgramAddress },
 ): CompleteInstruction<
@@ -385,11 +392,12 @@ export function getCompleteInstruction<
   TAccountEvaluatorTokenAccount,
   TAccountPlatformTreasury,
   TAccountTokenProgram,
-  TAccountHookProgram
+  TAccountHookProgram,
+  TAccountHookWhitelist
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
@@ -416,6 +424,7 @@ export function getCompleteInstruction<
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -445,6 +454,7 @@ export function getCompleteInstruction<
       getAccountMeta("platformTreasury", accounts.platformTreasury),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("hookProgram", accounts.hookProgram),
+      getAccountMeta("hookWhitelist", accounts.hookWhitelist),
     ],
     data: getCompleteInstructionDataEncoder().encode(
       args as CompleteInstructionDataArgs,
@@ -462,12 +472,13 @@ export function getCompleteInstruction<
     TAccountEvaluatorTokenAccount,
     TAccountPlatformTreasury,
     TAccountTokenProgram,
-    TAccountHookProgram
+    TAccountHookProgram,
+    TAccountHookWhitelist
   >);
 }
 
 export type ParsedCompleteInstruction<
-  TProgram extends string = typeof AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS,
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
@@ -487,6 +498,7 @@ export type ParsedCompleteInstruction<
     platformTreasury?: TAccountMetas[8] | undefined;
     tokenProgram?: TAccountMetas[9] | undefined;
     hookProgram?: TAccountMetas[10] | undefined;
+    hookWhitelist?: TAccountMetas[11] | undefined;
   };
   data: CompleteInstructionData;
 };
@@ -499,12 +511,12 @@ export function parseCompleteInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCompleteInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 12,
       },
     );
   }
@@ -516,7 +528,7 @@ export function parseCompleteInstruction<
   };
   const getNextOptionalAccount = () => {
     const accountMeta = getNextAccount();
-    return accountMeta.address === AGENTIC_COMMERCE_HOOKED_PROGRAM_ADDRESS
+    return accountMeta.address === AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS
       ? undefined
       : accountMeta;
   };
@@ -534,6 +546,7 @@ export function parseCompleteInstruction<
       platformTreasury: getNextOptionalAccount(),
       tokenProgram: getNextOptionalAccount(),
       hookProgram: getNextOptionalAccount(),
+      hookWhitelist: getNextOptionalAccount(),
     },
     data: getCompleteInstructionDataDecoder().decode(instruction.data),
   };

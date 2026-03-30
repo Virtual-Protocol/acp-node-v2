@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a client funds a job, escrowing tokens in the vault. */
 export type JobFunded = { jobId: bigint; client: Address; amount: bigint };
 
 export type JobFundedArgs = {

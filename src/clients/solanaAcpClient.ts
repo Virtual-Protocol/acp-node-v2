@@ -4,7 +4,6 @@ import {
   AccountRole,
   getProgramDerivedAddress,
   getAddressEncoder,
-  getBytesEncoder,
   getU64Encoder,
   fixEncoderSize,
   getUtf8Encoder,
@@ -36,7 +35,7 @@ import { fetchJob } from "../core/solana/generated/acp/src/generated/accounts/jo
 import { getCreateJobInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/createJob";
 import { getSetBudgetInstruction } from "../core/solana/generated/acp/src/generated/instructions/setBudget";
 import { getFundInstruction } from "../core/solana/generated/acp/src/generated/instructions/fund";
-import { getSubmitInstruction } from "../core/solana/generated/acp/src/generated/instructions/submit";
+import { getSubmitInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/submit";
 import { getCompleteInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/complete";
 import { getRejectInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/reject";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/src/generated/types/jobCreated";
@@ -130,20 +129,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     let hookProgram: Address | undefined;
     if (params.hookAddress) {
       hookProgram = params.hookAddress as Address;
-      const [derived] = await getProgramDerivedAddress({
-        programAddress: this.contractAddress as Address,
-        seeds: [
-          // "hook_whitelist"
-          getBytesEncoder().encode(
-            new Uint8Array([
-              104, 111, 111, 107, 95, 119, 104, 105, 116, 101, 108, 105, 115,
-              116,
-            ]),
-          ),
-          getAddressEncoder().encode(hookProgram),
-        ],
-      });
-      hookWhitelist = derived;
+      hookWhitelist = await this.deriveHookWhitelistPda(hookProgram);
     }
 
     const ix = await getCreateJobInstructionAsync({
@@ -194,20 +180,38 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       mintAddress = acpState.data.paymentToken;
     }
 
+    const hookAddress =
+      job.data.hookAddress.__option === "Some"
+        ? job.data.hookAddress.value
+        : undefined;
+
     const ix = getSetBudgetInstruction({
       caller: signer,
       job: jobPda,
       budgetMint: mintAddress,
       amount: params.amount,
+      ...(hookAddress ? { hookProgram: hookAddress } : {}),
+      ...(hookAddress
+        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
+        : {}),
       optParams: params.optParams
         ? hexToBytes(params.optParams)
         : EMPTY_OPT_PARAMS,
     });
 
+    const extraAccounts: SolanaInstructionLike["accounts"] = [];
+    if (hookAddress) {
+      const hookStatePda = await this.deriveHookStatePda(hookAddress);
+      extraAccounts.push({
+        address: hookStatePda,
+        role: AccountRole.WRITABLE,
+      });
+    }
+
     return this.wrapMany([
       {
         programAddress: ix.programAddress,
-        accounts: ix.accounts,
+        accounts: [...ix.accounts, ...extraAccounts],
         data: ix.data as Uint8Array,
       },
     ]);
@@ -265,6 +269,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       vaultAuthority: vaultAuthorityPda,
       mint: mintAddress,
       ...(hookAddress ? { hookProgram: hookAddress } : {}),
+      ...(hookAddress
+        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
+        : {}),
+      ...(hookAddress
+        ? { hookDelegate: await this.deriveHookDelegatePda(hookAddress) }
+        : {}),
+      expectedBudget: params.expectedBudget,
       optParams: params.optParams
         ? hexToBytes(params.optParams)
         : EMPTY_OPT_PARAMS,
@@ -273,28 +284,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (hookAddress) {
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
-      extraAccounts.push({ address: hookStatePda, role: AccountRole.READONLY });
-
-      if (params.hookMemoAddress) {
-        const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
-        const fundRequestMapPda = await this.deriveFundRequestMapPda(
-          hookAddress,
-          params.jobId,
-        );
-        const jobMemoMapPda = await this.deriveJobMemoMapPda(
-          hookAddress,
-          params.jobId,
-        );
-        extraAccounts.push(
-          { address: fundRequestMapPda, role: AccountRole.WRITABLE },
-          {
-            address: params.hookMemoAddress as Address,
-            role: AccountRole.WRITABLE,
-          },
-          { address: jobMemoMapPda, role: AccountRole.WRITABLE },
-          { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
-        );
-      }
+      extraAccounts.push({
+        address: hookStatePda,
+        role: AccountRole.WRITABLE,
+      });
     }
 
     return this.wrapMany([
@@ -325,11 +318,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ? job.data.hookAddress.value
         : undefined;
 
-    const ix = getSubmitInstruction({
+    const ix = await getSubmitInstructionAsync({
       provider: signer,
       job: jobPda,
       deliverable: deliverableBytes,
       ...(hookAddress ? { hookProgram: hookAddress } : {}),
+      ...(hookAddress
+        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
+        : {}),
       optParams: params.optParams
         ? hexToBytes(params.optParams)
         : EMPTY_OPT_PARAMS,
@@ -338,22 +334,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (hookAddress) {
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
-      extraAccounts.push({ address: hookStatePda, role: AccountRole.READONLY });
-
-      // If jobMemoMap exists (memo hook), pass it so AfterAction can validate
-      const jobMemoMapPda = await this.deriveJobMemoMapPda(
-        hookAddress,
-        params.jobId,
-      );
-      const jobMemoMapInfo = await rpc
-        .getAccountInfo(jobMemoMapPda, { encoding: "base64" })
-        .send();
-      if (jobMemoMapInfo.value) {
-        extraAccounts.push({
-          address: jobMemoMapPda,
-          role: AccountRole.READONLY,
-        });
-      }
+      extraAccounts.push({
+        address: hookStatePda,
+        role: AccountRole.WRITABLE,
+      });
     }
 
     return this.wrapMany([
@@ -410,34 +394,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (hookAddress) {
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
-      extraAccounts.push({ address: hookStatePda, role: AccountRole.READONLY });
-
-      // If jobMemoMap exists (memo hook), fetch memoId and add jobMemoMap + memo
-      const jobMemoMapPda = await this.deriveJobMemoMapPda(
-        hookAddress,
-        params.jobId,
-      );
-      const jobMemoMapInfo = await rpc
-        .getAccountInfo(jobMemoMapPda, { encoding: "base64" })
-        .send();
-      if (jobMemoMapInfo.value) {
-        const data = Uint8Array.from(
-          atob(jobMemoMapInfo.value.data[0] as string),
-          (c) => c.charCodeAt(0),
-        );
-        // JobMemoMap layout: discriminator(8) + jobId(8) + memoId(8) + bump(1)
-        const memoIdView = new DataView(
-          data.buffer,
-          data.byteOffset + 16,
-          8,
-        );
-        const memoId = memoIdView.getBigUint64(0, true);
-        const memoPda = await this.deriveMemoPda(hookAddress, memoId);
-        extraAccounts.push(
-          { address: jobMemoMapPda, role: AccountRole.READONLY },
-          { address: memoPda, role: AccountRole.WRITABLE },
-        );
-      }
+      extraAccounts.push({
+        address: hookStatePda,
+        role: AccountRole.WRITABLE,
+      });
     }
 
     const ix = await getCompleteInstructionAsync({
@@ -450,6 +410,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
       platformTreasury: acpState.data.platformTreasury,
       ...(hookAddress ? { hookProgram: hookAddress } : {}),
+      ...(hookAddress
+        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
+        : {}),
       reason: reasonBytes,
       optParams: params.optParams
         ? hexToBytes(params.optParams)
@@ -503,6 +466,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       clientTokenAccount = await this.deriveAta(job.data.client, mintAddress);
     }
 
+    const hookAddress =
+      job.data.hookAddress.__option === "Some"
+        ? job.data.hookAddress.value
+        : undefined;
+
     const ix = await getRejectInstructionAsync({
       caller: signer,
       job: jobPda,
@@ -510,6 +478,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       ...(vaultAuthority ? { vaultAuthority } : {}),
       ...(clientTokenAccount ? { clientTokenAccount } : {}),
       platformTreasury: acpState.data.platformTreasury,
+      ...(hookAddress ? { hookProgram: hookAddress } : {}),
+      ...(hookAddress
+        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
+        : {}),
       reason: reasonBytes,
       optParams: params.optParams
         ? hexToBytes(params.optParams)
@@ -670,6 +642,29 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
+  private async deriveHookWhitelistPda(
+    hookProgram: Address,
+  ): Promise<Address> {
+    const [pda] = await getProgramDerivedAddress({
+      programAddress: this.contractAddress as Address,
+      seeds: [
+        getUtf8Encoder().encode("hook_whitelist"),
+        getAddressEncoder().encode(hookProgram),
+      ],
+    });
+    return pda;
+  }
+
+  private async deriveHookDelegatePda(
+    hookProgram: Address,
+  ): Promise<Address> {
+    const [pda] = await getProgramDerivedAddress({
+      programAddress: hookProgram,
+      seeds: [getUtf8Encoder().encode("hook_state")],
+    });
+    return pda;
+  }
+
   private async deriveVaultAuthorityPda(jobPda: Address): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: this.contractAddress as Address,
@@ -709,48 +704,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       this.provider.getSigner().address) as Address;
     const pda = await this.deriveJobPda(client, jobId);
     this.jobPdaCache.set(jobId, pda);
-    return pda;
-  }
-
-  private async deriveFundRequestMapPda(
-    hookProgram: Address,
-    jobId: bigint,
-  ): Promise<Address> {
-    const [pda] = await getProgramDerivedAddress({
-      programAddress: hookProgram,
-      seeds: [
-        getUtf8Encoder().encode("fund_request"),
-        getU64Encoder().encode(jobId),
-      ],
-    });
-    return pda;
-  }
-
-  private async deriveJobMemoMapPda(
-    hookProgram: Address,
-    jobId: bigint,
-  ): Promise<Address> {
-    const [pda] = await getProgramDerivedAddress({
-      programAddress: hookProgram,
-      seeds: [
-        getUtf8Encoder().encode("job_memo_map"),
-        getU64Encoder().encode(jobId),
-      ],
-    });
-    return pda;
-  }
-
-  private async deriveMemoPda(
-    hookProgram: Address,
-    memoId: bigint,
-  ): Promise<Address> {
-    const [pda] = await getProgramDerivedAddress({
-      programAddress: hookProgram,
-      seeds: [
-        getUtf8Encoder().encode("memo"),
-        getU64Encoder().encode(memoId),
-      ],
-    });
     return pda;
   }
 

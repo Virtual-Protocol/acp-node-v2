@@ -12,6 +12,7 @@ import type {
   SubmitParams,
 } from "./core/operations";
 import {
+  ACP_CONTRACT_ADDRESSES,
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
 } from "./core/constants";
@@ -27,6 +28,7 @@ import type {
   JobRoomEntry,
   TransportContext,
 } from "./events/types";
+import { SseTransport } from "./events/sseTransport";
 
 export type EntryHandler = (
   session: JobSession,
@@ -96,7 +98,7 @@ export class AcpAgent {
 
   static async create(input: CreateAgentInput): Promise<AcpAgent> {
     const {
-      transport = new SocketTransport(),
+      transport = new SseTransport(),
       api = new AcpApiClient(),
       ...clientInput
     } = input;
@@ -212,8 +214,8 @@ export class AcpAgent {
         job.chainId,
         entries
       );
-      // await session.fetchJob();
-      // this.fireHandler(session, entries[entries.length - 1]!);
+      await session.fetchJob();
+      this.fireHandler(session, entries[entries.length - 1]!);
     }
   }
 

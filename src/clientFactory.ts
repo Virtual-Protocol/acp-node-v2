@@ -1,5 +1,6 @@
 import { EvmAcpClient } from "./clients/evmAcpClient";
 import { SolanaAcpClient } from "./clients/solanaAcpClient";
+import { ACP_CONTRACT_ADDRESSES } from "./core/constants";
 import type {
   IEvmProviderAdapter,
   IProviderAdapter,
@@ -9,7 +10,7 @@ import type {
 export type AcpClient = EvmAcpClient | SolanaAcpClient;
 
 export type CreateAcpClientInput = {
-  contractAddresses: Record<number, string>;
+  contractAddresses?: Record<number, string>;
   provider: IProviderAdapter;
 };
 
@@ -18,14 +19,14 @@ export async function createAcpClient(
 ): Promise<AcpClient> {
   if (isEvmProvider(input.provider)) {
     return EvmAcpClient.create({
-      contractAddresses: input.contractAddresses,
+      contractAddresses: input.contractAddresses ?? ACP_CONTRACT_ADDRESSES,
       provider: input.provider,
     });
   }
 
   if (isSolanaProvider(input.provider)) {
     return SolanaAcpClient.create({
-      contractAddresses: input.contractAddresses,
+      contractAddresses: input.contractAddresses ?? ACP_CONTRACT_ADDRESSES,
       provider: input.provider,
     });
   }
@@ -35,14 +36,17 @@ export async function createAcpClient(
   );
 }
 
-function isEvmProvider(provider: IProviderAdapter): provider is IEvmProviderAdapter {
+function isEvmProvider(
+  provider: IProviderAdapter
+): provider is IEvmProviderAdapter {
   return (
-    "sendCalls" in provider &&
-    typeof (provider as any).sendCalls === "function"
+    "sendCalls" in provider && typeof (provider as any).sendCalls === "function"
   );
 }
 
-function isSolanaProvider(provider: IProviderAdapter): provider is ISolanaProviderAdapter {
+function isSolanaProvider(
+  provider: IProviderAdapter
+): provider is ISolanaProviderAdapter {
   return (
     "getCluster" in provider &&
     typeof (provider as any).getCluster === "function" &&

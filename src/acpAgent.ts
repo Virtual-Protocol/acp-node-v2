@@ -5,6 +5,7 @@ import {
   createAcpClient,
 } from "./clientFactory";
 import { EvmAcpClient } from "./clients/evmAcpClient";
+import { SolanaAcpClient } from "./clients/solanaAcpClient";
 import type {
   CompleteParams,
   CreateJobParams,
@@ -154,16 +155,27 @@ export class AcpAgent {
     const providerChainIds =
       this.client instanceof EvmAcpClient
         ? await this.client.getProvider().getSupportedChainIds()
-        : [];
+        : this.client.getSupportedChainIds();
 
     return {
       agentAddress: this.address,
       contractAddresses: this.client.getContractAddresses(),
       providerSupportedChainIds: providerChainIds,
       client: this.client,
-      signMessage: (chainId: number, msg: string) => {
+      signMessage: async (chainId: number, msg: string) => {
         if (this.client instanceof EvmAcpClient) {
           return this.client.getProvider().signMessage(chainId, msg);
+        }
+        if (this.client instanceof SolanaAcpClient) {
+          const { createSignableMessage } = await import("@solana/kit");
+          const signer = this.client.getProvider().getSigner();
+          const signable = createSignableMessage(msg);
+          const [signatures] = await signer.signMessages([signable]);
+          const sigBytes = signatures![signer.address];
+          if (!sigBytes) throw new Error("Solana message signing failed");
+          // Encode as base58 for the backend
+          const { getBase58Decoder } = await import("@solana/kit");
+          return getBase58Decoder().decode(sigBytes);
         }
         throw new Error("signMessage is not supported for this provider");
       },
@@ -424,18 +436,26 @@ export class AcpAgent {
     chainId: number,
     params: FundJobParams
   ): Promise<string | string[]> {
-    const approvePrepared = await this.client.approveAllowance(chainId, {
-      tokenAddress: params.amount.address,
-      spenderAddress: this.client.getContractAddress(chainId),
-      amount: params.amount.rawAmount,
-    });
+    const prepared = [];
 
-    const fundPrepared = await this.client.fund(chainId, {
-      jobId: params.jobId,
-      expectedBudget: params.amount.rawAmount,
-    });
+    if (this.client.getCapabilities().supportsAllowance) {
+      prepared.push(
+        await this.client.approveAllowance(chainId, {
+          tokenAddress: params.amount.address,
+          spenderAddress: this.client.getContractAddress(chainId),
+          amount: params.amount.rawAmount,
+        })
+      );
+    }
 
-    return this.client.submitPrepared(chainId, [approvePrepared, fundPrepared]);
+    prepared.push(
+      await this.client.fund(chainId, {
+        jobId: params.jobId,
+        expectedBudget: params.amount.rawAmount,
+      })
+    );
+
+    return this.client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -500,24 +520,32 @@ export class AcpAgent {
     chainId: number,
     params: FundWithTransferParams
   ): Promise<string | string[]> {
-    const approveAcp = await this.client.approveAllowance(chainId, {
-      tokenAddress: params.amount.address,
-      spenderAddress: this.client.getContractAddress(chainId),
-      amount: params.amount.rawAmount,
-    });
+    const prepared = [];
 
-    const hookAddr =
-      params.hookAddress ??
-      getAddressForChain(
-        FUND_TRANSFER_HOOK_ADDRESSES,
-        chainId,
-        "FundTransferHook"
+    if (this.client.getCapabilities().supportsAllowance) {
+      prepared.push(
+        await this.client.approveAllowance(chainId, {
+          tokenAddress: params.amount.address,
+          spenderAddress: this.client.getContractAddress(chainId),
+          amount: params.amount.rawAmount,
+        })
       );
-    const approveHook = await this.client.approveAllowance(chainId, {
-      tokenAddress: params.transferAmount.address,
-      spenderAddress: hookAddr,
-      amount: params.transferAmount.rawAmount,
-    });
+
+      const hookAddr =
+        params.hookAddress ??
+        getAddressForChain(
+          FUND_TRANSFER_HOOK_ADDRESSES,
+          chainId,
+          "FundTransferHook"
+        );
+      prepared.push(
+        await this.client.approveAllowance(chainId, {
+          tokenAddress: params.transferAmount.address,
+          spenderAddress: hookAddr,
+          amount: params.transferAmount.rawAmount,
+        })
+      );
+    }
 
     const optParams: Hex = encodeAbiParameters(
       [
@@ -532,17 +560,15 @@ export class AcpAgent {
       ]
     );
 
-    const fundPrepared = await this.client.fund(chainId, {
-      jobId: params.jobId,
-      expectedBudget: params.amount.rawAmount,
-      optParams,
-    });
+    prepared.push(
+      await this.client.fund(chainId, {
+        jobId: params.jobId,
+        expectedBudget: params.amount.rawAmount,
+        optParams,
+      })
+    );
 
-    return this.client.submitPrepared(chainId, [
-      approveAcp,
-      approveHook,
-      fundPrepared,
-    ]);
+    return this.client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -556,18 +582,24 @@ export class AcpAgent {
       params.deliverable
     );
 
-    const hookAddr =
-      params.hookAddress ??
-      getAddressForChain(
-        FUND_TRANSFER_HOOK_ADDRESSES,
-        chainId,
-        "FundTransferHook"
+    const prepared = [];
+
+    if (this.client.getCapabilities().supportsAllowance) {
+      const hookAddr =
+        params.hookAddress ??
+        getAddressForChain(
+          FUND_TRANSFER_HOOK_ADDRESSES,
+          chainId,
+          "FundTransferHook"
+        );
+      prepared.push(
+        await this.client.approveAllowance(chainId, {
+          tokenAddress: params.transferAmount.address,
+          spenderAddress: hookAddr,
+          amount: params.transferAmount.rawAmount,
+        })
       );
-    const approvePrepared = await this.client.approveAllowance(chainId, {
-      tokenAddress: params.transferAmount.address,
-      spenderAddress: hookAddr,
-      amount: params.transferAmount.rawAmount,
-    });
+    }
 
     const optParams: Hex = encodeAbiParameters(
       [
@@ -580,15 +612,14 @@ export class AcpAgent {
       ]
     );
 
-    const submitPrepared = await this.client.submit(chainId, {
-      jobId: params.jobId,
-      deliverable: params.deliverable,
-      optParams,
-    });
+    prepared.push(
+      await this.client.submit(chainId, {
+        jobId: params.jobId,
+        deliverable: params.deliverable,
+        optParams,
+      })
+    );
 
-    return this.client.submitPrepared(chainId, [
-      approvePrepared,
-      submitPrepared,
-    ]);
+    return this.client.submitPrepared(chainId, prepared);
   }
 }

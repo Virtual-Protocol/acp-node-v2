@@ -21,6 +21,10 @@ export * from "./providers/evm/viemProviderAdapter";
 export * from "./providers/evm/alchemyEvmProviderAdapter";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
+export * from "./providers/solana/keypairSolanaProviderAdapter";
+
+// Solana constants
+export * from "./core/solana/constants";
 
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient";

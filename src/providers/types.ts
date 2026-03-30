@@ -1,12 +1,15 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
+import { AccountRole, type Rpc, type SolanaRpcApi, type KeyPairSigner, type Address as SolanaAddress } from "@solana/kit";
 
 import type { NetworkContext, SolanaCluster } from "../core/chains";
 
 export type SolanaInstructionLike = {
-  programId: string;
-  keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
-  data: Uint8Array | string;
+  programAddress: SolanaAddress;
+  accounts: Array<{ address: SolanaAddress; role: AccountRole }>;
+  data: Uint8Array;
 };
+
+export { AccountRole } from "@solana/kit";
 
 export interface IProviderAdapter {
   readonly providerName: string;
@@ -45,6 +48,8 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
 export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
   getCluster(): Promise<SolanaCluster>;
+  getRpc(): Rpc<SolanaRpcApi>;
+  getSigner(): KeyPairSigner;
   sendInstructions(
     instructions: SolanaInstructionLike[]
   ): Promise<string | string[]>;

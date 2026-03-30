@@ -212,8 +212,8 @@ export class AcpAgent {
         job.chainId,
         entries
       );
-      await session.fetchJob();
-      this.fireHandler(session, entries[entries.length - 1]!);
+      // await session.fetchJob();
+      // this.fireHandler(session, entries[entries.length - 1]!);
     }
   }
 

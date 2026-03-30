@@ -8,6 +8,8 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
   private socket: Socket | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
+  private lastEventTimestamp: number | null = null;
+  private seenEntries = new Set<string>();
 
   constructor(opts: SocketTransportOptions = {}) {
     super(opts);
@@ -33,20 +35,42 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
         } catch {
           /* proceed with current token */
         }
-        cb({ token: this.token });
+        cb({
+          token: this.token,
+          lastEventTimestamp: this.lastEventTimestamp,
+        });
       },
     });
 
     await new Promise<void>((resolve, reject) => {
-      this.socket!.on("connect", resolve);
+      this.socket!.on("connect", () => {
+        onConnected?.();
+        console.log("lastEventTimestamp", this.lastEventTimestamp);
+        resolve();
+      });
       this.socket!.on("connect_error", reject);
     });
 
-    onConnected?.();
+    this.socket.on("disconnect", (reason) => {
+      console.log("disconnect", reason);
+      if (reason === "io server disconnect") {
+        this.socket?.connect();
+      }
+    });
 
     this.socket.on("job:entry", (data: Record<string, unknown>) => {
+      const entry = data as unknown as JobRoomEntry;
+      const key = `${entry.timestamp}:${entry.kind}:${
+        "from" in entry ? entry.from : ""
+      }:${"content" in entry ? entry.content : (entry as any).event?.type}`;
+      if (this.seenEntries.has(key)) return;
+      this.seenEntries.add(key);
+      this.lastEventTimestamp = Math.max(
+        this.lastEventTimestamp ?? 0,
+        entry.timestamp
+      );
       if (this.entryHandler) {
-        this.entryHandler(data as unknown as JobRoomEntry);
+        this.entryHandler(entry);
       }
     });
 
@@ -66,6 +90,8 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     }
     this.ctx = null;
     this.entryHandler = null;
+    this.lastEventTimestamp = null;
+    this.seenEntries.clear();
   }
 
   // -------------------------------------------------------------------------

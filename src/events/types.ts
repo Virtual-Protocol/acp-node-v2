@@ -14,17 +14,25 @@ export type JobCreatedEvent = {
   hook: string;
 };
 
+export type FundIntent = {
+  amount: number;
+  tokenAddress: string;
+  symbol: string;
+  recipient: string;
+};
+
 export type BudgetSetEvent = {
   type: "budget.set";
   jobId: string;
-  amount: string;
+  amount: number;
+  fundRequest?: FundIntent;
 };
 
 export type JobFundedEvent = {
   type: "job.funded";
   jobId: string;
   client: string;
-  amount: string;
+  amount: number;
 };
 
 export type JobSubmittedEvent = {
@@ -32,6 +40,8 @@ export type JobSubmittedEvent = {
   jobId: string;
   provider: string;
   deliverableHash: string;
+  deliverable: string;
+  fundTransfer?: FundIntent;
 };
 
 export type JobCompletedEvent = {
@@ -190,4 +200,3 @@ export interface AcpJobApi {
     deliverable: string
   ): Promise<void>;
 }
-

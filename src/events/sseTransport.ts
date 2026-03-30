@@ -29,6 +29,9 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
           headers: {
             ...(init?.headers as Record<string, string>),
             Authorization: `Bearer ${this.token}`,
+            "x-supported-chains": JSON.stringify(
+              this.ctx?.providerSupportedChainIds ?? []
+            ),
           },
         });
       },

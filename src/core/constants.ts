@@ -37,7 +37,12 @@ export function getAddressForChain(
   return addr as Address;
 }
 
-export const USDC_DECIMALS = 6;
+export const USDC_DECIMALS: Record<number, number> = {
+  [baseSepolia.id]: 6,
+  [base.id]: 6,
+  [bsc.id]: 18,
+  [bscTestnet.id]: 18,
+};
 export const USDC_SYMBOL = "USDC";
 
 export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";

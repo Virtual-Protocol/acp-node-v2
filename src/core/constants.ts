@@ -45,3 +45,22 @@ export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";
 export const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
 export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";
+
+export const SUPPORTED_CHAINS = [
+  {
+    id: baseSepolia.id,
+    name: baseSepolia.name,
+  },
+  {
+    id: bscTestnet.id,
+    name: bscTestnet.name,
+  },
+  {
+    id: bsc.id,
+    name: bsc.name,
+  },
+  {
+    id: base.id,
+    name: base.name,
+  },
+];

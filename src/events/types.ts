@@ -92,7 +92,12 @@ export type AgentMessage = {
   onChainJobId: string;
   chainId: number;
   from: string;
-  contentType: "text" | "proposal" | "deliverable" | "structured";
+  contentType:
+    | "text"
+    | "proposal"
+    | "deliverable"
+    | "structured"
+    | "requirement";
   content: string;
   timestamp: number;
 };
@@ -150,13 +155,26 @@ export type OffChainIntent = {
 };
 
 // ---------------------------------------------------------------------------
+// ACP job status
+// ---------------------------------------------------------------------------
+
+export enum AcpJobStatus {
+  REQUEST = 0,
+  NEGOTIATION = 1,
+  TRANSACTION = 2,
+  EVALUATION = 3,
+  COMPLETED = 4,
+  REJECTED = 5,
+}
+
+// ---------------------------------------------------------------------------
 // Off-chain job shape (returned by the backend REST API)
 // ---------------------------------------------------------------------------
 
 export type OffChainJob = {
   chainId: number;
   onChainJobId: string;
-  jobStatus: string;
+  jobStatus: AcpJobStatus;
   clientAddress: string;
   providerAddress: string;
   evaluatorAddress: string;

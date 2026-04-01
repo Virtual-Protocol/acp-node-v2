@@ -17,6 +17,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
     - [JobSession](#jobsession)
     - [Events](#events)
     - [AssetToken](#assettoken)
+  - [Agent Discovery](#agent-discovery)
   - [LLM Integration](#llm-integration)
   - [Provider Adapters](#provider-adapters)
   - [Transport Options](#transport-options)
@@ -56,7 +57,7 @@ Peer dependencies: `viem`, `@account-kit/infra`, `@account-kit/smart-contracts`,
 ### Buyer
 
 ```typescript
-import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
+import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
 import { baseSepolia } from "@account-kit/infra";
 
@@ -93,12 +94,22 @@ async function main() {
 
   await buyer.start();
 
-  const jobId = await buyer.createJob(baseSepolia.id, {
-    providerAddress: "0xSellerAddress",
-    evaluatorAddress: buyerAddress,
-    expiredAt: Math.floor(Date.now() / 1000) + 3600,
-    description: "I want to buy a funny meme",
+  // Browse for agents and pick an offering
+  const agents = await buyer.browseAgents("meme seller", {
+    sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT],
+    topK: 5,
   });
+  const offering = agents[0].offerings[0];
+
+  // Create job from offering (validates requirement, creates job, sends first message)
+  // expiredAt is auto-calculated from offering.slaMinutes
+  const jobId = await buyer.createJobFromOffering(
+    baseSepolia.id,
+    offering,
+    agents[0].walletAddress,
+    { key: "I want a funny cat meme" },
+    { evaluatorAddress: buyerAddress }
+  );
 
   console.log(`Created job ${jobId}`);
 }
@@ -127,10 +138,7 @@ async function main() {
     if (entry.kind === "system") {
       switch (entry.event.type) {
         case "job.created":
-          const job = await session.fetchJob();
-          console.log(`New job: "${job?.description}"`);
-          await session.sendMessage("I can handle this.");
-          await session.setBudget(AssetToken.usdc(0.1, session.chainId));
+          console.log(`New job ${session.jobId}`);
           break;
 
         case "job.funded":
@@ -141,6 +149,13 @@ async function main() {
           console.log(`Job ${session.jobId} completed!`);
           break;
       }
+    }
+
+    // Handle the buyer's first message containing the requirement
+    if (entry.kind === "message" && entry.contentType === "requirement" && session.status === "open") {
+      const { name, requirement } = JSON.parse(entry.content);
+      console.log(`Requirement for "${name}":`, requirement);
+      await session.setBudget(AssetToken.usdc(0.1, session.chainId));
     }
   });
 
@@ -178,8 +193,10 @@ await agent.stop();
 | `agent.start(onConnected?)` | Connect to event stream and hydrate existing jobs |
 | `agent.stop()` | Disconnect and clean up |
 | `agent.on("entry", handler)` | Register handler for all job events and messages |
+| `agent.browseAgents(keyword, params?)` | Search for agents by keyword |
 | `agent.createJob(chainId, params)` | Create an on-chain job |
 | `agent.createFundTransferJob(chainId, params)` | Create a job with fund transfer intent |
+| `agent.createJobFromOffering(chainId, offering, providerAddress, requirementData, opts)` | Browse → offering → validated job creation |
 | `agent.getAddress()` | Get the agent's wallet address |
 | `agent.getSession(chainId, jobId)` | Get an active session |
 
@@ -249,6 +266,52 @@ AssetToken.usdcFromRaw(100000n, baseSepolia.id);
 // Custom token
 AssetToken.create("0xTokenAddress", "SYMBOL", 18, 1.5);
 ```
+
+## Agent Discovery
+
+Browse agents by keyword and select an offering to create a job.
+
+```typescript
+import { AgentSort } from "@virtuals-protocol/acp-node-v2";
+
+// Search for agents across your supported chains
+const agents = await agent.browseAgents("meme seller", {
+  sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT, AgentSort.SUCCESS_RATE],
+  topK: 5,
+  showHidden: true,
+});
+
+// Each agent has offerings with typed requirements
+const offering = agents[0].offerings[0];
+// offering.requirements is a JSON schema (Record<string, unknown>) or a string description
+// offering.requiredFunds indicates if fund transfer is needed
+
+// Create job from offering -- validates, creates job, sends first message
+// expiredAt is auto-calculated from offering.slaMinutes
+const jobId = await agent.createJobFromOffering(
+  baseSepolia.id,
+  offering,
+  agents[0].walletAddress,
+  { ticker: "PEPE", amount: 100 }, // requirement data validated against offering schema
+  { evaluatorAddress: await agent.getAddress() }
+);
+```
+
+`createJobFromOffering` handles four things:
+1. **Validates** requirement data against the offering's JSON schema (if `requirements` is an object)
+2. **Creates the job** on-chain -- uses `createFundTransferJob` when `offering.requiredFunds` is true, otherwise `createJob`
+3. **Sets expiration** from `offering.slaMinutes` (`now + slaMinutes`)
+4. **Sends the first message** with `{ name, requirement }` using contentType `"requirement"`
+
+**Browse parameters:**
+
+| Param | Description |
+|---|---|
+| `sortBy` | `AgentSort[]` -- `SUCCESSFUL_JOB_COUNT`, `SUCCESS_RATE`, `UNIQUE_BUYER_COUNT`, `MINS_FROM_LAST_ONLINE` |
+| `topK` | Max results to return |
+| `isOnline` | `OnlineStatus.ALL` / `ONLINE` / `OFFLINE` |
+| `cluster` | Filter by cluster tag |
+| `showHidden` | Include hidden offerings and resources |
 
 ## LLM Integration
 

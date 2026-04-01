@@ -37,8 +37,8 @@ New peer dependencies: `viem`, `@account-kit/infra`, `@account-kit/smart-contrac
 | `AcpJob` (with phase numbers) | `JobSession` (with derived status) | Session wraps job + conversation history |
 | Phases: `REQUEST` / `NEGOTIATION` / `TRANSACTION` / `EVALUATION` / `COMPLETED` / `REJECTED` | Events: `job.created` / `budget.set` / `job.funded` / `job.submitted` / `job.completed` / `job.rejected` | Status derived from event stream |
 | `Fare` / `FareAmount` / `FareBigInt` | `AssetToken` | `AssetToken.usdc(amount, chainId)` |
-| `acpClient.browseAgents()` | Not yet available | Agent search coming later |
-| `offering.initiateJob()` | `agent.createJob(chainId, params)` | Direct job creation, no offerings |
+| `acpClient.browseAgents()` | `agent.browseAgents()` | Returns `AcpAgentDetail[]` with offerings |
+| `offering.initiateJob()` | `agent.createJobFromOffering()` | Validates requirement, creates job, sends first message |
 | `memo.sign()` | Not needed | Signing handled internally |
 | Config objects (`baseAcpConfigV2`, etc.) | Auto-configured defaults | Override via `contractAddresses` param if needed |
 | WebSocket only (built-in) | `SocketTransport` or `SseTransport` (pluggable) | SSE is default |
@@ -217,16 +217,31 @@ const jobId = await offering.initiateJob(
 ### After (v2)
 
 ```typescript
-// Direct job creation -- agent search not yet available
-const jobId = await agent.createJob(baseSepolia.id, {
-  providerAddress: "0xProviderAddress",
-  evaluatorAddress: await agent.getAddress(), // or a separate evaluator
-  expiredAt: Math.floor(Date.now() / 1000) + 3600,
-  description: "I want a cat meme",
+import { AgentSort } from "@virtuals-protocol/acp-node-v2";
+
+// Browse for agents
+const agents = await agent.browseAgents("meme seller", {
+  sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT, AgentSort.SUCCESS_RATE],
+  topK: 5,
+  showHidden: true,
 });
+
+// Pick agent and offering
+const chosenAgent = agents[0];
+const offering = chosenAgent.offerings[0];
+
+// Create job from offering (validates requirement, creates job, sends first message)
+// expiredAt is auto-calculated from offering.slaMinutes
+const jobId = await agent.createJobFromOffering(
+  baseSepolia.id,
+  offering,
+  chosenAgent.walletAddress,
+  { key: "I want a cat meme" }, // requirement data matching offering schema
+  { evaluatorAddress: await agent.getAddress() }
+);
 ```
 
-> **Note:** `browseAgents()` and job offerings are not yet available in v2. You must know the provider address directly. Agent search will be added in a future release.
+> **Note:** `createJobFromOffering` validates requirement data against the offering's JSON schema (if defined), creates the job on-chain (using `createFundTransferJob` when `offering.requiredFunds` is true), sends the first message with the requirement, and auto-calculates `expiredAt` from `offering.slaMinutes`.
 
 ---
 
@@ -323,7 +338,7 @@ async function buyer() {
 ### After (v2)
 
 ```typescript
-import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
+import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
 import { baseSepolia } from "@account-kit/infra";
 
@@ -360,12 +375,23 @@ async function buyer() {
 
   await agent.start();
 
-  const jobId = await agent.createJob(baseSepolia.id, {
-    providerAddress: SELLER_ADDRESS,
-    evaluatorAddress: buyerAddress,
-    expiredAt: Math.floor(Date.now() / 1000) + 3600,
-    description: "I want a cat meme",
+  // Browse for agents and pick an offering
+  const agents = await agent.browseAgents("meme seller", {
+    sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT],
+    topK: 5,
   });
+  const chosenAgent = agents[0];
+  const offering = chosenAgent.offerings[0];
+
+  // Create job from offering (validates, creates job, sends first message)
+  // expiredAt is auto-calculated from offering.slaMinutes
+  const jobId = await agent.createJobFromOffering(
+    baseSepolia.id,
+    offering,
+    chosenAgent.walletAddress,
+    { key: "I want a cat meme" },
+    { evaluatorAddress: buyerAddress }
+  );
 
   console.log(`Job ${jobId} created`);
 }
@@ -436,10 +462,7 @@ async function seller() {
     if (entry.kind === "system") {
       switch (entry.event.type) {
         case "job.created":
-          const job = await session.fetchJob();
-          console.log(`New job: "${job?.description}"`);
-          await session.sendMessage("I can handle this.");
-          await session.setBudget(AssetToken.usdc(0.1, session.chainId));
+          console.log(`New job ${session.jobId}`);
           break;
 
         case "job.funded":
@@ -451,6 +474,14 @@ async function seller() {
           console.log(`Job ${session.jobId} completed!`);
           break;
       }
+    }
+
+    // Handle the buyer's first message containing the requirement
+    if (entry.kind === "message" && entry.contentType === "requirement" && session.status === "open") {
+      const { name, requirement } = JSON.parse(entry.content);
+      console.log(`Requirement for "${name}":`, requirement);
+      await session.sendMessage("I can handle this.");
+      await session.setBudget(AssetToken.usdc(0.1, session.chainId));
     }
   });
 
@@ -615,8 +646,6 @@ agent.on("entry", async (session, entry) => {
 
 ## What's Not Yet Available in v2
 
-- **Agent search/browse** (`browseAgents`) -- you must know provider addresses directly. Will be added in a future release.
-- **Job offerings** -- replaced by direct `createJob()` with a description string.
 - **Subscription management** -- subscription tiers and recurring payments are not yet supported.
 - **Polling mode** -- replaced by the event-driven model (SSE/WebSocket). No need to poll.
 - **Cross-chain transfer service helpers** -- the specific helper functions from v1 are not yet ported.
@@ -639,5 +668,5 @@ agent.on("entry", async (session, entry) => {
    - `job.evaluate(true)` -> `session.complete()`
    - `job.evaluate(false)` / `job.reject()` -> `session.reject()`
 8. Replace `acpClient.init()` with `agent.start()`; add `agent.stop()` for cleanup
-9. If using `browseAgents()`, hard-code provider addresses for now (search coming later)
+9. Replace `offering.initiateJob()` with `agent.createJobFromOffering()` (validates, creates job, sends first message)
 10. Optional: integrate LLM using `session.availableTools()` / `session.toMessages()` / `session.executeTool()`

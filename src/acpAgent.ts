@@ -1,4 +1,5 @@
-import { encodeAbiParameters, type Address, type Hex } from "viem";
+import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
+import Ajv from "ajv";
 import {
   type AcpClient,
   type CreateAcpClientInput,
@@ -12,17 +13,16 @@ import type {
   SubmitParams,
 } from "./core/operations";
 import {
-  ACP_CONTRACT_ADDRESSES,
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
 } from "./core/constants";
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
-import { SocketTransport } from "./events/socketTransport";
 import { AcpApiClient } from "./events/acpApiClient";
 import { AcpHttpClient } from "./events/acpHttpClient";
 import type {
   AcpAgentDetail,
+  AcpAgentOffering,
   AcpChatTransport,
   AcpJobApi,
   AgentRole,
@@ -396,8 +396,6 @@ export class AcpAgent {
     const result = await this.client.submitPrepared(chainId, [prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
 
-    console.log("txHash", txHash);
-
     const jobId = await this.client.getJobIdFromTxHash(chainId, txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
     return jobId;
@@ -416,6 +414,56 @@ export class AcpAgent {
       ...params,
       hookAddress: params.hookAddress ?? defaultHook,
     });
+  }
+
+  async createJobFromOffering(
+    chainId: number,
+    offering: AcpAgentOffering,
+    providerAddress: string,
+    requirementData: Record<string, unknown> | string,
+    opts?: {
+      evaluatorAddress?: string;
+      hookAddress?: string;
+    }
+  ): Promise<bigint> {
+    // Validate requirement data against JSON schema if requirements is an object
+    if (
+      offering.requirements &&
+      typeof offering.requirements === "object" &&
+      typeof requirementData === "object"
+    ) {
+      const ajv = new Ajv({ allErrors: true });
+      const validate = ajv.compile(offering.requirements);
+      if (!validate(requirementData)) {
+        throw new Error(
+          `Requirement validation failed: ${ajv.errorsText(validate.errors)}`
+        );
+      }
+    }
+
+    const expiredAt = Math.floor(Date.now() / 1000) + offering.slaMinutes * 60;
+
+    const jobParams: CreateJobParams = {
+      providerAddress,
+      evaluatorAddress: opts?.evaluatorAddress ?? zeroAddress,
+      expiredAt,
+      description: offering.name,
+      ...(opts?.hookAddress ? { hookAddress: opts.hookAddress } : {}),
+    };
+
+    const jobId = offering.requiredFunds
+      ? await this.createFundTransferJob(chainId, jobParams)
+      : await this.createJob(chainId, jobParams);
+
+    // Send first message with requirement data
+    await this.sendMessage(
+      chainId,
+      jobId.toString(),
+      JSON.stringify(requirementData),
+      "requirement"
+    );
+
+    return jobId;
   }
 
   // -------------------------------------------------------------------------

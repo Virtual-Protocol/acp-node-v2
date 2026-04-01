@@ -2,16 +2,7 @@ import type { Address } from "viem";
 import { AssetToken } from "./core/assetToken";
 import type { AcpClient } from "./clientFactory";
 import type { OnChainJob } from "./core/operations";
-import type { OffChainIntent, OffChainJob } from "./events/types";
-
-const STATUS_MAP: Record<string, number> = {
-  OPEN: 0,
-  FUNDED: 1,
-  SUBMITTED: 2,
-  COMPLETED: 3,
-  REJECTED: 4,
-  EXPIRED: 5,
-};
+import type { AcpJobStatus, OffChainIntent, OffChainJob } from "./events/types";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -59,12 +50,17 @@ export class AcpJob {
   readonly description: string;
   readonly budget: AssetToken;
   readonly expiredAt: bigint;
-  readonly status: number;
+  readonly status: AcpJobStatus;
   readonly hookAddress: string;
   readonly intents: AcpIntent[];
   readonly deliverable: string | null;
 
-  constructor(chainId: number, data: OnChainJob, intents: AcpIntent[] = [], deliverable: string | null = null) {
+  constructor(
+    chainId: number,
+    data: OnChainJob,
+    intents: AcpIntent[] = [],
+    deliverable: string | null = null
+  ) {
     this.chainId = chainId;
     this.id = data.id;
     this.clientAddress = data.client;
@@ -105,7 +101,7 @@ export class AcpJob {
         expiredAt: BigInt(
           Math.floor(new Date(data.expiredAt).getTime() / 1000)
         ),
-        status: STATUS_MAP[data.jobStatus] ?? 0,
+        status: data.jobStatus,
         hook: data.hookAddress ?? ZERO_ADDRESS,
       },
       intents,

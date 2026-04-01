@@ -49,6 +49,12 @@ export type {
   AcpJobApi,
   OffChainJob,
   OffChainIntent,
+  AcpAgentDetail,
+  AcpAgentOffering,
+  AcpAgentChain,
+  AcpAgentResource,
+  AcpAgentSubscription,
+  BrowseAgentParams,
 } from "./events/types";
 
 // Utilities

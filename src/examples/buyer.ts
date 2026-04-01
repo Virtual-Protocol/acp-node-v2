@@ -1,17 +1,14 @@
 import { AcpAgent } from "../acpAgent";
 import { AssetToken } from "../core/assetToken";
-import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import { type JobSession, type JobRoomEntry, AgentSort } from "../index";
 
-const SELLER_ADDRESS = "0xSellerAddress";
 const chain = baseSepolia;
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    contractAddresses: ACP_CONTRACT_ADDRESSES,
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
       privateKey: "0xBuyerPrivateKey",
@@ -54,6 +51,7 @@ async function main(): Promise<void> {
 
   await buyer.start();
 
+  // 1. Browse for agents
   const agents = await buyer.browseAgents("<search query>", {
     sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT, AgentSort.SUCCESS_RATE],
     topK: 5,
@@ -66,12 +64,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  const jobId = await buyer.createJob(chain.id, {
-    providerAddress: agent.walletAddress,
-    evaluatorAddress: buyerAddress,
-    expiredAt: Math.floor(Date.now() / 1000) + 3600,
-    description: "Example job from SDK",
-  });
+  // 2. Select an offering
+  const offering = agent.offerings[0];
+  if (!offering) {
+    console.error("Agent has no offerings");
+    return;
+  }
+
+  // 3. Create job from offering (validates requirement, creates job, sends first message)
+  // expiredAt is auto-calculated from offering.slaMinutes
+  const jobId = await buyer.createJobFromOffering(
+    chain.id,
+    offering,
+    agent.walletAddress,
+    { "<your-schema-key>": "<your-schema-value>" }, // requirement data matching offering schema
+    { evaluatorAddress: buyerAddress }
+  );
 
   console.log(`[buyer] created job ${jobId} — waiting for seller…`);
 }

@@ -4,7 +4,7 @@ import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
-import type { JobSession, JobRoomEntry } from "../index";
+import { type JobSession, type JobRoomEntry, AgentSort } from "../index";
 
 const SELLER_ADDRESS = "0xSellerAddress";
 const chain = baseSepolia;
@@ -54,8 +54,20 @@ async function main(): Promise<void> {
 
   await buyer.start();
 
+  const agents = await buyer.browseAgents("<search query>", {
+    sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT, AgentSort.SUCCESS_RATE],
+    topK: 5,
+    showHidden: true,
+  });
+
+  const agent = agents[0];
+  if (!agent) {
+    console.error("No agents found matching the search query");
+    return;
+  }
+
   const jobId = await buyer.createJob(chain.id, {
-    providerAddress: SELLER_ADDRESS,
+    providerAddress: agent.walletAddress,
     evaluatorAddress: buyerAddress,
     expiredAt: Math.floor(Date.now() / 1000) + 3600,
     description: "Example job from SDK",

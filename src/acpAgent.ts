@@ -22,9 +22,11 @@ import { SocketTransport } from "./events/socketTransport";
 import { AcpApiClient } from "./events/acpApiClient";
 import { AcpHttpClient } from "./events/acpHttpClient";
 import type {
+  AcpAgentDetail,
   AcpChatTransport,
   AcpJobApi,
   AgentRole,
+  BrowseAgentParams,
   JobRoomEntry,
   TransportContext,
 } from "./events/types";
@@ -126,6 +128,18 @@ export class AcpAgent {
 
   getSupportedChainIds(): number[] {
     return this.client.getSupportedChainIds();
+  }
+
+  async browseAgents(
+    keyword: string,
+    params?: BrowseAgentParams
+  ): Promise<Array<AcpAgentDetail>> {
+    const chainIds = this.client.getSupportedChainIds();
+    const queryParams = {
+      ...params,
+      walletAddressToExclude: this.address ?? "",
+    };
+    return await this.api.browseAgents(keyword, chainIds, queryParams);
   }
 
   async getAddress(): Promise<string> {

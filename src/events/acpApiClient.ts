@@ -1,4 +1,9 @@
-import type { AcpJobApi, OffChainJob } from "./types";
+import type {
+  AcpAgentDetail,
+  AcpJobApi,
+  BrowseAgentParams,
+  OffChainJob,
+} from "./types";
 import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
 
 export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
@@ -18,10 +23,7 @@ export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
     return data.jobs || [];
   }
 
-  async getJob(
-    chainId: number,
-    jobId: string
-  ): Promise<OffChainJob | null> {
+  async getJob(chainId: number, jobId: string): Promise<OffChainJob | null> {
     await this.ensureAuthenticated();
     const res = await this.authedFetch(
       `${this.serverUrl}/jobs/${chainId}/${jobId}`
@@ -51,5 +53,25 @@ export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
         `postDeliverable failed: ${res.status} ${res.statusText}`
       );
     }
+  }
+
+  async browseAgents(
+    keyword: string,
+    chainIds: number[],
+    params?: BrowseAgentParams
+  ): Promise<Array<AcpAgentDetail>> {
+    await this.ensureAuthenticated();
+    const query = new URLSearchParams({ query: keyword });
+    if (chainIds.length > 0) query.set("chainIds", chainIds.join(","));
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (value !== undefined) query.set(key, String(value));
+    }
+    const res = await this.authedFetch(
+      `${this.serverUrl}/agents/search?${query.toString()}`
+    );
+    if (!res.ok) {
+      throw new Error(`browseAgents failed: ${res.status} ${res.statusText}`);
+    }
+    return (await res.json()).data;
   }
 }

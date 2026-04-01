@@ -1,4 +1,5 @@
 import type { AcpClient } from "../clientFactory";
+import { AgentSort, OnlineStatus } from "../clients/baseAcpClient";
 
 // ---------------------------------------------------------------------------
 // ACP job events (discriminated union — used inside SystemEntry.event)
@@ -191,6 +192,15 @@ export interface AcpChatTransport {
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
 }
 
+export interface BrowseAgentParams {
+  cluster?: string;
+  sortBy?: AgentSort[];
+  topK?: number;
+  isOnline?: OnlineStatus;
+  showHidden?: boolean; // include hidden offerings and resources
+  walletAddressToExclude?: string;
+}
+
 export interface AcpJobApi {
   getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
   getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;
@@ -199,4 +209,61 @@ export interface AcpJobApi {
     jobId: string,
     deliverable: string
   ): Promise<void>;
+  browseAgents(
+    keyword: string,
+    chainIds: number[],
+    params?: BrowseAgentParams
+  ): Promise<Array<AcpAgentDetail>>;
+}
+
+export interface AcpAgentChain {
+  id: number;
+  chainId: number;
+  tokenAddress: string;
+}
+
+export interface AcpAgentOffering {
+  name: string;
+  description: string;
+  deliverable: Record<string, unknown> | string;
+  requirements: Record<string, unknown> | string;
+  slaMinutes: number;
+  priceType: string;
+  priceValue: number;
+  requiredFunds: boolean;
+  isHidden: boolean;
+  isPrivate: boolean;
+  subscriptions: any[];
+}
+
+export interface AcpAgentResource {
+  name: string;
+  url: string;
+  params: Record<string, unknown>;
+  description: string;
+}
+
+export interface AcpAgentSubscription {
+  packageId: number;
+  name: string;
+  price: number;
+  duration: number;
+}
+
+export interface AcpAgentDetail {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  walletAddress: string;
+  solWalletAddress: string | null;
+  role: string;
+  cluster: string | null;
+  tag: string | null;
+  lastActiveAt: string;
+  rating: number | null;
+  isHidden: boolean;
+  chains: Array<AcpAgentChain>;
+  offerings: Array<AcpAgentOffering>;
+  resources: Array<AcpAgentResource>;
 }

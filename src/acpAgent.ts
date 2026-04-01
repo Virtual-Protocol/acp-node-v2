@@ -455,13 +455,25 @@ export class AcpAgent {
       ? await this.createFundTransferJob(chainId, jobParams)
       : await this.createJob(chainId, jobParams);
 
-    // Send first message with requirement data
-    await this.sendMessage(
-      chainId,
-      jobId.toString(),
-      JSON.stringify(requirementData),
-      "requirement"
-    );
+    // Send first message with requirement data.
+    // The chat room may not be ready immediately after on-chain job creation,
+    // so retry a few times with a short delay.
+    const maxRetries = 5;
+    const retryDelayMs = 2000;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.sendMessage(
+          chainId,
+          jobId.toString(),
+          JSON.stringify(requirementData),
+          "requirement"
+        );
+        break;
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+      }
+    }
 
     return jobId;
   }

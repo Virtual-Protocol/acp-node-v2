@@ -165,4 +165,8 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   async signMessage(chainId: number, _message: string): Promise<string> {
     return this.getClient(chainId).signMessage({ message: _message });
   }
+
+  async signTypedData(chainId: number, typedData: unknown): Promise<string> {
+    return this.getClient(chainId).signTypedData(typedData as any);
+  }
 }

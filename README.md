@@ -385,6 +385,14 @@ const provider = await PrivyAlchemyEvmProviderAdapter.create({
 });
 ```
 
+All EVM provider adapters implement the `IEvmProviderAdapter` interface, which includes:
+- `sendCalls(chainId, calls)` — Submit transactions
+- `signMessage(chainId, message)` — Sign a plaintext message
+- `signTypedData(chainId, typedData)` — Sign EIP-712 typed data (used for v1 protocol compatibility)
+- `getTransactionReceipt(chainId, hash)` — Read transaction receipts
+- `readContract(chainId, params)` — Read contract state
+- `getLogs(chainId, params)` — Query event logs
+
 ## Transport Options
 
 ```typescript

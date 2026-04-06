@@ -407,4 +407,10 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       message: _message,
     });
   }
+
+  async signTypedData(chainId: number, typedData: unknown): Promise<string> {
+    return this.getClients(chainId).smartWalletClient.signTypedData(
+      typedData as any,
+    );
+  }
 }

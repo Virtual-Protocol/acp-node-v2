@@ -10,6 +10,7 @@ This is a **breaking rewrite**, not a drop-in upgrade. The v2 SDK replaces the i
 - First-class LLM tool integration (`availableTools()`, `toMessages()`, `executeTool()`)
 - Solana support
 - Privy wallet integration
+- `signTypedData` on `IEvmProviderAdapter` (enables v1 protocol compatibility for EIP-712 auth)
 
 ---
 

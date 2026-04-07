@@ -47,6 +47,7 @@ export interface PrivyAlchemyChainConfig {
   walletId: string;
   signerPrivateKey: string;
   serverUrl?: string;
+  privyAppId?: string;
 }
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -67,14 +68,15 @@ function encodeSignableMessage(message: SignableMessage): {
 
 function buildSignInput(
   walletId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  privyAppId: string = PRIVY_APP_ID
 ): WalletApiRequestSignatureInput {
   return {
     version: 1,
     method: "POST",
     url: `https://api.privy.io/v1/wallets/${walletId}/rpc`,
     body,
-    headers: { "privy-app-id": PRIVY_APP_ID },
+    headers: { "privy-app-id": privyAppId },
   };
 }
 
@@ -104,9 +106,10 @@ function signedServerCall<T>(
   rpcBody: Record<string, unknown>,
   payload: Record<string, unknown>,
   signerPrivateKey: string,
-  serverUrl: string
+  serverUrl: string,
+  privyAppId: string = PRIVY_APP_ID
 ): Promise<T> {
-  const input = buildSignInput(walletId, rpcBody);
+  const input = buildSignInput(walletId, rpcBody, privyAppId);
   const authorizationSignature = generateAuthorizationSignature({
     authorizationPrivateKey: signerPrivateKey,
     input,
@@ -134,8 +137,9 @@ function createRemoteSigner(params: {
   walletId: string;
   signerPrivateKey: string;
   serverUrl: string;
+  privyAppId: string;
 }): LocalAccount<"privy-remote"> {
-  const { address, walletId, signerPrivateKey, serverUrl } = params;
+  const { address, walletId, signerPrivateKey, serverUrl, privyAppId } = params;
 
   return {
     type: "local",
@@ -156,7 +160,8 @@ function createRemoteSigner(params: {
         rpcBody,
         { walletAddress: address, walletId, ...encoded },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId
       );
       return result.signature;
     },
@@ -190,7 +195,8 @@ function createRemoteSigner(params: {
         rpcBody,
         { walletAddress: address, walletId, typedData },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId
       );
       return result.signature;
     },
@@ -234,7 +240,8 @@ function createRemoteSigner(params: {
           ...(nonce != null ? { nonce } : {}),
         },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId
       );
       return result.authorization;
     },
@@ -272,6 +279,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       walletId: params.walletId,
       signerPrivateKey: params.signerPrivateKey,
       serverUrl,
+      privyAppId: params.privyAppId ?? PRIVY_APP_ID,
     });
 
     const authClient = new ProviderAuthClient({
@@ -410,7 +418,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async signTypedData(chainId: number, typedData: unknown): Promise<string> {
     return this.getClients(chainId).smartWalletClient.signTypedData(
-      typedData as any,
+      typedData as any
     );
   }
 }

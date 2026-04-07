@@ -45,9 +45,13 @@ export const USDC_DECIMALS: Record<number, number> = {
 };
 export const USDC_SYMBOL = "USDC";
 
-export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";
+export const ACP_SERVER_URL = "https://api.acp.virtuals.io";
+
+export const ACP_TESTNET_SERVER_URL = "https://api-dev.acp.virtuals.io";
 
 export const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
+
+export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
 export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";
 

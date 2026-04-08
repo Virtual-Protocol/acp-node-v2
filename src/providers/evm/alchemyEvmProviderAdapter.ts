@@ -5,7 +5,7 @@ import {
   ModularAccountV2Client,
 } from "@account-kit/smart-contracts";
 import type { Address, Call, Chain, Hex, Log, TransactionReceipt } from "viem";
-import { createEvmNetworkContext, EVM_CHAINS } from "../../core/chains";
+import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -37,7 +37,7 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   ): Promise<AlchemyEvmProviderAdapter> {
     const clients = new Map<number, ModularAccountV2Client>();
 
-    const { chains = EVM_CHAINS } = params;
+    const { chains = EVM_MAINNET_CHAINS } = params;
 
     const alchemyChains = chains.map((chain) =>
       defineAlchemyChain({

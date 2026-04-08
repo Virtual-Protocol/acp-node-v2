@@ -19,7 +19,7 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_CHAINS } from "../../core/chains";
+import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -155,7 +155,8 @@ function createRemoteSigner(params: {
   serverUrl: string;
   privyAppId: string;
 }): LocalAccount<"privy-remote"> {
-  const { address, walletId, signerPrivateKey, signFn, serverUrl, privyAppId } = params;
+  const { address, walletId, signerPrivateKey, signFn, serverUrl, privyAppId } =
+    params;
 
   return {
     type: "local",
@@ -296,7 +297,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const chainClients = new Map<number, ChainClients>();
 
-    const { chains = EVM_CHAINS } = params;
+    const { chains = EVM_MAINNET_CHAINS } = params;
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
 
     const signer = createRemoteSigner({

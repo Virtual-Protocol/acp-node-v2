@@ -94,19 +94,11 @@ async function main() {
 
   await buyer.start();
 
-  // Browse for agents and pick an offering
-  const agents = await buyer.browseAgents("meme seller", {
-    sortBy: [AgentSort.SUCCESSFUL_JOB_COUNT],
-    topK: 5,
-  });
-  const offering = agents[0].offerings[0];
-
-  // Create job from offering (validates requirement, creates job, sends first message)
-  // expiredAt is auto-calculated from offering.slaMinutes
-  const jobId = await buyer.createJobFromOffering(
+  // Create job by offering name (resolves offering, validates requirement, creates job, sends first message)
+  const jobId = await buyer.createJobByOfferingName(
     baseSepolia.id,
-    offering,
-    agents[0].walletAddress,
+    "Meme Generation",
+    "0xProviderWalletAddress",
     { key: "I want a funny cat meme" },
     { evaluatorAddress: buyerAddress }
   );
@@ -196,7 +188,9 @@ await agent.stop();
 | `agent.browseAgents(keyword, params?)` | Search for agents by keyword |
 | `agent.createJob(chainId, params)` | Create an on-chain job |
 | `agent.createFundTransferJob(chainId, params)` | Create a job with fund transfer intent |
-| `agent.createJobFromOffering(chainId, offering, providerAddress, requirementData, opts)` | Browse → offering → validated job creation |
+| `agent.createJobByOfferingName(chainId, offeringName, providerAddress, requirementData, opts)` | Resolve offering by name → validated job creation |
+| `agent.createJobFromOffering(chainId, offering, providerAddress, requirementData, opts)` | Create job from full offering object |
+| `agent.getAgentByWalletAddress(walletAddress)` | Look up an agent by wallet address |
 | `agent.getAddress()` | Get the agent's wallet address |
 | `agent.getSession(chainId, jobId)` | Get an active session |
 
@@ -283,25 +277,27 @@ const agents = await agent.browseAgents("meme seller", {
 
 // Each agent has offerings with typed requirements
 const offering = agents[0].offerings[0];
-// offering.requirements is a JSON schema (Record<string, unknown>) or a string description
-// offering.requiredFunds indicates if fund transfer is needed
 
-// Create job from offering -- validates, creates job, sends first message
-// expiredAt is auto-calculated from offering.slaMinutes
-const jobId = await agent.createJobFromOffering(
+// Create job by offering name (simplest approach)
+const jobId = await agent.createJobByOfferingName(
   baseSepolia.id,
-  offering,
+  offering.name,
   agents[0].walletAddress,
   { ticker: "PEPE", amount: 100 }, // requirement data validated against offering schema
   { evaluatorAddress: await agent.getAddress() }
 );
+
+// Or look up an agent directly by wallet address
+const provider = await agent.getAgentByWalletAddress("0xProviderAddress");
 ```
 
-`createJobFromOffering` handles four things:
+`createJobByOfferingName` resolves the offering by name from the provider, then:
 1. **Validates** requirement data against the offering's JSON schema (if `requirements` is an object)
 2. **Creates the job** on-chain -- uses `createFundTransferJob` when `offering.requiredFunds` is true, otherwise `createJob`
 3. **Sets expiration** from `offering.slaMinutes` (`now + slaMinutes`)
 4. **Sends the first message** with `{ name, requirement }` using contentType `"requirement"`
+
+If you already have the full offering object, you can use `createJobFromOffering` directly instead.
 
 **Browse parameters:**
 

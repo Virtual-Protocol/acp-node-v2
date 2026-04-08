@@ -142,6 +142,12 @@ export class AcpAgent {
     return await this.api.browseAgents(keyword, chainIds, queryParams);
   }
 
+  async getAgentByWalletAddress(
+    walletAddress: string
+  ): Promise<AcpAgentDetail | null> {
+    return this.api.getAgentByWalletAddress(walletAddress);
+  }
+
   async getAddress(): Promise<string> {
     if (!this.address) {
       this.address = await this.client.getAddress();
@@ -476,6 +482,49 @@ export class AcpAgent {
     }
 
     return jobId;
+  }
+
+  async createJobByOfferingName(
+    chainId: number,
+    offeringName: string,
+    providerAddress: string,
+    requirementData: Record<string, unknown> | string,
+    opts?: {
+      evaluatorAddress?: string;
+      hookAddress?: string;
+    }
+  ): Promise<bigint> {
+    const agent = await this.api.getAgentByWalletAddress(providerAddress);
+    if (!agent) {
+      throw new Error(
+        `No agent found for wallet address: ${providerAddress}`
+      );
+    }
+
+    const matchingOfferings = agent.offerings.filter(
+      (o) => o.name === offeringName
+    );
+
+    if (matchingOfferings.length === 0) {
+      const available = agent.offerings.map((o) => o.name).join(", ");
+      throw new Error(
+        `Offering "${offeringName}" not found. Available offerings: ${available || "none"}`
+      );
+    }
+
+    if (matchingOfferings.length > 1) {
+      throw new Error(
+        `Multiple offerings named "${offeringName}" found. Use createJobFromOffering with the full offering object instead.`
+      );
+    }
+
+    return this.createJobFromOffering(
+      chainId,
+      matchingOfferings[0]!,
+      providerAddress,
+      requirementData,
+      opts
+    );
   }
 
   // -------------------------------------------------------------------------

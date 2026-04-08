@@ -74,4 +74,20 @@ export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
     }
     return (await res.json()).data;
   }
+
+  async getAgentByWalletAddress(
+    walletAddress: string
+  ): Promise<AcpAgentDetail | null> {
+    await this.ensureAuthenticated();
+    const res = await this.authedFetch(
+      `${this.serverUrl}/agents/wallet/${walletAddress}`
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(
+        `getAgentByWalletAddress failed: ${res.status} ${res.statusText}`
+      );
+    }
+    return (await res.json()).data;
+  }
 }

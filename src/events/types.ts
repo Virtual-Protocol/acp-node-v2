@@ -232,6 +232,9 @@ export interface AcpJobApi {
     chainIds: number[],
     params?: BrowseAgentParams
   ): Promise<Array<AcpAgentDetail>>;
+  getAgentByWalletAddress(
+    walletAddress: string
+  ): Promise<AcpAgentDetail | null>;
 }
 
 export interface AcpAgentChain {

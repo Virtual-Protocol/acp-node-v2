@@ -11,14 +11,11 @@ export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
     super(opts);
   }
 
-  async getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]> {
+  async getActiveJobs(): Promise<OffChainJob[]> {
     await this.ensureAuthenticated();
     const res = await this.authedFetch(`${this.serverUrl}/jobs`);
     const data = (await res.json()) as {
-      jobs: {
-        chainId: number;
-        onChainJobId: string;
-      }[];
+      jobs: OffChainJob[];
     };
     return data.jobs || [];
   }

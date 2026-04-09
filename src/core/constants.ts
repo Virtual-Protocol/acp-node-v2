@@ -70,3 +70,7 @@ export const SUPPORTED_CHAINS = [
     name: base.name,
   },
 ];
+
+export const MIN_SLA_MINS = 5;
+
+export const BUFFER_SECONDS = 30;

@@ -15,6 +15,8 @@ import type {
 import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
+  MIN_SLA_MINS,
+  BUFFER_SECONDS,
 } from "./core/constants";
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
@@ -447,7 +449,9 @@ export class AcpAgent {
       }
     }
 
-    const expiredAt = Math.floor(Date.now() / 1000) + offering.slaMinutes * 60;
+    const buffer = offering.slaMinutes === MIN_SLA_MINS ? BUFFER_SECONDS : 0;
+    const expiredAt =
+      Math.floor(Date.now() / 1000) + offering.slaMinutes * 60 + buffer;
 
     const jobParams: CreateJobParams = {
       providerAddress,
@@ -496,9 +500,7 @@ export class AcpAgent {
   ): Promise<bigint> {
     const agent = await this.api.getAgentByWalletAddress(providerAddress);
     if (!agent) {
-      throw new Error(
-        `No agent found for wallet address: ${providerAddress}`
-      );
+      throw new Error(`No agent found for wallet address: ${providerAddress}`);
     }
 
     const matchingOfferings = agent.offerings.filter(
@@ -508,7 +510,9 @@ export class AcpAgent {
     if (matchingOfferings.length === 0) {
       const available = agent.offerings.map((o) => o.name).join(", ");
       throw new Error(
-        `Offering "${offeringName}" not found. Available offerings: ${available || "none"}`
+        `Offering "${offeringName}" not found. Available offerings: ${
+          available || "none"
+        }`
       );
     }
 

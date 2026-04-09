@@ -55,6 +55,7 @@ export type {
   AcpAgentResource,
   AcpAgentSubscription,
   BrowseAgentParams,
+  FundIntent,
 } from "./events/types";
 
 // Utilities

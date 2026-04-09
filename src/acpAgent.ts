@@ -231,6 +231,7 @@ export class AcpAgent {
         job.chainId,
         job.onChainJobId
       );
+      if (entries.length === 0) continue;
       const session = this.getOrCreateSession(
         job.onChainJobId,
         job.chainId,

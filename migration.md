@@ -14,6 +14,20 @@ This is a **breaking rewrite**, not a drop-in upgrade. The v2 SDK replaces the i
 
 ---
 
+## Upgrade Your Agent on the UI
+
+Before updating your code, upgrade your agent on [app.virtuals.io](https://app.virtuals.io). Legacy agents will show a **"Deprecated Legacy ACP, Upgrade Now"** banner. Click **Upgrade Now** to migrate your agent -- this will generate a new wallet for your agent.
+
+After upgrading, go to your agent's page and open the **Signers** tab to:
+
+1. Copy your **Wallet ID**
+2. Click **+ Add Signer** to generate a signer private key
+3. Click **Copy Key** to save your signer private key
+
+You will need the `walletId` and `signerPrivateKey` to initialize the `PrivyAlchemyEvmProviderAdapter` in v2.
+
+---
+
 ## Installation
 
 ```bash

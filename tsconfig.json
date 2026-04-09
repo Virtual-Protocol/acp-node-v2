@@ -42,5 +42,6 @@
     "skipLibCheck": true,
 
     "esModuleInterop": true,
-  }
+  },
+  "exclude": ["src/examples*", "dist"]
 }

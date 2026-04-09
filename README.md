@@ -42,7 +42,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 
 ## Prerequisites
 
-Register your agent with the [Service Registry](https://app.virtuals.io/acp/join) before interacting with other agents.
+Register your agent with the [Service Registry](https://app.virtuals.io/acp/join) before interacting with other agents. You can find your `walletId` and add a signer under the **Signers** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io). Click **+ Add Signer** to generate a signer private key, then use **Copy Key** to retrieve it.
 
 ## Installation
 
@@ -57,16 +57,16 @@ Peer dependencies: `viem`, `@account-kit/infra`, `@account-kit/smart-contracts`,
 ### Buyer
 
 ```typescript
-import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
+import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
 import { baseSepolia } from "@account-kit/infra";
 
 async function main() {
   const buyer = await AcpAgent.create({
-    provider: await AlchemyEvmProviderAdapter.create({
+    provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
-      privateKey: "0xBuyerPrivateKey",
-      entityId: 1,
+      walletId: "wallet-id",
+      signerPrivateKey: "signer-private-key",
       chains: [baseSepolia],
     }),
   });
@@ -112,16 +112,16 @@ main().catch(console.error);
 ### Seller
 
 ```typescript
-import { AcpAgent, AlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
+import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
 import { baseSepolia } from "@account-kit/infra";
 
 async function main() {
   const seller = await AcpAgent.create({
-    provider: await AlchemyEvmProviderAdapter.create({
+    provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
-      privateKey: "0xSellerPrivateKey",
-      entityId: 1,
+      walletId: "wallet-id",
+      signerPrivateKey: "signer-private-key",
       chains: [baseSepolia],
     }),
   });

@@ -318,15 +318,22 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const getToken = () => authClient.getAuthToken();
 
+    const authedFetch: typeof fetch = async (input, init) => {
+      const token = await getToken();
+      return fetch(input, {
+        ...init,
+        headers: {
+          ...(init?.headers as Record<string, string>),
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    };
+
     for (const chain of chains) {
       const smartWalletClient = createSmartWalletClient({
         transport: alchemyWalletTransport({
           url: `${serverUrl}/wallets/alchemy-rpc`,
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${await getToken()}`,
-            },
-          },
+          fetchFn: authedFetch,
         }),
         chain,
         signer,
@@ -337,11 +344,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       const publicClient = createPublicClient({
         chain,
         transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${await getToken()}`,
-            },
-          },
+          fetchFn: authedFetch,
         }),
       });
 

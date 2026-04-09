@@ -1,6 +1,13 @@
-import type { Address, Call, Log, TransactionReceipt } from "viem";
+import type {
+  Address,
+  Call,
+  Log,
+  PublicClient,
+  TransactionReceipt,
+} from "viem";
 
 import type { NetworkContext, SolanaCluster } from "../core/chains";
+import { SmartWalletClient } from "@alchemy/wallet-apis";
 
 export type SolanaInstructionLike = {
   programId: string;
@@ -29,8 +36,14 @@ export type GetLogsParams = {
   toBlock?: bigint | "latest";
 };
 
+export type ChainClients = {
+  smartWalletClient: SmartWalletClient;
+  publicClient: PublicClient;
+};
+
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
+  getPublicClient(chainId: number): PublicClient;
   sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(
     chainId: number,

@@ -4,9 +4,19 @@ import {
   createModularAccountV2Client,
   ModularAccountV2Client,
 } from "@account-kit/smart-contracts";
-import type { Address, Call, Chain, Hex, Log, TransactionReceipt } from "viem";
+import {
+  createPublicClient,
+  type Address,
+  type Call,
+  type Chain,
+  type Hex,
+  type Log,
+  type PublicClient,
+  type TransactionReceipt,
+} from "viem";
 import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
+  ChainClients,
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
@@ -69,6 +79,20 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const address = params.walletAddress;
     return new AlchemyEvmProviderAdapter(address, clients);
+  }
+
+  getPublicClient(chainId: number): PublicClient {
+    const c = this.clients.get(chainId);
+    if (!c)
+      throw new Error(
+        `AlchemyEvmProviderAdapter: no public client configured for chainId ${chainId}`
+      );
+    return createPublicClient({
+      chain: c.chain,
+      transport: alchemy({
+        rpcUrl: `https://alchemy-proxy.virtuals.io/api/proxy/rpc?chainId=${c.chain.id}`,
+      }),
+    });
   }
 
   private getClient(chainId: number): ModularAccountV2Client {

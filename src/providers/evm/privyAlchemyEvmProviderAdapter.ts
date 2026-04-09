@@ -21,6 +21,7 @@ import {
 } from "viem/actions";
 import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
+  ChainClients,
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
@@ -268,11 +269,6 @@ function createRemoteSigner(params: {
   };
 }
 
-type ChainClients = {
-  smartWalletClient: SmartWalletClient;
-  publicClient: PublicClient;
-};
-
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
@@ -364,6 +360,10 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         `PrivyAlchemyEvmProviderAdapter: no clients configured for chainId ${chainId}`
       );
     return c;
+  }
+
+  getPublicClient(chainId: number): PublicClient {
+    return this.getClients(chainId).publicClient;
   }
 
   async getAddress(): Promise<Address> {

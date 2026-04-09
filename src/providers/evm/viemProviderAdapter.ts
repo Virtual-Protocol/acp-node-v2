@@ -1,4 +1,10 @@
-import type { Address, Call, Log, TransactionReceipt } from "viem";
+import type {
+  Address,
+  Call,
+  Log,
+  PublicClient,
+  TransactionReceipt,
+} from "viem";
 
 import { createEvmNetworkContext } from "../../core/chains";
 import type {
@@ -14,19 +20,28 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
     this.providerName = providerName;
   }
 
+  getPublicClient(chainId: number): PublicClient {
+    throw new Error("getPublicClient() not implemented. Override in subclass.");
+  }
+
   async getAddress(): Promise<Address> {
     throw new Error("getAddress() not implemented. Override in subclass.");
   }
 
   async getSupportedChainIds(): Promise<number[]> {
-    throw new Error("getSupportedChainIds() not implemented. Override in subclass.");
+    throw new Error(
+      "getSupportedChainIds() not implemented. Override in subclass."
+    );
   }
 
   async getNetworkContext(chainId: number) {
     return createEvmNetworkContext(chainId);
   }
 
-  async sendCalls(_chainId: number, _calls: Call[]): Promise<Address | Address[]> {
+  async sendCalls(
+    _chainId: number,
+    _calls: Call[]
+  ): Promise<Address | Address[]> {
     throw new Error("sendCalls() not implemented. Override in subclass.");
   }
 

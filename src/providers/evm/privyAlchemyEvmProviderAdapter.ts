@@ -277,13 +277,16 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
   private readonly chainClients: Map<number, ChainClients>;
+  private readonly signer: LocalAccount<"privy-remote">;
 
   private constructor(
     address: Address,
-    chainClients: Map<number, ChainClients>
+    chainClients: Map<number, ChainClients>,
+    signer: LocalAccount<"privy-remote">
   ) {
     this.address = address;
     this.chainClients = chainClients;
+    this.signer = signer;
   }
 
   static async create(
@@ -353,7 +356,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
-      chainClients
+      chainClients,
+      signer
     );
   }
 
@@ -441,14 +445,12 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async signMessage(chainId: number, _message: string): Promise<string> {
-    return this.getClients(chainId).smartWalletClient.signMessage({
+    return this.signer.signMessage({
       message: _message,
     });
   }
 
   async signTypedData(chainId: number, typedData: unknown): Promise<string> {
-    return this.getClients(chainId).smartWalletClient.signTypedData(
-      typedData as any
-    );
+    return this.signer.signTypedData(typedData as any);
   }
 }

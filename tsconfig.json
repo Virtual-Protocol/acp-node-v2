@@ -43,5 +43,5 @@
 
     "esModuleInterop": true,
   },
-  "exclude": ["scripts", "dist"]
+  "exclude": ["scripts", "src/examples*", "dist"]
 }

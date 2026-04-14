@@ -30,6 +30,7 @@ export * from "./core/solana/constants";
 export { AcpHttpClient } from "./events/acpHttpClient";
 export { AcpApiClient } from "./events/acpApiClient";
 export { SocketTransport } from "./events/socketTransport";
+export { SseTransport } from "./events/sseTransport";
 
 // Event / room types (public)
 export type {
@@ -52,6 +53,13 @@ export type {
   AcpJobApi,
   OffChainJob,
   OffChainIntent,
+  AcpAgentDetail,
+  AcpAgentOffering,
+  AcpAgentChain,
+  AcpAgentResource,
+  AcpAgentSubscription,
+  BrowseAgentParams,
+  FundIntent,
 } from "./events/types";
 
 // Utilities

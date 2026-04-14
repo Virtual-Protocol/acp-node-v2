@@ -1,6 +1,5 @@
 import { AcpAgent } from "../acpAgent";
 import { AssetToken } from "../core/assetToken";
-import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
 import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
@@ -8,7 +7,6 @@ import type { JobSession, JobRoomEntry } from "../index";
 
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
-    contractAddresses: ACP_CONTRACT_ADDRESSES,
     provider: await AlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
       privateKey: "0xSellerPrivateKey",
@@ -21,17 +19,10 @@ async function main(): Promise<void> {
   console.log(`[seller] address: ${await seller.getAddress()}`);
 
   seller.on("entry", async (session: JobSession, entry: JobRoomEntry) => {
-    const job = await session.fetchJob();
-
     if (entry.kind === "system") {
       switch (entry.event.type) {
         case "job.created":
-          console.log(
-            `[seller] new job ${session.jobId}: "${job?.description}"`
-          );
-          await session.sendMessage("I can handle this. Proposing 0.1 USDC.");
-          await session.setBudget(AssetToken.usdc(0.1, session.chainId));
-          console.log(`[seller] set budget on job ${session.jobId}`);
+          console.log(`[seller] new job ${session.jobId}`);
           break;
 
         case "job.funded":
@@ -48,10 +39,19 @@ async function main(): Promise<void> {
       }
     }
 
-    if (entry.kind === "message") {
+    // Handle the buyer's first message containing the requirement
+    if (
+      entry.kind === "message" &&
+      entry.contentType === "requirement" &&
+      session.status === "open"
+    ) {
+      const requirement = JSON.parse(entry.content);
       console.log(
-        `[seller] [job ${session.jobId}] ${entry.from}: ${entry.content}`
+        `[seller] received requirement for "${requirement.name}":`,
+        requirement.requirement
       );
+      await session.setBudget(AssetToken.usdc(0.1, session.chainId));
+      console.log(`[seller] set budget on job ${session.jobId}`);
     }
   });
 

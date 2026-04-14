@@ -19,13 +19,14 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_CHAINS } from "../../core/chains";
+import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
 } from "../types";
 import {
+  formatRequestForAuthorizationSignature,
   generateAuthorizationSignature,
   WalletApiRequestSignatureInput,
 } from "@privy-io/node";
@@ -41,12 +42,16 @@ import {
 } from "../../core/constants";
 import { ProviderAuthClient } from "../providerAuthClient";
 
+export type SignFn = (payload: Uint8Array) => Promise<string>;
+
 export interface PrivyAlchemyChainConfig {
   chains?: Chain[];
   walletAddress: Address;
   walletId: string;
-  signerPrivateKey: string;
+  signerPrivateKey?: string;
+  signFn?: SignFn;
   serverUrl?: string;
+  privyAppId?: string;
 }
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -67,14 +72,15 @@ function encodeSignableMessage(message: SignableMessage): {
 
 function buildSignInput(
   walletId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  privyAppId: string = PRIVY_APP_ID
 ): WalletApiRequestSignatureInput {
   return {
     version: 1,
     method: "POST",
     url: `https://api.privy.io/v1/wallets/${walletId}/rpc`,
     body,
-    headers: { "privy-app-id": PRIVY_APP_ID },
+    headers: { "privy-app-id": privyAppId },
   };
 }
 
@@ -98,19 +104,31 @@ async function serverPost<T>(
   return data as T;
 }
 
-function signedServerCall<T>(
+async function signedServerCall<T>(
   executePath: string,
   walletId: string,
   rpcBody: Record<string, unknown>,
   payload: Record<string, unknown>,
-  signerPrivateKey: string,
-  serverUrl: string
+  signerPrivateKey: string | undefined,
+  serverUrl: string,
+  privyAppId: string = PRIVY_APP_ID,
+  signFn?: SignFn
 ): Promise<T> {
-  const input = buildSignInput(walletId, rpcBody);
-  const authorizationSignature = generateAuthorizationSignature({
-    authorizationPrivateKey: signerPrivateKey,
-    input,
-  });
+  const input = buildSignInput(walletId, rpcBody, privyAppId);
+  let authorizationSignature: string;
+  if (signFn) {
+    const formatted = formatRequestForAuthorizationSignature(input);
+    authorizationSignature = await signFn(formatted);
+  } else if (signerPrivateKey) {
+    authorizationSignature = generateAuthorizationSignature({
+      authorizationPrivateKey: signerPrivateKey,
+      input,
+    });
+  } else {
+    throw new Error(
+      "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
+    );
+  }
   return serverPost<T>(
     executePath,
     { ...payload, authorizationSignature },
@@ -132,10 +150,13 @@ function replaceBigInts<T>(obj: T, replacer: (v: bigint) => unknown): T {
 function createRemoteSigner(params: {
   address: Hex;
   walletId: string;
-  signerPrivateKey: string;
+  signerPrivateKey: string | undefined;
+  signFn: SignFn | undefined;
   serverUrl: string;
+  privyAppId: string;
 }): LocalAccount<"privy-remote"> {
-  const { address, walletId, signerPrivateKey, serverUrl } = params;
+  const { address, walletId, signerPrivateKey, signFn, serverUrl, privyAppId } =
+    params;
 
   return {
     type: "local",
@@ -156,7 +177,9 @@ function createRemoteSigner(params: {
         rpcBody,
         { walletAddress: address, walletId, ...encoded },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId,
+        signFn
       );
       return result.signature;
     },
@@ -190,7 +213,9 @@ function createRemoteSigner(params: {
         rpcBody,
         { walletAddress: address, walletId, typedData },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId,
+        signFn
       );
       return result.signature;
     },
@@ -234,7 +259,9 @@ function createRemoteSigner(params: {
           ...(nonce != null ? { nonce } : {}),
         },
         signerPrivateKey,
-        serverUrl
+        serverUrl,
+        privyAppId,
+        signFn
       );
       return result.authorization;
     },
@@ -250,28 +277,39 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
   private readonly chainClients: Map<number, ChainClients>;
+  private readonly signer: LocalAccount<"privy-remote">;
 
   private constructor(
     address: Address,
-    chainClients: Map<number, ChainClients>
+    chainClients: Map<number, ChainClients>,
+    signer: LocalAccount<"privy-remote">
   ) {
     this.address = address;
     this.chainClients = chainClients;
+    this.signer = signer;
   }
 
   static async create(
     params: PrivyAlchemyChainConfig
   ): Promise<PrivyAlchemyEvmProviderAdapter> {
+    if (!params.signerPrivateKey && !params.signFn) {
+      throw new Error(
+        "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
+      );
+    }
+
     const chainClients = new Map<number, ChainClients>();
 
-    const { chains = EVM_CHAINS } = params;
+    const { chains = EVM_MAINNET_CHAINS } = params;
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
 
     const signer = createRemoteSigner({
       address: params.walletAddress,
       walletId: params.walletId,
       signerPrivateKey: params.signerPrivateKey,
+      signFn: params.signFn,
       serverUrl,
+      privyAppId: params.privyAppId ?? PRIVY_APP_ID,
     });
 
     const authClient = new ProviderAuthClient({
@@ -283,15 +321,22 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const getToken = () => authClient.getAuthToken();
 
+    const authedFetch: typeof fetch = async (input, init) => {
+      const token = await getToken();
+      return fetch(input, {
+        ...init,
+        headers: {
+          ...(init?.headers as Record<string, string>),
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    };
+
     for (const chain of chains) {
       const smartWalletClient = createSmartWalletClient({
         transport: alchemyWalletTransport({
           url: `${serverUrl}/wallets/alchemy-rpc`,
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${await getToken()}`,
-            },
-          },
+          fetchFn: authedFetch,
         }),
         chain,
         signer,
@@ -302,11 +347,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       const publicClient = createPublicClient({
         chain,
         transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
-          fetchOptions: {
-            headers: {
-              Authorization: `Bearer ${await getToken()}`,
-            },
-          },
+          fetchFn: authedFetch,
         }),
       });
 
@@ -315,7 +356,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
-      chainClients
+      chainClients,
+      signer
     );
   }
 
@@ -403,8 +445,12 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async signMessage(chainId: number, _message: string): Promise<string> {
-    return this.getClients(chainId).smartWalletClient.signMessage({
+    return this.signer.signMessage({
       message: _message,
     });
+  }
+
+  async signTypedData(chainId: number, typedData: unknown): Promise<string> {
+    return this.signer.signTypedData(typedData as any);
   }
 }

@@ -57,4 +57,8 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
   async signMessage(_chainId: number, _message: string): Promise<string> {
     throw new Error("signMessage() not implemented. Override in subclass.");
   }
+
+  async signTypedData(_chainId: number, _typedData: unknown): Promise<string> {
+    throw new Error("signTypedData() not implemented. Override in subclass.");
+  }
 }

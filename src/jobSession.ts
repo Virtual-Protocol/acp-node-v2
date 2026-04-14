@@ -172,9 +172,7 @@ export class JobSession {
 
   async fetchJob(): Promise<AcpJob> {
     try {
-      const data = await this.agent
-        .getApi()
-        .getJob(this.chainId, this.jobId);
+      const data = await this.agent.getApi().getJob(this.chainId, this.jobId);
       if (!data) {
         throw new Error(`Job ${this.jobId} not found on chain ${this.chainId}`);
       }
@@ -452,8 +450,8 @@ export class JobSession {
       if (e.kind === "system") {
         const event = e.event;
         if (event.type === "budget.set") {
-          const budget = AssetToken.usdcFromRaw(
-            BigInt(event.amount),
+          const budget = AssetToken.usdc(
+            Number(event.amount),
             this.chainId
           ).amount;
           let content = `The budget for this job is ${budget} USDC.`;
@@ -471,7 +469,9 @@ export class JobSession {
           }
           result.push({ role: "system", content });
         } else if (event.type === "job.submitted") {
-          let content = `The provider has submitted a deliverable: ${this._job?.deliverable ?? "(pending)"}`;
+          let content = `The provider has submitted a deliverable: ${
+            this._job?.deliverable ?? "(pending)"
+          }`;
           if (this._job) {
             const fundTransfer = this._job.getFundTransferIntent();
             if (fundTransfer) {

@@ -28,13 +28,19 @@ export class AssetToken {
 
   static usdc(amount: number, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
-    return new AssetToken(address, USDC_SYMBOL, USDC_DECIMALS, amount);
+    const decimals = USDC_DECIMALS[chainId];
+    if (decimals === undefined)
+      throw new Error(`No USDC decimals configured for chainId ${chainId}`);
+    return new AssetToken(address, USDC_SYMBOL, decimals, amount);
   }
 
   static usdcFromRaw(rawAmount: bigint, chainId: number): AssetToken {
     const address = getAddressForChain(USDC_ADDRESSES, chainId, "USDC");
-    const dec = Number(rawAmount) / 10 ** USDC_DECIMALS;
-    return new AssetToken(address, USDC_SYMBOL, USDC_DECIMALS, dec);
+    const decimals = USDC_DECIMALS[chainId];
+    if (decimals === undefined)
+      throw new Error(`No USDC decimals configured for chainId ${chainId}`);
+    const dec = Number(rawAmount) / 10 ** decimals;
+    return new AssetToken(address, USDC_SYMBOL, decimals, dec);
   }
 
   static async fromOnChain(

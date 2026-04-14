@@ -1,4 +1,5 @@
-import { encodeAbiParameters, type Address, type Hex } from "viem";
+import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
+import Ajv from "ajv";
 import {
   type AcpClient,
   type CreateAcpClientInput,
@@ -15,19 +16,24 @@ import type {
 import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
+  MIN_SLA_MINS,
+  BUFFER_SECONDS,
 } from "./core/constants";
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
-import { SocketTransport } from "./events/socketTransport";
 import { AcpApiClient } from "./events/acpApiClient";
 import { AcpHttpClient } from "./events/acpHttpClient";
 import type {
+  AcpAgentDetail,
+  AcpAgentOffering,
   AcpChatTransport,
   AcpJobApi,
   AgentRole,
+  BrowseAgentParams,
   JobRoomEntry,
   TransportContext,
 } from "./events/types";
+import { SseTransport } from "./events/sseTransport";
 
 export type EntryHandler = (
   session: JobSession,
@@ -97,7 +103,7 @@ export class AcpAgent {
 
   static async create(input: CreateAgentInput): Promise<AcpAgent> {
     const {
-      transport = new SocketTransport(),
+      transport = new SseTransport(),
       api = new AcpApiClient(),
       ...clientInput
     } = input;
@@ -125,6 +131,24 @@ export class AcpAgent {
 
   getSupportedChainIds(): number[] {
     return this.client.getSupportedChainIds();
+  }
+
+  async browseAgents(
+    keyword: string,
+    params?: BrowseAgentParams
+  ): Promise<Array<AcpAgentDetail>> {
+    const chainIds = this.client.getSupportedChainIds();
+    const queryParams = {
+      ...params,
+      walletAddressToExclude: this.address ?? "",
+    };
+    return await this.api.browseAgents(keyword, chainIds, queryParams);
+  }
+
+  async getAgentByWalletAddress(
+    walletAddress: string
+  ): Promise<AcpAgentDetail | null> {
+    return this.api.getAgentByWalletAddress(walletAddress);
   }
 
   async getAddress(): Promise<string> {
@@ -219,6 +243,7 @@ export class AcpAgent {
         job.chainId,
         job.onChainJobId
       );
+      if (entries.length === 0) continue;
       const session = this.getOrCreateSession(
         job.onChainJobId,
         job.chainId,
@@ -392,8 +417,6 @@ export class AcpAgent {
     const result = await this.client.submitPrepared(chainId, [prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
 
-    console.log("txHash", txHash);
-
     const jobId = await this.client.getJobIdFromTxHash(chainId, txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
     return jobId;
@@ -412,6 +435,113 @@ export class AcpAgent {
       ...params,
       hookAddress: params.hookAddress ?? defaultHook,
     });
+  }
+
+  async createJobFromOffering(
+    chainId: number,
+    offering: AcpAgentOffering,
+    providerAddress: string,
+    requirementData: Record<string, unknown> | string,
+    opts?: {
+      evaluatorAddress?: string;
+      hookAddress?: string;
+    }
+  ): Promise<bigint> {
+    // Validate requirement data against JSON schema if requirements is an object
+    if (
+      offering.requirements &&
+      typeof offering.requirements === "object" &&
+      typeof requirementData === "object"
+    ) {
+      const ajv = new Ajv({ allErrors: true });
+      const validate = ajv.compile(offering.requirements);
+      if (!validate(requirementData)) {
+        throw new Error(
+          `Requirement validation failed: ${ajv.errorsText(validate.errors)}`
+        );
+      }
+    }
+
+    const buffer = offering.slaMinutes === MIN_SLA_MINS ? BUFFER_SECONDS : 0;
+    const expiredAt =
+      Math.floor(Date.now() / 1000) + offering.slaMinutes * 60 + buffer;
+
+    const jobParams: CreateJobParams = {
+      providerAddress,
+      evaluatorAddress: opts?.evaluatorAddress ?? zeroAddress,
+      expiredAt,
+      description: offering.name,
+      ...(opts?.hookAddress ? { hookAddress: opts.hookAddress } : {}),
+    };
+
+    const jobId = offering.requiredFunds
+      ? await this.createFundTransferJob(chainId, jobParams)
+      : await this.createJob(chainId, jobParams);
+
+    // Send first message with requirement data.
+    // The chat room may not be ready immediately after on-chain job creation,
+    // so retry a few times with a short delay.
+    const maxRetries = 5;
+    const retryDelayMs = 2000;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.sendMessage(
+          chainId,
+          jobId.toString(),
+          JSON.stringify(requirementData),
+          "requirement"
+        );
+        break;
+      } catch (err) {
+        if (attempt === maxRetries) throw err;
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+      }
+    }
+
+    return jobId;
+  }
+
+  async createJobByOfferingName(
+    chainId: number,
+    offeringName: string,
+    providerAddress: string,
+    requirementData: Record<string, unknown> | string,
+    opts?: {
+      evaluatorAddress?: string;
+      hookAddress?: string;
+    }
+  ): Promise<bigint> {
+    const agent = await this.api.getAgentByWalletAddress(providerAddress);
+    if (!agent) {
+      throw new Error(`No agent found for wallet address: ${providerAddress}`);
+    }
+
+    const matchingOfferings = agent.offerings.filter(
+      (o) => o.name === offeringName
+    );
+
+    if (matchingOfferings.length === 0) {
+      const available = agent.offerings.map((o) => o.name).join(", ");
+      throw new Error(
+        `Offering "${offeringName}" not found. Available offerings: ${
+          available || "none"
+        }`
+      );
+    }
+
+    if (matchingOfferings.length > 1) {
+      throw new Error(
+        `Multiple offerings named "${offeringName}" found. Use createJobFromOffering with the full offering object instead.`
+      );
+    }
+
+    return this.createJobFromOffering(
+      chainId,
+      matchingOfferings[0]!,
+      providerAddress,
+      requirementData,
+      opts
+    );
   }
 
   // -------------------------------------------------------------------------

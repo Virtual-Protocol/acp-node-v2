@@ -1,17 +1,16 @@
-import { io, type Socket } from "socket.io-client";
-import type { AcpChatTransport, JobRoomEntry, TransportContext } from "./types";
+import { EventSource } from "eventsource";
+import type { AcpChatTransport, JobRoomEntry } from "./types";
 import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
 
-export type SocketTransportOptions = AcpHttpClientOptions;
+export type SseTransportOptions = AcpHttpClientOptions;
 
-export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
-  private socket: Socket | null = null;
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+export class SseTransport extends AcpHttpClient implements AcpChatTransport {
+  private eventSource: EventSource | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
   private lastEventTimestamp: number | null = null;
   private seenEntries = new Set<string>();
 
-  constructor(opts: SocketTransportOptions = {}) {
+  constructor(opts: SseTransportOptions = {}) {
     super(opts);
   }
 
@@ -22,68 +21,66 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
   async connect(onConnected?: () => void): Promise<void> {
     await this.ensureAuthenticated();
 
-    this.socket = io(this.serverUrl, {
-      transports: ["websocket"],
-      extraHeaders: {
-        "x-supported-chains": JSON.stringify(
-          this.ctx?.providerSupportedChainIds ?? []
-        ),
-      },
-      auth: async (cb) => {
-        try {
-          await this.refreshTokenIfNeeded();
-        } catch {
-          /* proceed with current token */
-        }
-        cb({
-          token: this.token,
-          lastEventTimestamp: this.lastEventTimestamp,
+    this.eventSource = new EventSource(`${this.serverUrl}/chats/stream`, {
+      fetch: async (url, init) => {
+        await this.refreshTokenIfNeeded();
+        return fetch(url, {
+          ...init,
+          headers: {
+            ...(init?.headers as Record<string, string>),
+            Authorization: `Bearer ${this.token}`,
+            "x-supported-chains": JSON.stringify(
+              this.ctx?.providerSupportedChainIds ?? []
+            ),
+          },
         });
       },
     });
 
     await new Promise<void>((resolve, reject) => {
-      this.socket!.on("connect", resolve);
-      this.socket!.on("connect_error", reject);
+      this.eventSource!.onopen = () => resolve();
+      this.eventSource!.onerror = (err) => {
+        if (this.eventSource!.readyState === EventSource.CONNECTING) return;
+        reject(err);
+      };
     });
 
     onConnected?.();
 
-    this.socket.on("disconnect", (reason) => {
-      if (reason === "io server disconnect") {
-        this.socket?.connect();
-      }
-    });
+    this.eventSource.onmessage = (event) => {
+      if (!event.data) return;
 
-    this.socket.on("job:entry", (data: Record<string, unknown>) => {
-      const entry = data as unknown as JobRoomEntry;
+      let entry: JobRoomEntry;
+      try {
+        entry = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
       const key = `${entry.timestamp}:${entry.kind}:${
         "from" in entry ? entry.from : ""
-      }:${"content" in entry ? entry.content : (entry as any).event?.type}`;
+      }:${
+        "content" in entry ? entry.content : (entry as any).event?.type
+      }`;
       if (this.seenEntries.has(key)) return;
       this.seenEntries.add(key);
+
       this.lastEventTimestamp = Math.max(
         this.lastEventTimestamp ?? 0,
         entry.timestamp
       );
+
       if (this.entryHandler) {
         this.entryHandler(entry);
       }
-    });
+    };
 
-    this.heartbeatInterval = setInterval(() => {
-      this.socket?.emit("heartbeat");
-    }, 30_000);
   }
 
   async disconnect(): Promise<void> {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-    if (this.socket) {
-      this.socket.disconnect();
-      this.socket = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
     this.ctx = null;
     this.entryHandler = null;
@@ -100,7 +97,7 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
   }
 
   // -------------------------------------------------------------------------
-  // Messaging (real-time via socket)
+  // Messaging (via REST — SSE is server→client only)
   // -------------------------------------------------------------------------
 
   sendMessage(
@@ -109,18 +106,10 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     content: string,
     contentType: string = "text"
   ): void {
-    if (!this.socket) throw new Error("Transport not connected");
-    this.socket.emit("job:message", {
-      chainId,
-      onChainJobId: jobId,
-      content,
-      contentType,
-    });
+    this.postMessage(chainId, jobId, content, contentType).catch(
+      console.error
+    );
   }
-
-  // -------------------------------------------------------------------------
-  // One-shot REST messaging (no socket connection needed)
-  // -------------------------------------------------------------------------
 
   async postMessage(
     chainId: number,
@@ -155,4 +144,5 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;
   }
+
 }

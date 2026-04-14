@@ -22,6 +22,19 @@ export enum JobStatus {
   EXPIRED = 5,
 }
 
+export enum AgentSort {
+  SUCCESSFUL_JOB_COUNT = "successfulJobCount",
+  SUCCESS_RATE = "successRate",
+  UNIQUE_BUYER_COUNT = "uniqueBuyerCount",
+  MINS_FROM_LAST_ONLINE = "minsFromLastOnlineTime",
+}
+
+export enum OnlineStatus {
+  ALL = "all",
+  ONLINE = "online",
+  OFFLINE = "offline",
+}
+
 export abstract class BaseAcpClient<TTx> {
   protected readonly contractAddresses: Record<number, string>;
 

@@ -1,25 +1,32 @@
 import { Address } from "viem";
-import { base, baseSepolia, bsc, bscTestnet } from "viem/chains";
+import { base, baseSepolia, bscTestnet } from "viem/chains";
 
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
 // ---------------------------------------------------------------------------
 
 export const USDC_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0xB270EDc833056001f11a7828DFdAC9D4ac2b8344",
+  [baseSepolia.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
+  [bscTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  [bsc.id]: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
-  [bscTestnet.id]: "0x64544969ed7EBf5f083679233325356EbE738930",
 };
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0x81b06b2085438cef320f2A91a69f84eF6431b8e6",
-  [bscTestnet.id]: "0x6d8a718Bf031258921A1321d833Cf893B56d6f09",
+  [baseSepolia.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
+  [bscTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
+  [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0x17DcAC666DB5958d80Ec99A1d372dd9686237c7C",
-  [bscTestnet.id]: "0xfd966805D55a3445092F0285b25658a22b5f0985",
+  [baseSepolia.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
+  [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
+  [base.id]: "0x90717828D78731313CB350D6a58b0f91668Ea702",
+};
+
+export const USDC_DECIMALS: Record<number, number> = {
+  [baseSepolia.id]: 6,
+  [base.id]: 6,
+  [bscTestnet.id]: 18,
 };
 
 // ---------------------------------------------------------------------------
@@ -37,11 +44,33 @@ export function getAddressForChain(
   return addr as Address;
 }
 
-export const USDC_DECIMALS = 6;
 export const USDC_SYMBOL = "USDC";
 
-export const ACP_SERVER_URL = "https://api-dev.acp.virtuals.io";
+export const ACP_SERVER_URL = "https://api.acp.virtuals.io";
 
-export const PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
+export const ACP_TESTNET_SERVER_URL = "https://api-dev.acp.virtuals.io";
+
+export const PRIVY_APP_ID = "cltsev9j90f67yhyw4sngtrpv";
+
+export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
 export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";
+
+export const SUPPORTED_CHAINS = [
+  {
+    id: baseSepolia.id,
+    name: baseSepolia.name,
+  },
+  {
+    id: bscTestnet.id,
+    name: bscTestnet.name,
+  },
+  {
+    id: base.id,
+    name: base.name,
+  },
+];
+
+export const MIN_SLA_MINS = 5;
+
+export const BUFFER_SECONDS = 30;

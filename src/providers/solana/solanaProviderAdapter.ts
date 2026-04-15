@@ -1,8 +1,9 @@
-import type { Rpc, SolanaRpcApi, KeyPairSigner } from "@solana/kit";
+import type { Rpc, SolanaRpcApi } from "@solana/kit";
 import { createSolanaNetworkContext, type SolanaCluster } from "../../core/chains";
 import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
+  SolanaSigner,
 } from "../types";
 
 export class SolanaProviderAdapter implements ISolanaProviderAdapter {
@@ -28,7 +29,7 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     throw new Error("getRpc() not implemented. Override in subclass.");
   }
 
-  getSigner(): KeyPairSigner {
+  getSigner(): SolanaSigner {
     throw new Error("getSigner() not implemented. Override in subclass.");
   }
 

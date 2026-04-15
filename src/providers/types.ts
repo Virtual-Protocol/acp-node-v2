@@ -3,6 +3,10 @@ import { AccountRole, type Rpc, type SolanaRpcApi, type KeyPairSigner, type Addr
 
 import type { NetworkContext, SolanaCluster } from "../core/chains";
 
+// A Solana signer that can partially sign transactions and messages.
+// KeyPairSigner (local keys) satisfies this, as do remote signers (e.g. Privy).
+export type SolanaSigner = Pick<KeyPairSigner, 'address' | 'signTransactions' | 'signMessages'>;
+
 export type SolanaInstructionLike = {
   programAddress: SolanaAddress;
   accounts: Array<{ address: SolanaAddress; role: AccountRole }>;
@@ -50,7 +54,7 @@ export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
   getCluster(): Promise<SolanaCluster>;
   getRpc(): Rpc<SolanaRpcApi>;
-  getSigner(): KeyPairSigner;
+  getSigner(): SolanaSigner;
   sendInstructions(
     instructions: SolanaInstructionLike[]
   ): Promise<string | string[]>;

@@ -22,6 +22,7 @@ export * from "./providers/evm/alchemyEvmProviderAdapter";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
 export * from "./providers/solana/keypairSolanaProviderAdapter";
+export * from "./providers/solana/privySolanaProviderAdapter";
 
 // Solana constants
 export * from "./core/solana/constants";

@@ -24,6 +24,7 @@
     "@privy-io/node": "^0.11.0",
     "ajv": "^8.18.0",
     "eventsource": "^4.1.0",
+    "ox": "^0.14.17",
     "socket.io-client": "^4.8.3",
     "viem": "^2.47.0"
   },

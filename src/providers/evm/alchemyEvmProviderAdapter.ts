@@ -5,31 +5,39 @@ import {
   ModularAccountV2Client,
 } from "@account-kit/smart-contracts";
 import type { Address, Call, Chain, Hex, Log, TransactionReceipt } from "viem";
+import { Attribution } from "ox/erc8021";
 import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
 } from "../types";
+import { appendBuilderCodeData } from "./privyAlchemyEvmProviderAdapter";
 
 export interface AlchemyChainConfig {
   chains?: Chain[];
   walletAddress: Address;
   privateKey: Hex;
   entityId: number;
+  builderCode?: string;
 }
 
 export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Alchemy";
   public readonly address: Address;
   private readonly clients: Map<number, ModularAccountV2Client>;
+  private readonly builderCodeSuffix: Hex | undefined;
 
   private constructor(
     address: Address,
-    clients: Map<number, ModularAccountV2Client>
+    clients: Map<number, ModularAccountV2Client>,
+    builderCode?: string
   ) {
     this.address = address;
     this.clients = clients;
+    this.builderCodeSuffix = builderCode
+      ? Attribution.toDataSuffix({ codes: [builderCode] })
+      : undefined;
   }
 
   static async create(
@@ -68,7 +76,7 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     }
 
     const address = params.walletAddress;
-    return new AlchemyEvmProviderAdapter(address, clients);
+    return new AlchemyEvmProviderAdapter(address, clients, params.builderCode);
   }
 
   private getClient(chainId: number): ModularAccountV2Client {
@@ -108,10 +116,13 @@ export class AlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[]
   ): Promise<Address | Address[]> {
     const client = this.getClient(chainId);
+    const suffix = this.builderCodeSuffix;
     const { hash } = await client.sendUserOperation({
       uo: _calls.map((call) => ({
         target: call.to,
-        data: call.data ?? "0x",
+        data: suffix
+          ? appendBuilderCodeData(call.data ?? "0x", suffix)
+          : call.data ?? "0x",
         ...(call.value != null && { value: call.value }),
       })),
       overrides: {

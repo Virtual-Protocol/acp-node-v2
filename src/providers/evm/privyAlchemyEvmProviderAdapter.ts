@@ -1,7 +1,9 @@
 import {
+  concatHex,
   createPublicClient,
   http,
   LocalAccount,
+  pad,
   PublicClient,
   toHex,
   TypedDataDefinition,
@@ -13,6 +15,7 @@ import {
   type SignableMessage,
   type TransactionReceipt,
 } from "viem";
+import { Attribution } from "ox/erc8021";
 import {
   getTransactionReceipt,
   readContract,
@@ -52,6 +55,7 @@ export interface PrivyAlchemyChainConfig {
   signFn?: SignFn;
   serverUrl?: string;
   privyAppId?: string;
+  builderCode?: string;
 }
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -273,20 +277,37 @@ type ChainClients = {
   publicClient: PublicClient;
 };
 
+export function appendBuilderCodeData(data: Hex, suffix: Hex): Hex {
+  const opDataByteLength = (data.length - 2) / 2;
+  const suffixByteLength = (suffix.length - 2) / 2;
+  const opDataPaddedSize = Math.ceil(opDataByteLength / 32) * 32;
+  const suffixPaddedSize = Math.ceil(suffixByteLength / 32) * 32;
+
+  const paddedData = pad(data, { size: opDataPaddedSize, dir: "right" });
+  const paddedSuffix = pad(suffix, { size: suffixPaddedSize });
+
+  return concatHex([paddedData, paddedSuffix]);
+}
+
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
   private readonly chainClients: Map<number, ChainClients>;
   private readonly signer: LocalAccount<"privy-remote">;
+  private readonly builderCodeSuffix: Hex | undefined;
 
   private constructor(
     address: Address,
     chainClients: Map<number, ChainClients>,
-    signer: LocalAccount<"privy-remote">
+    signer: LocalAccount<"privy-remote">,
+    builderCode?: string
   ) {
     this.address = address;
     this.chainClients = chainClients;
     this.signer = signer;
+    this.builderCodeSuffix = builderCode
+      ? Attribution.toDataSuffix({ codes: [builderCode] })
+      : undefined;
   }
 
   static async create(
@@ -357,7 +378,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
       chainClients,
-      signer
+      signer,
+      params.builderCode
     );
   }
 
@@ -398,10 +420,13 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[]
   ): Promise<Address | Address[]> {
     const { smartWalletClient } = this.getClients(chainId);
+    const suffix = this.builderCodeSuffix;
     const { id } = await smartWalletClient.sendCalls({
       calls: _calls.map((call) => ({
         to: call.to,
-        data: call.data ?? "0x",
+        data: suffix
+          ? appendBuilderCodeData(call.data ?? "0x", suffix)
+          : call.data ?? "0x",
         value: call.value ?? 0n,
       })),
       capabilities: {

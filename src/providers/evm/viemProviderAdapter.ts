@@ -26,6 +26,10 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
     return createEvmNetworkContext(chainId);
   }
 
+  async sendTransaction(_chainId: number, _call: Call): Promise<Address> {
+    throw new Error("sendTransaction() not implemented. Override in subclass.");
+  }
+
   async sendCalls(_chainId: number, _calls: Call[]): Promise<Address | Address[]> {
     throw new Error("sendCalls() not implemented. Override in subclass.");
   }

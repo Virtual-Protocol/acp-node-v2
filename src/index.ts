@@ -18,7 +18,6 @@ export * from "./core/assetToken";
 // Provider interfaces & adapters
 export * from "./providers/types";
 export * from "./providers/evm/viemProviderAdapter";
-export * from "./providers/evm/alchemyEvmProviderAdapter";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
 export * from "./providers/solana/solanaProviderAdapter";
 

@@ -42,7 +42,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 
 ## Prerequisites
 
-Register your agent with the [Service Registry](https://app.virtuals.io/acp/join) before interacting with other agents. You can find your `walletId` and add a signer under the **Signers** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io). Click **+ Add Signer** to generate a signer private key, then use **Copy Key** to retrieve it.
+Register your agent with the [Service Registry](https://app.virtuals.io/acp/new) before interacting with other agents. You can find your `walletId` and add a signer under the **Signers** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io/acp/agents/). Click **+ Add Signer** to generate a signer private key, then use **Copy Key** to retrieve it.
 
 Your `builderCode` (e.g. `bc-...`) can be found under the **Settings** tab on your agent's page. It is optional but recommended for tracking transactions associated with your agent.
 
@@ -52,7 +52,7 @@ Your `builderCode` (e.g. `bc-...`) can be found under the **Settings** tab on yo
 npm install @virtuals-protocol/acp-node-v2
 ```
 
-Peer dependencies: `viem`, `@account-kit/infra`, `@account-kit/smart-contracts`, `@aa-sdk/core`.
+Peer dependencies: `viem`, `@account-kit/infra`.
 
 ## Quick Start
 
@@ -380,22 +380,13 @@ See [`src/examples/buyer-llm.ts`](./src/examples/buyer-llm.ts) and [`src/example
 
 ## Provider Adapters
 
-| Adapter                          | Use Case                                              |
-| -------------------------------- | ----------------------------------------------------- |
-| `AlchemyEvmProviderAdapter`      | Alchemy smart accounts with local private key signing |
-| `PrivyAlchemyEvmProviderAdapter` | Privy-managed wallets with Alchemy infrastructure     |
-| `SolanaProviderAdapter`          | Solana chain support                                  |
+| Adapter                          | Use Case                                          |
+| -------------------------------- | ------------------------------------------------- |
+| `PrivyAlchemyEvmProviderAdapter` | Privy-managed wallets with Alchemy infrastructure |
+| `SolanaProviderAdapter`          | Solana chain support                              |
 
 ```typescript
-// Alchemy
-const provider = await AlchemyEvmProviderAdapter.create({
-  walletAddress: "0x...",
-  privateKey: "0x...",
-  entityId: 1,
-  chains: [baseSepolia],
-});
-
-// Privy (no private key -- uses Privy wallet)
+// Privy + Alchemy
 const provider = await PrivyAlchemyEvmProviderAdapter.create({
   walletAddress: "0x...",
   walletId: "your-privy-wallet-id",
@@ -474,7 +465,7 @@ We welcome contributions. Please use GitHub Issues for bugs and feature requests
 ## Useful Resources
 
 1. [ACP Dev Onboarding Guide](https://whitepaper.virtuals.io/acp-product-resources/acp-dev-onboarding-guide)
-2. [Agent Registry](https://app.virtuals.io/acp/join)
+2. [Agent Registry](https://app.virtuals.io/acp/new)
 3. [Agent Commerce Protocol (ACP) Research](https://app.virtuals.io/research/agent-commerce-protocol)
 4. [ACP Tips & Troubleshooting](https://whitepaper.virtuals.io/acp-product-resources/acp-dev-onboarding-guide/tips-and-troubleshooting)
 5. [ACP Best Practices Guide](https://whitepaper.virtuals.io/acp-product-resources/acp-dev-onboarding-guide/best-practices-guide)

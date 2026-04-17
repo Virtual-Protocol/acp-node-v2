@@ -1,8 +1,7 @@
 import {
-  createPublicClient,
+  createWalletClient,
   http,
   LocalAccount,
-  PublicClient,
   toHex,
   TypedDataDefinition,
   type Address,
@@ -12,6 +11,7 @@ import {
   type Log,
   type SignableMessage,
   type TransactionReceipt,
+  type WalletClient,
 } from "viem";
 import {
   getTransactionReceipt,
@@ -35,11 +35,7 @@ import {
   type SmartWalletClient,
   alchemyWalletTransport,
 } from "@alchemy/wallet-apis";
-import {
-  ACP_SERVER_URL,
-  ALCHEMY_POLICY_ID,
-  PRIVY_APP_ID,
-} from "../../core/constants";
+import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants";
 import { ProviderAuthClient } from "../providerAuthClient";
 
 export type SignFn = (payload: Uint8Array) => Promise<string>;
@@ -129,6 +125,7 @@ async function signedServerCall<T>(
       "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
     );
   }
+
   return serverPost<T>(
     executePath,
     { ...payload, authorizationSignature },
@@ -188,7 +185,7 @@ function createRemoteSigner(params: {
       const TTypedData extends
         | Record<string, unknown>
         | Record<string, unknown>,
-      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData
+      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData,
     >(
       typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>
     ) => {
@@ -220,8 +217,47 @@ function createRemoteSigner(params: {
       return result.signature;
     },
 
-    signTransaction: async () => {
-      throw new Error("signTransaction not supported — use sendCalls instead");
+    signTransaction: async (transaction) => {
+      const raw = replaceBigInts(transaction, toHex) as Record<string, unknown>;
+
+      // Map viem tx fields to Privy's snake_case format
+      const TX_TYPE_MAP: Record<string, number> = {
+        legacy: 0, eip2930: 1, eip1559: 2, eip4844: 3, eip7702: 4,
+      };
+      const privyTx: Record<string, unknown> = {
+        ...(raw.to != null ? { to: raw.to } : {}),
+        ...(raw.from != null ? { from: raw.from } : {}),
+        ...(raw.data != null ? { data: raw.data } : {}),
+        ...(raw.value != null ? { value: raw.value } : {}),
+        ...(raw.nonce != null ? { nonce: raw.nonce } : {}),
+        ...(raw.gas != null ? { gas_limit: raw.gas } : {}),
+        ...(raw.gasPrice != null ? { gas_price: raw.gasPrice } : {}),
+        ...(raw.maxFeePerGas != null ? { max_fee_per_gas: raw.maxFeePerGas } : {}),
+        ...(raw.maxPriorityFeePerGas != null ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas } : {}),
+        ...(raw.chainId != null ? { chain_id: raw.chainId } : {}),
+      };
+      if (raw.type != null) {
+        privyTx.type = typeof raw.type === "string"
+          ? (TX_TYPE_MAP[raw.type] ?? Number(raw.type))
+          : raw.type;
+      }
+
+      const rpcBody = {
+        method: "eth_signTransaction" as const,
+        chain_type: "ethereum" as const,
+        params: { transaction: privyTx },
+      };
+      const result = await signedServerCall<{ signedTransaction: Hex }>(
+        "/wallets/sign-transaction",
+        walletId,
+        rpcBody,
+        { walletAddress: address, walletId, transaction: privyTx },
+        signerPrivateKey,
+        serverUrl,
+        privyAppId,
+        signFn
+      );
+      return result.signedTransaction;
     },
 
     signAuthorization: async (unsignedAuth) => {
@@ -270,7 +306,7 @@ function createRemoteSigner(params: {
 
 type ChainClients = {
   smartWalletClient: SmartWalletClient;
-  publicClient: PublicClient;
+  walletClient: WalletClient;
 };
 
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
@@ -278,15 +314,32 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly address: Address;
   private readonly chainClients: Map<number, ChainClients>;
   private readonly signer: LocalAccount<"privy-remote">;
+  private readonly walletId: string;
+  private readonly signerPrivateKey: string | undefined;
+  private readonly signFn: SignFn | undefined;
+  private readonly serverUrl: string;
+  private readonly privyAppId: string;
 
   private constructor(
     address: Address,
     chainClients: Map<number, ChainClients>,
-    signer: LocalAccount<"privy-remote">
+    signer: LocalAccount<"privy-remote">,
+    config: {
+      walletId: string;
+      signerPrivateKey: string | undefined;
+      signFn: SignFn | undefined;
+      serverUrl: string;
+      privyAppId: string;
+    }
   ) {
     this.address = address;
     this.chainClients = chainClients;
     this.signer = signer;
+    this.walletId = config.walletId;
+    this.signerPrivateKey = config.signerPrivateKey;
+    this.signFn = config.signFn;
+    this.serverUrl = config.serverUrl;
+    this.privyAppId = config.privyAppId;
   }
 
   static async create(
@@ -341,23 +394,30 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         chain,
         signer,
         account: params.walletAddress,
-        paymaster: { policyId: ALCHEMY_POLICY_ID },
       });
 
-      const publicClient = createPublicClient({
+      const walletClient = createWalletClient({
+        account: signer,
         chain,
         transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
           fetchFn: authedFetch,
         }),
       });
 
-      chainClients.set(chain.id, { smartWalletClient, publicClient });
+      chainClients.set(chain.id, { smartWalletClient, walletClient });
     }
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
       chainClients,
-      signer
+      signer,
+      {
+        walletId: params.walletId,
+        signerPrivateKey: params.signerPrivateKey,
+        signFn: params.signFn,
+        serverUrl,
+        privyAppId: params.privyAppId ?? PRIVY_APP_ID,
+      }
     );
   }
 
@@ -393,6 +453,17 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
+  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+    const { walletClient } = this.getClients(chainId);
+    return walletClient.sendTransaction({
+      account: walletClient.account!,
+      chain: walletClient.chain,
+      to: call.to,
+      data: call.data,
+      value: call.value,
+    });
+  }
+
   async sendCalls(
     chainId: number,
     _calls: Call[]
@@ -424,7 +495,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     hash: Address
   ): Promise<TransactionReceipt> {
-    return getTransactionReceipt(this.getClients(chainId).publicClient, {
+    return getTransactionReceipt(this.getClients(chainId).walletClient, {
       hash,
     });
   }
@@ -433,15 +504,15 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     params: ReadContractParams
   ): Promise<unknown> {
-    return readContract(this.getClients(chainId).publicClient, params);
+    return readContract(this.getClients(chainId).walletClient, params);
   }
 
   async getLogs(chainId: number, params: GetLogsParams): Promise<Log[]> {
-    return getLogs(this.getClients(chainId).publicClient, params);
+    return getLogs(this.getClients(chainId).walletClient, params);
   }
 
   async getBlockNumber(chainId: number): Promise<bigint> {
-    return getBlockNumber(this.getClients(chainId).publicClient);
+    return getBlockNumber(this.getClients(chainId).walletClient);
   }
 
   async signMessage(chainId: number, _message: string): Promise<string> {

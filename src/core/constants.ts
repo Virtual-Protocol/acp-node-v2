@@ -54,8 +54,6 @@ export const PRIVY_APP_ID = "cltsev9j90f67yhyw4sngtrpv";
 
 export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
-export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";
-
 export const SUPPORTED_CHAINS = [
   {
     id: baseSepolia.id,

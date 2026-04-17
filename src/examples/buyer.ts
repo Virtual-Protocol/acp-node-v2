@@ -1,7 +1,7 @@
 import { AcpAgent } from "../acpAgent";
 import { AssetToken } from "../core/assetToken";
 import { baseSepolia } from "@account-kit/infra";
-import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import { type JobSession, type JobRoomEntry, AgentSort } from "../index";
 
@@ -9,10 +9,10 @@ const chain = baseSepolia;
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    provider: await AlchemyEvmProviderAdapter.create({
+    provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xBuyerWalletAddress",
-      privateKey: "0xBuyerPrivateKey",
-      entityId: 1,
+      walletId: "buyer-wallet-id",
+      signerPrivateKey: "0xBuyerSignerPrivateKey",
       chains: [chain],
     }),
     transport: new SocketTransport(),

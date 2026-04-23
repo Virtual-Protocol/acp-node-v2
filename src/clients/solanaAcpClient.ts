@@ -30,15 +30,15 @@ import type {
 import { JOB_CREATED_EVENT_DISC } from "../core/solana/constants";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
-import { fetchAcpState } from "../core/solana/generated/acp/src/generated/accounts/acpState";
-import { fetchJob } from "../core/solana/generated/acp/src/generated/accounts/job";
-import { getCreateJobInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/createJob";
-import { getSetBudgetInstruction } from "../core/solana/generated/acp/src/generated/instructions/setBudget";
-import { getFundInstruction } from "../core/solana/generated/acp/src/generated/instructions/fund";
-import { getSubmitInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/submit";
-import { getCompleteInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/complete";
-import { getRejectInstructionAsync } from "../core/solana/generated/acp/src/generated/instructions/reject";
-import { getJobCreatedDecoder } from "../core/solana/generated/acp/src/generated/types/jobCreated";
+import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState";
+import { fetchJob } from "../core/solana/generated/acp/accounts/job";
+import { getCreateJobInstructionAsync } from "../core/solana/generated/acp/instructions/createJob";
+import { getSetBudgetInstruction } from "../core/solana/generated/acp/instructions/setBudget";
+import { getFundInstruction } from "../core/solana/generated/acp/instructions/fund";
+import { getSubmitInstructionAsync } from "../core/solana/generated/acp/instructions/submit";
+import { getCompleteInstructionAsync } from "../core/solana/generated/acp/instructions/complete";
+import { getRejectInstructionAsync } from "../core/solana/generated/acp/instructions/reject";
+import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated";
 
 // JobState enum values (inlined to avoid Node v24 ESM enum transform issues)
 const JOB_STATE_FUNDED = 1;

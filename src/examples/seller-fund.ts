@@ -1,15 +1,15 @@
 import { AcpAgent } from "../acpAgent";
 import { AssetToken } from "../core/assetToken";
 import { baseSepolia } from "@account-kit/infra";
-import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvmProviderAdapter";
 import { type JobSession, type JobRoomEntry } from "../index";
 
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
-    provider: await AlchemyEvmProviderAdapter.create({
+    provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
-      privateKey: "0xSellerPrivateKey",
-      entityId: 1,
+      walletId: "seller-wallet-id",
+      signerPrivateKey: "0xSellerSignerPrivateKey",
       chains: [baseSepolia],
     }),
   });

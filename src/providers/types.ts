@@ -38,6 +38,7 @@ export type GetLogsParams = {
 
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
+  sendTransaction(chainId: number, call: Call): Promise<Address>;
   sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(
     chainId: number,

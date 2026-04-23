@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AcpAgent } from "../acpAgent";
 import { ACP_CONTRACT_ADDRESSES } from "../core/constants";
 import { baseSepolia } from "@account-kit/infra";
-import { AlchemyEvmProviderAdapter } from "../providers/evm/alchemyEvmProviderAdapter";
+import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvmProviderAdapter";
 import { SocketTransport } from "../events/socketTransport";
 import type { AcpTool } from "../events/types";
 import type { JobSession, JobRoomEntry } from "../index";
@@ -55,10 +55,10 @@ function toAnthropicMessages(
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
     contractAddresses: ACP_CONTRACT_ADDRESSES,
-    provider: await AlchemyEvmProviderAdapter.create({
+    provider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
-      privateKey: "0xSellerPrivateKey",
-      entityId: 1,
+      walletId: "seller-wallet-id",
+      signerPrivateKey: "0xSellerSignerPrivateKey",
       chains: [chain],
     }),
     transport: new SocketTransport(),

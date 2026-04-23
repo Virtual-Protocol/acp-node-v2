@@ -1,6 +1,6 @@
 {
   "name": "@virtuals-protocol/acp-node-v2",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,14 +17,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@aa-sdk/core": "^4.84.1",
     "@account-kit/infra": "^4.84.1",
-    "@account-kit/smart-contracts": "^4.84.1",
     "@alchemy/wallet-apis": "^5.0.0-beta.9",
     "@privy-io/node": "^0.11.0",
     "@solana/kit": "^6.5.0",
     "ajv": "^8.18.0",
     "eventsource": "^4.1.0",
+    "ox": "^0.14.17",
     "socket.io-client": "^4.8.3",
     "viem": "^2.47.0"
   },

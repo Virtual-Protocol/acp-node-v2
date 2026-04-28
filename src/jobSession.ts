@@ -10,7 +10,13 @@ import type {
 import type { AcpAgent } from "./acpAgent";
 import { AcpJob } from "./acpJob";
 import { AssetToken } from "./core/assetToken";
-import { Address } from "viem";
+import {
+  ACP_SELECTORS,
+  FUND_TRANSFER_HOOK_ADDRESSES,
+  MULTI_HOOK_ROUTER_ADDRESSES,
+  SUBSCRIPTION_HOOK_ADDRESSES,
+} from "./core/constants";
+import { Address, type Hex } from "viem";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -312,7 +318,57 @@ export class JobSession {
     this.agent.sendJobMessage(this.chainId, this.jobId, content, contentType);
   }
 
-  async setBudget(amount: AssetToken): Promise<void> {
+  private async detectConfiguredHooks(
+    selector: Hex
+  ): Promise<{ hasSub: boolean; hasFund: boolean }> {
+    if (!this._job) throw new Error("Job not loaded");
+
+    const hook = this._job.hookAddress.toLowerCase();
+    const router = MULTI_HOOK_ROUTER_ADDRESSES[this.chainId]?.toLowerCase();
+    const subHook = SUBSCRIPTION_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
+    const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
+
+    if (hook === router) {
+      const configured = await this.agent.getRouterHooks(
+        this.chainId,
+        BigInt(this.jobId),
+        selector
+      );
+      const lower = configured.map((h) => h.toLowerCase());
+      return {
+        hasSub: lower.includes(subHook ?? ""),
+        hasFund: lower.includes(fundHook ?? ""),
+      };
+    }
+
+    return {
+      hasSub: hook === subHook,
+      hasFund: hook === fundHook,
+    };
+  }
+
+  async setBudget(
+    amount: AssetToken,
+    opts?: { packageId?: bigint; duration?: bigint }
+  ): Promise<void> {
+    const { hasSub } = await this.detectConfiguredHooks(
+      ACP_SELECTORS.setBudget
+    );
+
+    if (hasSub) {
+      if (opts?.packageId === undefined || opts.duration === undefined) {
+        throw new Error(
+          "setBudget routed to SubscriptionHook requires opts.packageId and opts.duration"
+        );
+      }
+      await this.setBudgetWithSubscription(
+        amount,
+        opts.duration,
+        opts.packageId
+      );
+      return;
+    }
+
     await this.agent.internalSetBudget(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
@@ -322,40 +378,183 @@ export class JobSession {
   async setBudgetWithFundRequest(
     amount: AssetToken,
     transferAmount: AssetToken,
-    destination: Address
+    destination: Address,
+    opts?: { packageId?: bigint; duration?: bigint }
   ): Promise<void> {
-    await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
+      ACP_SELECTORS.setBudget
+    );
+
+    if (hasSub && hasFund) {
+      if (opts?.packageId === undefined || opts.duration === undefined) {
+        throw new Error(
+          "setBudgetWithFundRequest with SubscriptionHook + FundTransferHook requires opts.packageId and opts.duration"
+        );
+      }
+      await this.setBudgetWithSubscriptionAndFundRequest(
+        amount,
+        opts.duration,
+        opts.packageId,
+        transferAmount,
+        destination
+      );
+      return;
+    }
+
+    if (hasFund) {
+      await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
+        jobId: BigInt(this.jobId),
+        amount,
+        transferAmount,
+        destination,
+      });
+      return;
+    }
+
+    await this.setBudget(amount, opts);
+  }
+
+  async setBudgetWithSubscription(
+    amount: AssetToken,
+    duration: bigint,
+    packageId: bigint
+  ): Promise<void> {
+    if (!this._job) throw new Error("Job not loaded");
+
+    await this.agent.internalSetBudgetWithSubscription(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
-      transferAmount,
-      destination,
+      duration,
+      packageId,
     });
+  }
+
+  async setBudgetWithSubscriptionAndFundRequest(
+    amount: AssetToken,
+    duration: bigint,
+    packageId: bigint,
+    transferAmount: AssetToken,
+    destination: Address
+  ): Promise<void> {
+    if (!this._job) throw new Error("Job not loaded");
+
+    await this.agent.internalSetBudgetWithSubscriptionAndFundRequest(
+      this.chainId,
+      {
+        jobId: BigInt(this.jobId),
+        amount,
+        duration,
+        packageId,
+        transferAmount,
+        destination,
+      }
+    );
   }
 
   async fund(amount?: AssetToken): Promise<void> {
     if (!this._job) throw new Error("Job not loaded");
     const effectiveAmount = amount ?? this._job.budget;
-    const intent = this._job.getFundRequestIntent();
+    const jobId = BigInt(this.jobId);
 
-    if (intent) {
+    const hook = this._job.hookAddress.toLowerCase();
+    const router = (
+      MULTI_HOOK_ROUTER_ADDRESSES[this.chainId] ?? ""
+    ).toLowerCase();
+
+    if (router && hook === router) {
+      const configuredHooks = await this.agent.getRouterHooks(
+        this.chainId,
+        jobId,
+        ACP_SELECTORS.fund
+      );
+      if (configuredHooks.length === 0) {
+        throw new Error(
+          "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
+        );
+      }
+
+      const { hasSub, hasFund } = await this.detectConfiguredHooks(
+        ACP_SELECTORS.fund
+      );
+
+      let subscriptionTerms:
+        | { duration: bigint; packageId: bigint }
+        | undefined;
+      let transferAmount: AssetToken | undefined;
+      let destination: Address | undefined;
+
+      if (hasSub) {
+        subscriptionTerms = await this.agent.getProposedSubscriptionTerms(
+          this.chainId,
+          jobId
+        );
+      }
+
+      if (hasFund) {
+        const intent = this._job.getFundRequestIntent();
+        if (!intent) {
+          throw new Error(
+            "FundTransferHook is configured on the router but no fund request intent was recorded"
+          );
+        }
+        const resolved = await intent.resolveAmount(
+          this.chainId,
+          this.agent.getClient()
+        );
+        if (!resolved) throw new Error("Could not resolve intent amount");
+        transferAmount = resolved;
+        destination = intent.recipientAddress as Address;
+      }
+
+      await this.agent.internalFundViaRouter(this.chainId, {
+        jobId: jobId,
+        amount: effectiveAmount,
+        configuredHooks,
+        ...(subscriptionTerms ? { subscriptionTerms } : {}),
+        ...(transferAmount ? { transferAmount } : {}),
+        ...(destination ? { destination } : {}),
+      });
+      return;
+    }
+
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
+      ACP_SELECTORS.fund
+    );
+
+    if (hasSub) {
+      const terms = await this.agent.getProposedSubscriptionTerms(
+        this.chainId,
+        jobId
+      );
+      await this.agent.internalFundWithSubscription(this.chainId, {
+        jobId: jobId,
+        amount: effectiveAmount,
+        duration: terms.duration,
+        packageId: terms.packageId,
+      });
+      return;
+    }
+
+    const intent = this._job.getFundRequestIntent();
+    if (intent && hasFund) {
       const transferAmount = await intent.resolveAmount(
         this.chainId,
         this.agent.getClient()
       );
-
       if (!transferAmount) throw new Error("Could not resolve intent amount");
       await this.agent.internalFundWithTransfer(this.chainId, {
-        jobId: BigInt(this.jobId),
+        jobId,
         amount: effectiveAmount,
         transferAmount,
         destination: intent.recipientAddress as Address,
       });
-    } else {
-      await this.agent.internalFund(this.chainId, {
-        jobId: BigInt(this.jobId),
-        amount: effectiveAmount,
-      });
+      return;
     }
+
+    await this.agent.internalFund(this.chainId, {
+      jobId,
+      amount: effectiveAmount,
+    });
   }
 
   async submit(

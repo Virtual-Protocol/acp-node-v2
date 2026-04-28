@@ -100,6 +100,7 @@ export type AgentMessage = {
     | "requirement";
   content: string;
   timestamp: number;
+  packageId?: number;
 };
 
 export type JobRoomEntry = SystemEntry | AgentMessage;
@@ -205,7 +206,8 @@ export interface AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType?: string
+    contentType?: string,
+    packageId?: number
   ): Promise<void>;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
 }
@@ -254,7 +256,7 @@ export interface AcpAgentOffering {
   requiredFunds: boolean;
   isHidden: boolean;
   isPrivate: boolean;
-  subscriptions: any[];
+  subscriptions: Array<AcpAgentSubscription>;
 }
 
 export interface AcpAgentResource {
@@ -287,4 +289,5 @@ export interface AcpAgentDetail {
   chains: Array<AcpAgentChain>;
   offerings: Array<AcpAgentOffering>;
   resources: Array<AcpAgentResource>;
+  subscriptions: Array<AcpAgentSubscription>;
 }

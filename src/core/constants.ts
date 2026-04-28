@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
 
 // ---------------------------------------------------------------------------
@@ -18,10 +18,30 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
+  [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x90717828D78731313CB350D6a58b0f91668Ea702",
 };
+
+export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
+};
+
+export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
+};
+
+export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
+};
+
+export const ACP_SELECTORS = {
+  setBudget: toFunctionSelector("setBudget(uint256,uint256,bytes)"),
+  fund: toFunctionSelector("fund(uint256,uint256,bytes)"),
+  submit: toFunctionSelector("submit(uint256,bytes32,bytes)"),
+  complete: toFunctionSelector("complete(uint256,bytes32,bytes)"),
+  reject: toFunctionSelector("reject(uint256,bytes32,bytes)"),
+} as const;
 
 export const USDC_DECIMALS: Record<number, number> = {
   [baseSepolia.id]: 6,

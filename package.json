@@ -24,7 +24,7 @@
     "eventsource": "^4.1.0",
     "ox": "^0.14.17",
     "socket.io-client": "^4.8.3",
-    "viem": "^2.47.0"
+    "viem": "^2.48.4"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",

@@ -31,16 +31,18 @@ export class AcpHttpClient {
   protected async authenticate(): Promise<string> {
     if (!this.ctx) throw new Error("Transport context not set");
 
-    const chainId = this.ctx.providerSupportedChainIds[0];
+    const chainId = this.ctx.providerSupportedChainIds[0]!;
+    const walletAddress =
+      Object.values(this.ctx.agentAddresses)[0] ?? "";
 
     const message = `acp-auth:${Date.now()}`;
-    const signature = await this.ctx.signMessage(chainId!, message);
+    const signature = await this.ctx.signMessage(chainId, message);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        walletAddress: this.ctx.agentAddress,
+        walletAddress,
         signature,
         message,
         chainId,

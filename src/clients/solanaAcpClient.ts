@@ -50,7 +50,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
   private readonly contractAddress: string;
   private jobPdaCache: Map<bigint, Address> = new Map();
-  private pendingCreateJobPda: Address | null = null;
 
   private constructor(
     contractAddresses: Record<number, string>,
@@ -151,7 +150,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     this.jobPdaCache.set(jobCounter, jobPda);
-    this.pendingCreateJobPda = jobPda;
 
     return this.wrapMany([
       {
@@ -168,7 +166,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ): Promise<PreparedSolanaTx> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId);
+    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
 
     let mintAddress: Address;
@@ -232,7 +230,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ): Promise<PreparedSolanaTx> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId);
+    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
 
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
@@ -306,7 +304,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ): Promise<PreparedSolanaTx> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId);
+    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
 
     const deliverableBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
@@ -355,7 +353,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ): Promise<PreparedSolanaTx> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId);
+    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
 
     const reasonBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
@@ -434,7 +432,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ): Promise<PreparedSolanaTx> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId);
+    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
     const acpStatePda = await this.deriveAcpStatePda();
     const acpState = await fetchAcpState(rpc, acpStatePda, {
@@ -513,24 +511,19 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (!tx) return null;
 
     const logs = tx.meta?.logMessages ?? [];
+    const decoder = getJobCreatedDecoder();
 
     for (const log of logs) {
       if (!log.startsWith("Program data: ")) continue;
-      const base64Data = log.slice("Program data: ".length);
-      const data = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+      const data = Uint8Array.from(
+        atob(log.slice("Program data: ".length)),
+        (c) => c.charCodeAt(0),
+      );
 
       if (data.length < 8) continue;
-      if (data.slice(0, 8).every((b, i) => b === JOB_CREATED_EVENT_DISC[i])) {
-        const decoder = getJobCreatedDecoder();
-        const event = decoder.decode(data.slice(8));
+      if (!JOB_CREATED_EVENT_DISC.every((b, i) => data[i] === b)) continue;
 
-        if (this.pendingCreateJobPda) {
-          this.jobPdaCache.set(event.jobId, this.pendingCreateJobPda);
-          this.pendingCreateJobPda = null;
-        }
-
-        return event.jobId;
-      }
+      return decoder.decode(data.slice(8)).jobId;
     }
 
     return null;

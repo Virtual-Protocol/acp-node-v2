@@ -28,15 +28,11 @@ import {
 } from "@privy-io/node";
 import {
   ACP_SERVER_URL,
-  ALCHEMY_POLICY_ID,
   PRIVY_APP_ID,
+  SOLANA_DEVNET_CHAIN_ID,
+  SOLANA_CHAIN_ID_CLUSTERS,
 } from "../../core/constants";
 import { ProviderAuthClient } from "../providerAuthClient";
-
-// Alchemy placeholder fee payer for sponsored transactions.
-// Replaced by the real fee payer after alchemy_requestFeePayer.
-const ALCHEMY_PLACEHOLDER_PAYER =
-  "Amh6quo1FcmL16Qmzdugzjq3Lv1zXzTW7ktswyLDzits" as Address;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -49,13 +45,12 @@ export interface PrivySolanaConfig {
   walletId: string;
   signerPrivateKey?: string;
   signFn?: SignFn;
-  cluster?: SolanaCluster;
+  /** Solana chain ID (500 = devnet, 501 = mainnet). Defaults to devnet. */
+  chainId?: number;
   /** Explicit RPC URL. When set, bypasses the ACP server proxy. */
   rpcUrl?: string;
   serverUrl?: string;
   privyAppId?: string;
-  /** Alchemy gas policy ID. When set, transactions are gas-sponsored. */
-  gasPolicyId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +60,7 @@ export interface PrivySolanaConfig {
 function buildSignInput(
   walletId: string,
   body: Record<string, unknown>,
-  privyAppId: string,
+  privyAppId: string
 ): WalletApiRequestSignatureInput {
   return {
     version: 1,
@@ -79,7 +74,7 @@ function buildSignInput(
 async function serverPost<T>(
   path: string,
   body: unknown,
-  serverUrl: string,
+  serverUrl: string
 ): Promise<T> {
   const base = serverUrl.replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -92,7 +87,7 @@ async function serverPost<T>(
     throw new Error(
       (data as any)?.detail ??
         (data as any)?.error ??
-        `Server error ${res.status}`,
+        `Server error ${res.status}`
     );
   }
   return data as T;
@@ -103,7 +98,7 @@ function generatePrivyAuthSig(
   rpcBody: Record<string, unknown>,
   signerPrivateKey: string | undefined,
   privyAppId: string,
-  signFn?: SignFn,
+  signFn?: SignFn
 ): string | Promise<string> {
   const input = buildSignInput(walletId, rpcBody, privyAppId);
   if (signFn) {
@@ -117,7 +112,7 @@ function generatePrivyAuthSig(
     });
   }
   throw new Error(
-    "PrivySolanaProviderAdapter: either signerPrivateKey or signFn must be provided",
+    "PrivySolanaProviderAdapter: either signerPrivateKey or signFn must be provided"
   );
 }
 
@@ -129,19 +124,19 @@ async function signedServerCall<T>(
   signerPrivateKey: string | undefined,
   serverUrl: string,
   privyAppId: string,
-  signFn?: SignFn,
+  signFn?: SignFn
 ): Promise<T> {
   const authorizationSignature = await generatePrivyAuthSig(
     walletId,
     rpcBody,
     signerPrivateKey,
     privyAppId,
-    signFn,
+    signFn
   );
   return serverPost<T>(
     executePath,
     { ...payload, authorizationSignature },
-    serverUrl,
+    serverUrl
   );
 }
 
@@ -151,7 +146,7 @@ async function signedServerCall<T>(
 
 function buildUnsignedWireBytes(
   messageBytes: Uint8Array,
-  signatures: Record<string, Uint8Array | null>,
+  signatures: Record<string, Uint8Array | null>
 ): Uint8Array {
   const sigEntries = Object.entries(signatures);
   const numSigs = sigEntries.length;
@@ -177,14 +172,8 @@ function createPrivySolanaSigner(params: {
   serverUrl: string;
   privyAppId: string;
 }): SolanaSigner {
-  const {
-    address,
-    walletId,
-    signerPrivateKey,
-    signFn,
-    serverUrl,
-    privyAppId,
-  } = params;
+  const { address, walletId, signerPrivateKey, signFn, serverUrl, privyAppId } =
+    params;
 
   return {
     address,
@@ -194,14 +183,17 @@ function createPrivySolanaSigner(params: {
         transactions.map(async (tx: any) => {
           const wireBytes = buildUnsignedWireBytes(
             new Uint8Array(tx.messageBytes),
-            tx.signatures as Record<string, Uint8Array | null>,
+            tx.signatures as Record<string, Uint8Array | null>
           );
           const unsignedBase64 = Buffer.from(wireBytes).toString("base64");
 
           const rpcBody = {
-            method: "solana:signTransaction" as const,
+            method: "signTransaction" as const,
             chain_type: "solana" as const,
-            params: { transaction: unsignedBase64 },
+            params: {
+              transaction: unsignedBase64,
+              encoding: "base64" as const,
+            },
           };
 
           const result = await signedServerCall<{
@@ -218,26 +210,26 @@ function createPrivySolanaSigner(params: {
             signerPrivateKey,
             serverUrl,
             privyAppId,
-            signFn,
+            signFn
           );
 
           const signedWire = new Uint8Array(
-            Buffer.from(result.signedTransaction, "base64"),
+            Buffer.from(result.signedTransaction, "base64")
           );
           const sigAddresses = Object.keys(tx.signatures);
           const ourIndex = sigAddresses.indexOf(address as string);
           if (ourIndex < 0) {
             throw new Error(
-              "Signer address not found in transaction signatures",
+              "Signer address not found in transaction signatures"
             );
           }
           const sigBytes = signedWire.subarray(
             1 + ourIndex * 64,
-            1 + (ourIndex + 1) * 64,
+            1 + (ourIndex + 1) * 64
           );
 
           return Object.freeze({ [address]: sigBytes });
-        }),
+        })
       );
     },
 
@@ -247,9 +239,9 @@ function createPrivySolanaSigner(params: {
           const contentBase64 = Buffer.from(msg.content).toString("base64");
 
           const rpcBody = {
-            method: "solana:signMessage" as const,
+            method: "signMessage" as const,
             chain_type: "solana" as const,
-            params: { message: contentBase64 },
+            params: { message: contentBase64, encoding: "base64" as const },
           };
 
           const result = await signedServerCall<{ signature: string }>(
@@ -264,14 +256,14 @@ function createPrivySolanaSigner(params: {
             signerPrivateKey,
             serverUrl,
             privyAppId,
-            signFn,
+            signFn
           );
 
           const sigBytes = new Uint8Array(
-            Buffer.from(result.signature, "base64"),
+            Buffer.from(result.signature, "base64")
           );
           return Object.freeze({ [address]: sigBytes });
-        }),
+        })
       );
     },
   } as SolanaSigner;
@@ -294,9 +286,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _serverUrl: string;
   private readonly _privyAppId: string;
 
-  // Gas sponsorship
+  // Gas sponsorship (policy injected server-side)
   private readonly _rpcProxyUrl: string | null;
-  private readonly _gasPolicyId: string | null;
   private _getAuthToken: (() => Promise<string>) | null = null;
 
   private constructor(params: {
@@ -310,7 +301,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     serverUrl: string;
     privyAppId: string;
     rpcProxyUrl: string | null;
-    gasPolicyId: string | null;
   }) {
     super("privy-solana");
     this._address = params.address;
@@ -323,23 +313,27 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     this._serverUrl = params.serverUrl;
     this._privyAppId = params.privyAppId;
     this._rpcProxyUrl = params.rpcProxyUrl;
-    this._gasPolicyId = params.gasPolicyId;
   }
 
   static async create(
-    params: PrivySolanaConfig,
+    params: PrivySolanaConfig
   ): Promise<PrivySolanaProviderAdapter> {
     if (!params.signerPrivateKey && !params.signFn) {
       throw new Error(
-        "PrivySolanaProviderAdapter: either signerPrivateKey or signFn must be provided",
+        "PrivySolanaProviderAdapter: either signerPrivateKey or signFn must be provided"
       );
     }
 
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
     const privyAppId = params.privyAppId ?? PRIVY_APP_ID;
-    const cluster = params.cluster ?? "devnet";
+    const chainId = params.chainId ?? SOLANA_DEVNET_CHAIN_ID;
+    const cluster = SOLANA_CHAIN_ID_CLUSTERS[chainId] as
+      | SolanaCluster
+      | undefined;
+    if (!cluster) {
+      throw new Error(`Unsupported Solana chainId: ${chainId}`);
+    }
     const address = params.walletAddress as Address;
-    const gasPolicyId = params.gasPolicyId ?? ALCHEMY_POLICY_ID;
 
     const signer = createPrivySolanaSigner({
       address,
@@ -359,7 +353,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     if (params.rpcUrl) {
       rpc = createSolanaRpc(params.rpcUrl) as Rpc<SolanaRpcApi>;
     } else {
-      rpcProxyUrl = `${serverUrl}/wallets/alchemy-rpc/solana`;
+      rpcProxyUrl = `${serverUrl}/wallets/solana-rpc/${chainId}`;
 
       const authClient = new ProviderAuthClient({
         serverUrl,
@@ -371,7 +365,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           if (!sigBytes) throw new Error("Solana message signing failed");
           return getBase58Decoder().decode(sigBytes);
         },
-        chainId: 0,
+        chainId,
       });
 
       getToken = () => authClient.getAuthToken();
@@ -406,7 +400,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       serverUrl,
       privyAppId,
       rpcProxyUrl,
-      gasPolicyId,
     });
     adapter._getAuthToken = getToken;
     return adapter;
@@ -433,12 +426,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   private async requestFeePayer(
-    serializedTransaction: string,
+    serializedTransaction: string
   ): Promise<string> {
-    if (!this._rpcProxyUrl || !this._getAuthToken || !this._gasPolicyId) {
-      throw new Error(
-        "Gas sponsorship requires a proxied RPC and a gasPolicyId",
-      );
+    if (!this._rpcProxyUrl || !this._getAuthToken) {
+      throw new Error("Gas sponsorship requires a proxied RPC connection");
     }
 
     const token = await this._getAuthToken();
@@ -454,8 +445,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         method: "alchemy_requestFeePayer",
         params: [
           {
-            policyId: this._gasPolicyId,
             serializedTransaction,
+            // prefundRent: true,
           },
         ],
       }),
@@ -464,7 +455,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const json = (await res.json()) as any;
     if (json.error) {
       throw new Error(
-        `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`,
+        `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`
       );
     }
     return json.result.serializedTransaction;
@@ -475,12 +466,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   private async signTransactionViaPrivy(
-    transactionBase64: string,
+    transactionBase64: string
   ): Promise<string> {
     const rpcBody = {
-      method: "solana:signTransaction" as const,
+      method: "signTransaction" as const,
       chain_type: "solana" as const,
-      params: { transaction: transactionBase64 },
+      params: { transaction: transactionBase64, encoding: "base64" as const },
     };
 
     const result = await signedServerCall<{ signedTransaction: string }>(
@@ -495,7 +486,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       this._signerPrivateKey,
       this._serverUrl,
       this._privyAppId,
-      this._signFn,
+      this._signFn
     );
 
     return result.signedTransaction;
@@ -506,14 +497,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   override async sendInstructions(
-    instructions: SolanaInstructionLike[],
+    instructions: SolanaInstructionLike[]
   ): Promise<string> {
     const { value: latestBlockhash } = await this._rpc
       .getLatestBlockhash()
       .send();
 
-    const useSponsorship =
-      this._rpcProxyUrl && this._getAuthToken && this._gasPolicyId;
+    const useSponsorship = this._rpcProxyUrl && this._getAuthToken;
 
     if (useSponsorship) {
       return this.sendSponsoredTransaction(instructions, latestBlockhash);
@@ -526,7 +516,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    */
   private async sendSelfPayTransaction(
     instructions: SolanaInstructionLike[],
-    latestBlockhash: any,
+    latestBlockhash: any
   ): Promise<string> {
     const message = pipe(
       createTransactionMessage({ version: 0 }),
@@ -534,7 +524,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       (msg) =>
         setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
       (msg) => appendTransactionMessageInstructions(instructions, msg),
-      (msg) => addSignersToTransactionMessage([this._signer], msg),
+      (msg) => addSignersToTransactionMessage([this._signer], msg)
     );
 
     const signedTx = await signTransactionMessageWithSigners(message);
@@ -551,16 +541,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    */
   private async sendSponsoredTransaction(
     instructions: SolanaInstructionLike[],
-    latestBlockhash: any,
+    latestBlockhash: any
   ): Promise<string> {
-    // 1. Build tx with placeholder fee payer
+    // 1. Build tx with user as fee payer (Alchemy replaces it + prefunds CPI rent)
     const message = pipe(
       createTransactionMessage({ version: 0 }),
-      (msg) =>
-        setTransactionMessageFeePayer(ALCHEMY_PLACEHOLDER_PAYER, msg),
+      (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
       (msg) =>
         setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-      (msg) => appendTransactionMessageInstructions(instructions, msg),
+      (msg) => appendTransactionMessageInstructions(instructions, msg)
     );
 
     const compiled = compileTransaction(message);
@@ -596,9 +585,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         (cause?.logs as string[]) ??
         (errObj?.logs as string[]);
       if (logs?.length) {
-        throw new Error(
-          `Transaction simulation failed:\n${logs.join("\n")}`,
-        );
+        throw new Error(`Transaction simulation failed:\n${logs.join("\n")}`);
       }
       throw err;
     }
@@ -610,9 +597,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       const status = value[0];
       if (status) {
         if (status.err) {
-          throw new Error(
-            `Transaction failed: ${JSON.stringify(status.err)}`,
-          );
+          throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
         }
         if (
           status.confirmationStatus === "confirmed" ||

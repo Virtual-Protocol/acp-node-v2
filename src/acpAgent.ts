@@ -3,7 +3,7 @@ import Ajv from "ajv";
 import {
   type AcpClient,
   type CreateAcpClientInput,
-  createAcpClient,
+  createAcpClients,
 } from "./clientFactory";
 import { EvmAcpClient } from "./clients/evmAcpClient";
 import { SolanaAcpClient } from "./clients/solanaAcpClient";
@@ -18,6 +18,8 @@ import {
   getAddressForChain,
   MIN_SLA_MINS,
   BUFFER_SECONDS,
+  type ChainFamily,
+  getChainFamily,
 } from "./core/constants";
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
@@ -52,12 +54,14 @@ export type CreateAgentInput = CreateAcpClientInput & {
 export type SetBudgetParams = {
   jobId: bigint;
   amount: AssetToken;
+  clientAddress?: string;
   optParams?: Hex;
 };
 
 export type FundJobParams = {
   jobId: bigint;
   amount: AssetToken;
+  clientAddress?: string;
 };
 
 export type SetBudgetWithFundRequestParams = {
@@ -65,6 +69,7 @@ export type SetBudgetWithFundRequestParams = {
   amount: AssetToken;
   transferAmount: AssetToken;
   destination: Address;
+  clientAddress?: string;
 };
 
 export type FundWithTransferParams = {
@@ -72,6 +77,7 @@ export type FundWithTransferParams = {
   amount: AssetToken;
   transferAmount: AssetToken;
   destination: Address;
+  clientAddress?: string;
   hookAddress?: string;
 };
 
@@ -79,6 +85,7 @@ export type SubmitWithTransferParams = {
   jobId: bigint;
   deliverable: string;
   transferAmount: AssetToken;
+  clientAddress?: string;
   hookAddress?: string;
 };
 
@@ -87,16 +94,20 @@ export type SubmitWithTransferParams = {
 // ---------------------------------------------------------------------------
 
 export class AcpAgent {
-  private readonly client: AcpClient;
+  private readonly clients: Map<ChainFamily, AcpClient>;
   private readonly transport: AcpChatTransport;
   private readonly api: AcpJobApi;
   private started = false;
   private entryHandler: EntryHandler | null = null;
   private sessions = new Map<string, JobSession>();
-  private address: string | null = null;
+  private addresses = new Map<ChainFamily, string>();
 
-  constructor(client: AcpClient, transport: AcpChatTransport, api: AcpJobApi) {
-    this.client = client;
+  constructor(
+    clients: Map<ChainFamily, AcpClient>,
+    transport: AcpChatTransport,
+    api: AcpJobApi
+  ) {
+    this.clients = clients;
     this.transport = transport;
     this.api = api;
   }
@@ -107,8 +118,8 @@ export class AcpAgent {
       api = new AcpApiClient(),
       ...clientInput
     } = input;
-    const client = await createAcpClient(clientInput);
-    const agent = new AcpAgent(client, transport, api);
+    const clients = await createAcpClients(clientInput);
+    const agent = new AcpAgent(clients, transport, api);
 
     const ctx = await agent.buildTransportContext();
     if (transport instanceof AcpHttpClient) transport.setContext(ctx);
@@ -117,8 +128,17 @@ export class AcpAgent {
     return agent;
   }
 
-  getClient(): AcpClient {
-    return this.client;
+  // -------------------------------------------------------------------------
+  // Client routing
+  // -------------------------------------------------------------------------
+
+  getClient(chainId: number): AcpClient {
+    const family = getChainFamily(chainId);
+    const client = this.clients.get(family);
+    if (!client) {
+      throw new Error(`No ${family} client configured for chainId ${chainId}`);
+    }
+    return client;
   }
 
   getTransport(): AcpChatTransport {
@@ -130,17 +150,22 @@ export class AcpAgent {
   }
 
   getSupportedChainIds(): number[] {
-    return this.client.getSupportedChainIds();
+    const ids: number[] = [];
+    for (const client of this.clients.values()) {
+      ids.push(...client.getSupportedChainIds());
+    }
+    return ids;
   }
 
   async browseAgents(
     keyword: string,
     params?: BrowseAgentParams
   ): Promise<Array<AcpAgentDetail>> {
-    const chainIds = this.client.getSupportedChainIds();
+    const chainIds = this.getSupportedChainIds();
+    const walletAddress = [...this.addresses.values()][0] ?? "";
     const queryParams = {
       ...params,
-      walletAddressToExclude: this.address ?? "",
+      walletAddressToExclude: walletAddress,
     };
     return await this.api.browseAgents(keyword, chainIds, queryParams);
   }
@@ -151,11 +176,19 @@ export class AcpAgent {
     return this.api.getAgentByWalletAddress(walletAddress);
   }
 
-  async getAddress(): Promise<string> {
-    if (!this.address) {
-      this.address = await this.client.getAddress();
+  async getAddress(family: ChainFamily): Promise<string> {
+    if (!this.addresses.has(family)) {
+      const client = this.clients.get(family);
+      if (!client) {
+        throw new Error(`No ${family} client configured for ${family} family`);
+      }
+      this.addresses.set(family, await client.getAddress());
     }
-    return this.address;
+    return this.addresses.get(family)!;
+  }
+
+  getAllAddresses(): string[] {
+    return [...this.addresses.values()];
   }
 
   // -------------------------------------------------------------------------
@@ -172,33 +205,53 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   private async buildTransportContext(): Promise<TransportContext> {
-    if (!this.address) {
-      this.address = await this.client.getAddress();
+    for (const [family, client] of this.clients) {
+      if (!this.addresses.has(family)) {
+        this.addresses.set(family, await client.getAddress());
+      }
     }
 
-    const providerChainIds =
-      this.client instanceof EvmAcpClient
-        ? await this.client.getProvider().getSupportedChainIds()
-        : this.client.getSupportedChainIds();
+    const allContractAddresses: Record<number, string> = {};
+    for (const client of this.clients.values()) {
+      Object.assign(allContractAddresses, client.getContractAddresses());
+    }
+
+    const providerChainIds: number[] = [];
+    for (const [, client] of this.clients) {
+      if (client instanceof EvmAcpClient) {
+        providerChainIds.push(
+          ...(await client.getProvider().getSupportedChainIds())
+        );
+      } else {
+        providerChainIds.push(...client.getSupportedChainIds());
+      }
+    }
 
     return {
-      agentAddress: this.address,
-      contractAddresses: this.client.getContractAddresses(),
+      agentAddresses: Object.fromEntries(this.addresses),
+      contractAddresses: allContractAddresses,
       providerSupportedChainIds: providerChainIds,
-      client: this.client,
+      getClientForChain: (chainId: number) => this.getClient(chainId),
       signMessage: async (chainId: number, msg: string) => {
-        if (this.client instanceof EvmAcpClient) {
-          return this.client.getProvider().signMessage(chainId, msg);
+        const family = getChainFamily(chainId);
+        const client = this.clients.get(family);
+        if (!client) {
+          throw new Error(
+            `No ${family} client for signing on chainId ${chainId}`
+          );
         }
-        if (this.client instanceof SolanaAcpClient) {
-          const { createSignableMessage } = await import("@solana/kit");
-          const signer = this.client.getProvider().getSigner();
+
+        if (client instanceof EvmAcpClient) {
+          return client.getProvider().signMessage(chainId, msg);
+        }
+        if (client instanceof SolanaAcpClient) {
+          const { createSignableMessage, getBase58Decoder } =
+            await import("@solana/kit");
+          const signer = client.getProvider().getSigner();
           const signable = createSignableMessage(msg);
           const [signatures] = await signer.signMessages([signable]);
           const sigBytes = signatures![signer.address];
           if (!sigBytes) throw new Error("Solana message signing failed");
-          // Encode as base58 for the backend
-          const { getBase58Decoder } = await import("@solana/kit");
           return getBase58Decoder().decode(sigBytes);
         }
         throw new Error("signMessage is not supported for this provider");
@@ -277,7 +330,7 @@ export class AcpAgent {
     const roles = this.inferRoles(initialEntries);
     session = new JobSession(
       this,
-      this.address!,
+      [...this.addresses.values()],
       jobId,
       chainId,
       roles,
@@ -288,17 +341,19 @@ export class AcpAgent {
   }
 
   private inferRoles(entries: JobRoomEntry[]): AgentRole[] {
-    const addr = this.address!.toLowerCase();
+    const myAddresses = new Set(
+      [...this.addresses.values()].map((a) => a.toLowerCase())
+    );
 
     for (const entry of entries) {
       if (entry.kind === "system" && entry.event.type === "job.created") {
         const event = entry.event as Record<string, unknown>;
         const roles: AgentRole[] = [];
-        if ((event.client as string)?.toLowerCase() === addr)
+        if (myAddresses.has((event.client as string)?.toLowerCase()))
           roles.push("client");
-        if ((event.provider as string)?.toLowerCase() === addr)
+        if (myAddresses.has((event.provider as string)?.toLowerCase()))
           roles.push("provider");
-        if ((event.evaluator as string)?.toLowerCase() === addr)
+        if (myAddresses.has((event.evaluator as string)?.toLowerCase()))
           roles.push("evaluator");
         if (roles.length > 0) return roles;
       }
@@ -328,7 +383,7 @@ export class AcpAgent {
       if (rolesChanged) {
         const newSession = new JobSession(
           this,
-          this.address!,
+          [...this.addresses.values()],
           jobId,
           chainId,
           roles,
@@ -375,10 +430,6 @@ export class AcpAgent {
     this.transport.sendMessage(chainId, jobId, content, contentType);
   }
 
-  /**
-   * One-shot message send via REST. Does not require start()/stop().
-   * Authenticates, POSTs the message, and returns.
-   */
   async sendMessage(
     chainId: number,
     jobId: string,
@@ -397,7 +448,12 @@ export class AcpAgent {
     amount: number,
     chainId: number
   ): Promise<AssetToken> {
-    return AssetToken.fromOnChain(address, amount, chainId, this.client);
+    return AssetToken.fromOnChain(
+      address,
+      amount,
+      chainId,
+      this.getClient(chainId)
+    );
   }
 
   async resolveRawAssetToken(
@@ -405,7 +461,12 @@ export class AcpAgent {
     rawAmount: bigint,
     chainId: number
   ): Promise<AssetToken> {
-    return AssetToken.fromOnChainRaw(address, rawAmount, chainId, this.client);
+    return AssetToken.fromOnChainRaw(
+      address,
+      rawAmount,
+      chainId,
+      this.getClient(chainId)
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -413,11 +474,12 @@ export class AcpAgent {
   // -------------------------------------------------------------------------
 
   async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
-    const prepared = await this.client.createJob(chainId, params);
-    const result = await this.client.submitPrepared(chainId, [prepared]);
+    const client = this.getClient(chainId);
+    const prepared = await client.createJob(chainId, params);
+    const result = await client.submitPrepared(chainId, [prepared]);
     const txHash = Array.isArray(result) ? result[0]! : result;
 
-    const jobId = await this.client.getJobIdFromTxHash(chainId, txHash);
+    const jobId = await client.getJobIdFromTxHash(chainId, txHash);
     if (!jobId) throw new Error("Failed to extract job ID from transaction");
     return jobId;
   }
@@ -447,7 +509,6 @@ export class AcpAgent {
       hookAddress?: string;
     }
   ): Promise<bigint> {
-    // Validate requirement data against JSON schema if requirements is an object
     if (
       offering.requirements &&
       typeof offering.requirements === "object" &&
@@ -478,9 +539,6 @@ export class AcpAgent {
       ? await this.createFundTransferJob(chainId, jobParams)
       : await this.createJob(chainId, jobParams);
 
-    // Send first message with requirement data.
-    // The chat room may not be ready immediately after on-chain job creation,
-    // so retry a few times with a short delay.
     const maxRetries = 5;
     const retryDelayMs = 2000;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -553,12 +611,14 @@ export class AcpAgent {
     chainId: number,
     params: SetBudgetParams
   ): Promise<string | string[]> {
-    const prepared = await this.client.setBudget(chainId, {
+    const client = this.getClient(chainId);
+    const prepared = await client.setBudget(chainId, {
       jobId: params.jobId,
       amount: params.amount.rawAmount,
+      ...(params.clientAddress && { clientAddress: params.clientAddress }),
       optParams: params.optParams ?? "0x",
     });
-    return this.client.submitPrepared(chainId, [prepared]);
+    return client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
@@ -566,26 +626,28 @@ export class AcpAgent {
     chainId: number,
     params: FundJobParams
   ): Promise<string | string[]> {
+    const client = this.getClient(chainId);
     const prepared = [];
 
-    if (this.client.getCapabilities().supportsAllowance) {
+    if (client.getCapabilities().supportsAllowance) {
       prepared.push(
-        await this.client.approveAllowance(chainId, {
+        await client.approveAllowance(chainId, {
           tokenAddress: params.amount.address,
-          spenderAddress: this.client.getContractAddress(chainId),
+          spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
         })
       );
     }
 
     prepared.push(
-      await this.client.fund(chainId, {
+      await client.fund(chainId, {
         jobId: params.jobId,
         expectedBudget: params.amount.rawAmount,
+        ...(params.clientAddress && { clientAddress: params.clientAddress }),
       })
     );
 
-    return this.client.submitPrepared(chainId, prepared);
+    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -593,13 +655,14 @@ export class AcpAgent {
     chainId: number,
     params: SubmitParams
   ): Promise<string | string[]> {
+    const client = this.getClient(chainId);
     await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
       params.deliverable
     );
-    const prepared = await this.client.submit(chainId, params);
-    return this.client.submitPrepared(chainId, [prepared]);
+    const prepared = await client.submit(chainId, params);
+    return client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
@@ -607,8 +670,9 @@ export class AcpAgent {
     chainId: number,
     params: CompleteParams
   ): Promise<string | string[]> {
-    const prepared = await this.client.complete(chainId, params);
-    return this.client.submitPrepared(chainId, [prepared]);
+    const client = this.getClient(chainId);
+    const prepared = await client.complete(chainId, params);
+    return client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
@@ -616,8 +680,9 @@ export class AcpAgent {
     chainId: number,
     params: RejectParams
   ): Promise<string | string[]> {
-    const prepared = await this.client.reject(chainId, params);
-    return this.client.submitPrepared(chainId, [prepared]);
+    const client = this.getClient(chainId);
+    const prepared = await client.reject(chainId, params);
+    return client.submitPrepared(chainId, [prepared]);
   }
 
   /** @internal */
@@ -641,6 +706,7 @@ export class AcpAgent {
     return this.internalSetBudget(chainId, {
       jobId: params.jobId,
       amount: params.amount,
+      ...(params.clientAddress && { clientAddress: params.clientAddress }),
       optParams,
     });
   }
@@ -650,13 +716,14 @@ export class AcpAgent {
     chainId: number,
     params: FundWithTransferParams
   ): Promise<string | string[]> {
+    const client = this.getClient(chainId);
     const prepared = [];
 
-    if (this.client.getCapabilities().supportsAllowance) {
+    if (client.getCapabilities().supportsAllowance) {
       prepared.push(
-        await this.client.approveAllowance(chainId, {
+        await client.approveAllowance(chainId, {
           tokenAddress: params.amount.address,
-          spenderAddress: this.client.getContractAddress(chainId),
+          spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
         })
       );
@@ -669,7 +736,7 @@ export class AcpAgent {
           "FundTransferHook"
         );
       prepared.push(
-        await this.client.approveAllowance(chainId, {
+        await client.approveAllowance(chainId, {
           tokenAddress: params.transferAmount.address,
           spenderAddress: hookAddr,
           amount: params.transferAmount.rawAmount,
@@ -691,14 +758,15 @@ export class AcpAgent {
     );
 
     prepared.push(
-      await this.client.fund(chainId, {
+      await client.fund(chainId, {
         jobId: params.jobId,
         expectedBudget: params.amount.rawAmount,
+        ...(params.clientAddress && { clientAddress: params.clientAddress }),
         optParams,
       })
     );
 
-    return this.client.submitPrepared(chainId, prepared);
+    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -706,6 +774,7 @@ export class AcpAgent {
     chainId: number,
     params: SubmitWithTransferParams
   ): Promise<string | string[]> {
+    const client = this.getClient(chainId);
     await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
@@ -714,7 +783,7 @@ export class AcpAgent {
 
     const prepared = [];
 
-    if (this.client.getCapabilities().supportsAllowance) {
+    if (client.getCapabilities().supportsAllowance) {
       const hookAddr =
         params.hookAddress ??
         getAddressForChain(
@@ -723,7 +792,7 @@ export class AcpAgent {
           "FundTransferHook"
         );
       prepared.push(
-        await this.client.approveAllowance(chainId, {
+        await client.approveAllowance(chainId, {
           tokenAddress: params.transferAmount.address,
           spenderAddress: hookAddr,
           amount: params.transferAmount.rawAmount,
@@ -743,13 +812,14 @@ export class AcpAgent {
     );
 
     prepared.push(
-      await this.client.submit(chainId, {
+      await client.submit(chainId, {
         jobId: params.jobId,
         deliverable: params.deliverable,
+        ...(params.clientAddress && { clientAddress: params.clientAddress }),
         optParams,
       })
     );
 
-    return this.client.submitPrepared(chainId, prepared);
+    return client.submitPrepared(chainId, prepared);
   }
 }

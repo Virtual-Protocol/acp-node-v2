@@ -37,6 +37,7 @@ export type CreateJobParams = {
 export type SetBudgetParams = {
   jobId: bigint;
   amount: bigint;
+  clientAddress?: string;
   optParams?: Hex;
 };
 
@@ -50,24 +51,28 @@ export type ApproveAllowanceParams = {
 export type FundParams = {
   jobId: bigint;
   expectedBudget: bigint;
+  clientAddress?: string;
   optParams?: Hex;
 };
 
 export type SubmitParams = {
   jobId: bigint;
   deliverable: string;
+  clientAddress?: string;
   optParams?: Hex;
 };
 
 export type CompleteParams = {
   jobId: bigint;
   reason: string;
+  clientAddress?: string;
   optParams?: Hex;
 };
 
 export type RejectParams = {
   jobId: bigint;
   reason: string;
+  clientAddress?: string;
   optParams?: Hex;
 };
 

@@ -34,6 +34,7 @@ export { SseTransport } from "./events/sseTransport";
 
 // Event / room types (public)
 export type {
+  TransportContext,
   AcpJobEvent,
   AcpJobEventType,
   JobCreatedEvent,

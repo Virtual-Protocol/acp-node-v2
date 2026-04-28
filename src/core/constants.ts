@@ -1,5 +1,19 @@
 import { Address } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
+import type { ChainFamily, SolanaCluster } from "./chains";
+export type { ChainFamily } from "./chains";
+
+export const SOLANA_DEVNET_CHAIN_ID = 500;
+export const SOLANA_MAINNET_CHAIN_ID = 501;
+
+export const SOLANA_CHAIN_ID_CLUSTERS: Record<number, SolanaCluster> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "devnet",
+  [SOLANA_MAINNET_CHAIN_ID]: "mainnet-beta",
+};
+
+export function getChainFamily(chainId: number): ChainFamily {
+  return chainId in SOLANA_CHAIN_ID_CLUSTERS ? "solana" : "evm";
+}
 
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
@@ -9,24 +23,32 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [bscTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  [SOLANA_DEVNET_CHAIN_ID]: "EUYp7jidumYn6m7APhGYpVR7P6eqBS81Y4u1d99SNo8s",
+  [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [bscTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
+  [SOLANA_DEVNET_CHAIN_ID]: "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi",
+  [SOLANA_MAINNET_CHAIN_ID]: "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi",
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x90717828D78731313CB350D6a58b0f91668Ea702",
+  [SOLANA_DEVNET_CHAIN_ID]: "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
+  [SOLANA_MAINNET_CHAIN_ID]: "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
 };
 
 export const USDC_DECIMALS: Record<number, number> = {
   [baseSepolia.id]: 6,
   [base.id]: 6,
   [bscTestnet.id]: 18,
+  [SOLANA_DEVNET_CHAIN_ID]: 6,
+  [SOLANA_MAINNET_CHAIN_ID]: 6,
 };
 
 // ---------------------------------------------------------------------------
@@ -53,8 +75,6 @@ export const ACP_TESTNET_SERVER_URL = "https://api-dev.acp.virtuals.io";
 export const PRIVY_APP_ID = "cltsev9j90f67yhyw4sngtrpv";
 
 export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
-
-export const ALCHEMY_POLICY_ID = "186aaa4a-5f57-4156-83fb-e456365a8820";
 
 export const SUPPORTED_CHAINS = [
   {

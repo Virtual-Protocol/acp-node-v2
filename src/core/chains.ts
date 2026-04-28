@@ -1,10 +1,21 @@
-import { base, baseSepolia, bscTestnet, Chain } from "viem/chains";
+import {
+  base,
+  baseSepolia,
+  bscTestnet,
+  Chain,
+  xLayer,
+  xLayerTestnet,
+} from "viem/chains";
 
 export type ChainFamily = "evm" | "solana";
 
-export const EVM_MAINNET_CHAINS: Chain[] = [base] as const;
+export const EVM_MAINNET_CHAINS: Chain[] = [base, xLayer] as const;
 
-export const EVM_TESTNET_CHAINS: Chain[] = [baseSepolia, bscTestnet] as const;
+export const EVM_TESTNET_CHAINS: Chain[] = [
+  baseSepolia,
+  bscTestnet,
+  xLayerTestnet,
+] as const;
 
 export const EVM_CHAINS = [
   ...EVM_MAINNET_CHAINS,

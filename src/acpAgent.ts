@@ -120,7 +120,7 @@ export type SetBudgetWithSubscriptionAndFundRequestParams = {
 export type FundViaRouterParams = {
   jobId: bigint;
   amount: AssetToken;
-  configuredHooks: Address[];
+  hookConfigs: string[];
   subscriptionTerms?: { duration: bigint; packageId: bigint };
   transferAmount?: AssetToken;
   destination?: Address;
@@ -991,7 +991,7 @@ export class AcpAgent {
     const slices: Hex[] = [];
     const prepared = [approveAcp];
 
-    for (const hook of params.configuredHooks) {
+    for (const hook of params.hookConfigs) {
       const normalizedHook = hook.toLowerCase();
       if (subHookAddr && normalizedHook === subHookAddr) {
         if (!params.subscriptionTerms) {

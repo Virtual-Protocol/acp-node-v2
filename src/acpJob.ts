@@ -54,12 +54,14 @@ export class AcpJob {
   readonly hookAddress: string;
   readonly intents: AcpIntent[];
   readonly deliverable: string | null;
+  readonly hookConfigs: Record<string, string[]> | null;
 
   constructor(
     chainId: number,
     data: OnChainJob,
     intents: AcpIntent[] = [],
-    deliverable: string | null = null
+    deliverable: string | null = null,
+    hookConfigs: Record<string, string[]> | null = null
   ) {
     this.chainId = chainId;
     this.id = data.id;
@@ -73,6 +75,7 @@ export class AcpJob {
     this.hookAddress = data.hook;
     this.intents = intents;
     this.deliverable = deliverable;
+    this.hookConfigs = hookConfigs;
   }
 
   getFundRequestIntent(): AcpIntent | null {
@@ -105,7 +108,8 @@ export class AcpJob {
         hook: data.hookAddress ?? ZERO_ADDRESS,
       },
       intents,
-      data.deliverable ?? null
+      data.deliverable ?? null,
+      data.hookConfigs ?? null
     );
   }
 }

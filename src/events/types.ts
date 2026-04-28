@@ -185,6 +185,7 @@ export type OffChainJob = {
   hookAddress: string | null;
   deliverable: string | null;
   intents?: OffChainIntent[];
+  hookConfigs: Record<string, string[]> | null;
 };
 
 // ---------------------------------------------------------------------------

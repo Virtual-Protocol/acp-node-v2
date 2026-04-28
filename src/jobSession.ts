@@ -329,12 +329,8 @@ export class JobSession {
     const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
 
     if (hook === router) {
-      const configured = await this.agent.getRouterHooks(
-        this.chainId,
-        BigInt(this.jobId),
-        selector
-      );
-      const lower = configured.map((h) => h.toLowerCase());
+      const configured = (this._job.hookConfigs ?? {})[selector];
+      const lower = configured?.map((h) => h.toLowerCase()) ?? [];
       return {
         hasSub: lower.includes(subHook ?? ""),
         hasFund: lower.includes(fundHook ?? ""),
@@ -462,17 +458,12 @@ export class JobSession {
     ).toLowerCase();
 
     if (router && hook === router) {
-      const configuredHooks = await this.agent.getRouterHooks(
-        this.chainId,
-        jobId,
-        ACP_SELECTORS.fund
-      );
-      if (configuredHooks.length === 0) {
+      const hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
+      if (!hookConfigs) {
         throw new Error(
           "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
         );
       }
-
       const { hasSub, hasFund } = await this.detectConfiguredHooks(
         ACP_SELECTORS.fund
       );
@@ -509,7 +500,7 @@ export class JobSession {
       await this.agent.internalFundViaRouter(this.chainId, {
         jobId: jobId,
         amount: effectiveAmount,
-        configuredHooks,
+        hookConfigs,
         ...(subscriptionTerms ? { subscriptionTerms } : {}),
         ...(transferAmount ? { transferAmount } : {}),
         ...(destination ? { destination } : {}),

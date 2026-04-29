@@ -313,9 +313,16 @@ export class JobSession {
 
   async sendMessage(
     content: string,
-    contentType: AgentMessage["contentType"] = "text"
+    contentType: AgentMessage["contentType"] = "text",
+    packageId?: number
   ): Promise<void> {
-    this.agent.sendJobMessage(this.chainId, this.jobId, content, contentType);
+    this.agent.sendJobMessage(
+      this.chainId,
+      this.jobId,
+      content,
+      contentType,
+      packageId
+    );
   }
 
   private async detectConfiguredHooks(

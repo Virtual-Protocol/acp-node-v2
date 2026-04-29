@@ -419,10 +419,11 @@ export class AcpAgent {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): void {
     if (!this.started) throw new Error("Agent not started");
-    this.transport.sendMessage(chainId, jobId, content, contentType);
+    this.transport.sendMessage(chainId, jobId, content, contentType, packageId);
   }
 
   /**

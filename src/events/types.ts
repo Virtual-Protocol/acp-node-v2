@@ -210,7 +210,8 @@ export interface AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType?: string
+    contentType?: string,
+    packageId?: number
   ): void;
   postMessage(
     chainId: number,

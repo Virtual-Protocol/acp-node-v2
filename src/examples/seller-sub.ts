@@ -73,7 +73,7 @@ async function main(): Promise<void> {
 
         const offeringPrice = 0.1;
         const totalPrice =
-          offeringPrice + (isActiveSubscription ? subscription.price : 0);
+          offeringPrice + (isActiveSubscription ? 0 : subscription.price);
 
         await session.setBudget(AssetToken.usdc(totalPrice, session.chainId), {
           duration: BigInt(subscription.duration),

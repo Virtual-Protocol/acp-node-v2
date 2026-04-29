@@ -203,6 +203,15 @@ export class AcpAgent {
     return this.api.getAgentByWalletAddress(walletAddress);
   }
 
+  async getMe(): Promise<AcpAgentDetail> {
+    const address = await this.getAddress();
+    const agent = await this.api.getAgentByWalletAddress(address);
+    if (!agent) {
+      throw new Error(`No agent found for wallet address: ${address}`);
+    }
+    return agent;
+  }
+
   async getAddress(): Promise<string> {
     if (!this.address) {
       this.address = await this.client.getAddress();
@@ -570,7 +579,7 @@ export class AcpAgent {
     let jobId: bigint;
 
     if (opts?.packageId) {
-      const subscription = offering.subscriptions.find(
+      const subscription = offering.subscriptions?.find(
         (s) => s.packageId === Number(opts.packageId)
       );
       if (!subscription) {
@@ -935,7 +944,6 @@ export class AcpAgent {
       params.duration,
       params.packageId
     );
-    console.log(params.transferAmount, params.destination);
     const fundSlice = encodeFundTransferOptParams(
       params.transferAmount.address as Address,
       params.transferAmount.rawAmount,

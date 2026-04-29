@@ -186,6 +186,15 @@ export type OffChainJob = {
   deliverable: string | null;
   intents?: OffChainIntent[];
   hookConfigs: Record<string, string[]> | null;
+  clientSubscription: OffChainSubscription | null;
+};
+
+export type OffChainSubscription = {
+  packageId: number;
+  name: string;
+  price: number;
+  /** Subscription duration in seconds. */
+  duration: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -257,7 +266,7 @@ export interface AcpAgentOffering {
   requiredFunds: boolean;
   isHidden: boolean;
   isPrivate: boolean;
-  subscriptions: Array<AcpAgentSubscription>;
+  subscriptions?: Array<AcpAgentSubscription>;
 }
 
 export interface AcpAgentResource {

@@ -347,9 +347,15 @@ export class JobSession {
     amount: AssetToken,
     opts?: { packageId?: bigint; duration?: bigint }
   ): Promise<void> {
-    const { hasSub } = await this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
+
+    if (hasFund) {
+      throw new Error(
+        "setBudget cannot be called directly when FundTransferHook is configured for this selector — use setBudgetWithFundRequest instead."
+      );
+    }
 
     if (hasSub) {
       if (opts?.packageId === undefined || opts.duration === undefined) {

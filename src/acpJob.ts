@@ -2,7 +2,12 @@ import type { Address } from "viem";
 import { AssetToken } from "./core/assetToken";
 import type { AcpClient } from "./clientFactory";
 import type { OnChainJob } from "./core/operations";
-import type { AcpJobStatus, OffChainIntent, OffChainJob } from "./events/types";
+import type {
+  AcpJobStatus,
+  OffChainIntent,
+  OffChainJob,
+  OffChainSubscription,
+} from "./events/types";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -54,12 +59,16 @@ export class AcpJob {
   readonly hookAddress: string;
   readonly intents: AcpIntent[];
   readonly deliverable: string | null;
+  readonly hookConfigs: Record<string, string[]> | null;
+  readonly clientSubscription: OffChainSubscription | null;
 
   constructor(
     chainId: number,
     data: OnChainJob,
     intents: AcpIntent[] = [],
-    deliverable: string | null = null
+    deliverable: string | null = null,
+    hookConfigs: Record<string, string[]> | null = null,
+    clientSubscription: OffChainSubscription | null = null
   ) {
     this.chainId = chainId;
     this.id = data.id;
@@ -73,6 +82,8 @@ export class AcpJob {
     this.hookAddress = data.hook;
     this.intents = intents;
     this.deliverable = deliverable;
+    this.hookConfigs = hookConfigs;
+    this.clientSubscription = clientSubscription;
   }
 
   getFundRequestIntent(): AcpIntent | null {
@@ -105,7 +116,9 @@ export class AcpJob {
         hook: data.hookAddress ?? ZERO_ADDRESS,
       },
       intents,
-      data.deliverable ?? null
+      data.deliverable ?? null,
+      data.hookConfigs ?? null,
+      data.clientSubscription ?? null
     );
   }
 }

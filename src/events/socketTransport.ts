@@ -107,7 +107,8 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): void {
     if (!this.socket) throw new Error("Transport not connected");
     this.socket.emit("job:message", {
@@ -115,6 +116,7 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
       onChainJobId: jobId,
       content,
       contentType,
+      packageId,
     });
   }
 
@@ -126,7 +128,8 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): Promise<void> {
     await this.ensureAuthenticated();
     const res = await this.authedFetch(
@@ -134,7 +137,7 @@ export class SocketTransport extends AcpHttpClient implements AcpChatTransport {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, contentType }),
+        body: JSON.stringify({ content, contentType, packageId }),
       }
     );
 

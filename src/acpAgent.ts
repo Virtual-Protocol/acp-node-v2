@@ -14,10 +14,23 @@ import type {
 } from "./core/operations";
 import {
   FUND_TRANSFER_HOOK_ADDRESSES,
+  MULTI_HOOK_ROUTER_ADDRESSES,
+  SUBSCRIPTION_HOOK_ADDRESSES,
+  SUBSCRIPTION_STATE_ADDRESSES,
   getAddressForChain,
   MIN_SLA_MINS,
   BUFFER_SECONDS,
 } from "./core/constants";
+import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi";
+import { SUBSCRIPTION_HOOK_ABI } from "./core/subscriptionHookAbi";
+import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi";
+import {
+  buildSubscriptionWithFundsHookConfig,
+  encodeFundTransferOptParams,
+  encodeRouterOptParams,
+  encodeSubscriptionOptParams,
+  type MultiHookConfig,
+} from "./core/hookEncoding";
 import { AssetToken } from "./core/assetToken";
 import { JobSession } from "./jobSession";
 import { AcpApiClient } from "./events/acpApiClient";
@@ -79,6 +92,46 @@ export type SubmitWithTransferParams = {
   deliverable: string;
   transferAmount: AssetToken;
   hookAddress?: string;
+};
+
+export type SetBudgetWithSubscriptionParams = {
+  jobId: bigint;
+  amount: AssetToken;
+  duration: bigint;
+  packageId: bigint;
+};
+
+export type FundWithSubscriptionParams = {
+  jobId: bigint;
+  amount: AssetToken;
+  duration: bigint;
+  packageId: bigint;
+};
+
+export type SetBudgetWithSubscriptionAndFundRequestParams = {
+  jobId: bigint;
+  amount: AssetToken;
+  duration: bigint;
+  packageId: bigint;
+  transferAmount: AssetToken;
+  destination: Address;
+};
+
+export type FundViaRouterParams = {
+  jobId: bigint;
+  amount: AssetToken;
+  hookConfigs: string[];
+  subscriptionTerms?: { duration: bigint; packageId: bigint };
+  transferAmount?: AssetToken;
+  destination?: Address;
+  fundHookAddress?: string;
+};
+
+export type BatchConfigureHooksAgentParams = {
+  jobId: bigint;
+  selectors: Hex[];
+  hooksPerSelector: string[][];
+  routerAddress: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -148,6 +201,15 @@ export class AcpAgent {
     walletAddress: string
   ): Promise<AcpAgentDetail | null> {
     return this.api.getAgentByWalletAddress(walletAddress);
+  }
+
+  async getMe(): Promise<AcpAgentDetail> {
+    const address = await this.getAddress();
+    const agent = await this.api.getAgentByWalletAddress(address);
+    if (!agent) {
+      throw new Error(`No agent found for wallet address: ${address}`);
+    }
+    return agent;
   }
 
   async getAddress(): Promise<string> {
@@ -357,10 +419,11 @@ export class AcpAgent {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): void {
     if (!this.started) throw new Error("Agent not started");
-    this.transport.sendMessage(chainId, jobId, content, contentType);
+    this.transport.sendMessage(chainId, jobId, content, contentType, packageId);
   }
 
   /**
@@ -371,9 +434,16 @@ export class AcpAgent {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): Promise<void> {
-    await this.transport.postMessage(chainId, jobId, content, contentType);
+    await this.transport.postMessage(
+      chainId,
+      jobId,
+      content,
+      contentType,
+      packageId
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -425,6 +495,49 @@ export class AcpAgent {
     });
   }
 
+  async createSubscriptionJob(
+    chainId: number,
+    params: CreateJobParams
+  ): Promise<bigint> {
+    const defaultHook = getAddressForChain(
+      SUBSCRIPTION_HOOK_ADDRESSES,
+      chainId,
+      "SubscriptionHook"
+    );
+    return this.createJob(chainId, {
+      ...params,
+      hookAddress: params.hookAddress ?? defaultHook,
+    });
+  }
+
+  async createMultiHookJob(
+    chainId: number,
+    params: CreateJobParams,
+    hookConfig?: MultiHookConfig
+  ): Promise<bigint> {
+    const routerAddress = getAddressForChain(
+      MULTI_HOOK_ROUTER_ADDRESSES,
+      chainId,
+      "MultiHookRouter"
+    );
+
+    const jobId = await this.createJob(chainId, {
+      ...params,
+      hookAddress: routerAddress,
+    });
+
+    if (hookConfig) {
+      await this.batchConfigureHooks(chainId, {
+        jobId,
+        selectors: hookConfig.selectors,
+        hooksPerSelector: hookConfig.hooksPerSelector,
+        routerAddress,
+      });
+    }
+
+    return jobId;
+  }
+
   async createJobFromOffering(
     chainId: number,
     offering: AcpAgentOffering,
@@ -433,6 +546,7 @@ export class AcpAgent {
     opts?: {
       evaluatorAddress?: string;
       hookAddress?: string;
+      packageId?: number;
     }
   ): Promise<bigint> {
     // Validate requirement data against JSON schema if requirements is an object
@@ -462,9 +576,31 @@ export class AcpAgent {
       ...(opts?.hookAddress ? { hookAddress: opts.hookAddress } : {}),
     };
 
-    const jobId = offering.requiredFunds
-      ? await this.createFundTransferJob(chainId, jobParams)
-      : await this.createJob(chainId, jobParams);
+    let packageId: number | undefined;
+    let jobId: bigint;
+
+    if (opts?.packageId) {
+      const subscription = offering.subscriptions?.find(
+        (s) => s.packageId === Number(opts.packageId)
+      );
+      if (!subscription) {
+        throw new Error(`Package ID ${opts.packageId} not found in offerings`);
+      }
+      packageId = Number(opts.packageId);
+    }
+
+    if (packageId) {
+      if (offering.requiredFunds) {
+        const hookConfig = buildSubscriptionWithFundsHookConfig(chainId);
+        jobId = await this.createMultiHookJob(chainId, jobParams, hookConfig);
+      } else {
+        jobId = await this.createSubscriptionJob(chainId, jobParams);
+      }
+    } else {
+      jobId = offering.requiredFunds
+        ? await this.createFundTransferJob(chainId, jobParams)
+        : await this.createJob(chainId, jobParams);
+    }
 
     // Send first message with requirement data.
     // The chat room may not be ready immediately after on-chain job creation,
@@ -477,7 +613,8 @@ export class AcpAgent {
           chainId,
           jobId.toString(),
           JSON.stringify(requirementData),
-          "requirement"
+          "requirement",
+          packageId
         );
         break;
       } catch (err) {
@@ -497,6 +634,7 @@ export class AcpAgent {
     opts?: {
       evaluatorAddress?: string;
       hookAddress?: string;
+      packageId?: number;
     }
   ): Promise<bigint> {
     const agent = await this.api.getAgentByWalletAddress(providerAddress);
@@ -530,6 +668,87 @@ export class AcpAgent {
       requirementData,
       opts
     );
+  }
+
+  async batchConfigureHooks(
+    chainId: number,
+    params: BatchConfigureHooksAgentParams
+  ): Promise<string | string[]> {
+    if (!(this.client instanceof EvmAcpClient)) {
+      throw new Error("batchConfigureHooks is only supported on EVM chains");
+    }
+    const prepared = await this.client.batchConfigureHooks(chainId, {
+      routerAddress: params.routerAddress,
+      jobId: params.jobId,
+      selectors: params.selectors,
+      hooksPerSelector: params.hooksPerSelector,
+    });
+    return this.client.submitPrepared(chainId, [prepared]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Subscription state reads
+  // -------------------------------------------------------------------------
+
+  async getSubscriptionExpiry(
+    chainId: number,
+    client: string,
+    provider: string,
+    packageId: number
+  ): Promise<bigint> {
+    if (!(this.client instanceof EvmAcpClient)) {
+      throw new Error("getSubscriptionExpiry is only supported on EVM chains");
+    }
+    const stateAddress = getAddressForChain(
+      SUBSCRIPTION_STATE_ADDRESSES,
+      chainId,
+      "SubscriptionState"
+    );
+    const result = await this.client.getProvider().readContract(chainId, {
+      address: stateAddress,
+      abi: SUBSCRIPTION_STATE_ABI as readonly unknown[],
+      functionName: "getSubscriptionExpiry",
+      args: [client as Address, provider as Address, BigInt(packageId)],
+    });
+    return result as bigint;
+  }
+
+  async isSubscriptionActive(
+    chainId: number,
+    client: string,
+    provider: string,
+    packageId: number
+  ): Promise<boolean> {
+    const expiry = await this.getSubscriptionExpiry(
+      chainId,
+      client,
+      provider,
+      packageId
+    );
+    return expiry > BigInt(Math.floor(Date.now() / 1000));
+  }
+
+  async getProposedSubscriptionTerms(
+    chainId: number,
+    jobId: bigint
+  ): Promise<{ duration: bigint; packageId: bigint }> {
+    if (!(this.client instanceof EvmAcpClient)) {
+      throw new Error(
+        "getProposedSubscriptionTerms is only supported on EVM chains"
+      );
+    }
+    const hookAddress = getAddressForChain(
+      SUBSCRIPTION_HOOK_ADDRESSES,
+      chainId,
+      "SubscriptionHook"
+    );
+    const result = (await this.client.getProvider().readContract(chainId, {
+      address: hookAddress,
+      abi: SUBSCRIPTION_HOOK_ABI as readonly unknown[],
+      functionName: "getProposedTerms",
+      args: [jobId],
+    })) as { duration: bigint; packageId: bigint };
+    return { duration: result.duration, packageId: result.packageId };
   }
 
   // -------------------------------------------------------------------------
@@ -673,6 +892,164 @@ export class AcpAgent {
       approveHook,
       fundPrepared,
     ]);
+  }
+
+  /** @internal */
+  async internalSetBudgetWithSubscription(
+    chainId: number,
+    params: SetBudgetWithSubscriptionParams
+  ): Promise<string | string[]> {
+    const optParams = encodeSubscriptionOptParams(
+      params.duration,
+      params.packageId
+    );
+
+    return this.internalSetBudget(chainId, {
+      jobId: params.jobId,
+      amount: params.amount,
+      optParams,
+    });
+  }
+
+  /** @internal */
+  async internalFundWithSubscription(
+    chainId: number,
+    params: FundWithSubscriptionParams
+  ): Promise<string | string[]> {
+    const approvePrepared = await this.client.approveAllowance(chainId, {
+      tokenAddress: params.amount.address,
+      spenderAddress: this.client.getContractAddress(chainId),
+      amount: params.amount.rawAmount,
+    });
+
+    const optParams = encodeSubscriptionOptParams(
+      params.duration,
+      params.packageId
+    );
+
+    const fundPrepared = await this.client.fund(chainId, {
+      jobId: params.jobId,
+      expectedBudget: params.amount.rawAmount,
+      optParams,
+    });
+
+    return this.client.submitPrepared(chainId, [approvePrepared, fundPrepared]);
+  }
+
+  /** @internal */
+  async internalSetBudgetWithSubscriptionAndFundRequest(
+    chainId: number,
+    params: SetBudgetWithSubscriptionAndFundRequestParams
+  ): Promise<string | string[]> {
+    const subSlice = encodeSubscriptionOptParams(
+      params.duration,
+      params.packageId
+    );
+    const fundSlice = encodeFundTransferOptParams(
+      params.transferAmount.address as Address,
+      params.transferAmount.rawAmount,
+      params.destination
+    );
+    const optParams = encodeRouterOptParams([subSlice, fundSlice]);
+
+    return this.internalSetBudget(chainId, {
+      jobId: params.jobId,
+      amount: params.amount,
+      optParams,
+    });
+  }
+
+  async getRouterHooks(
+    chainId: number,
+    jobId: bigint,
+    selector: Hex
+  ): Promise<Address[]> {
+    if (!(this.client instanceof EvmAcpClient)) {
+      throw new Error("getRouterHooks is only supported on EVM chains");
+    }
+    const router = getAddressForChain(
+      MULTI_HOOK_ROUTER_ADDRESSES,
+      chainId,
+      "MultiHookRouter"
+    );
+    const result = await this.client.getProvider().readContract(chainId, {
+      address: router,
+      abi: MULTI_HOOK_ROUTER_ABI as readonly unknown[],
+      functionName: "getHooks",
+      args: [jobId, selector],
+    });
+    return result as Address[];
+  }
+
+  /** @internal */
+  async internalFundViaRouter(
+    chainId: number,
+    params: FundViaRouterParams
+  ): Promise<string | string[]> {
+    const approveAcp = await this.client.approveAllowance(chainId, {
+      tokenAddress: params.amount.address,
+      spenderAddress: this.client.getContractAddress(chainId),
+      amount: params.amount.rawAmount,
+    });
+
+    const subHookAddr =
+      SUBSCRIPTION_HOOK_ADDRESSES[chainId]?.toLowerCase() ?? "";
+    const fundHookAddr =
+      FUND_TRANSFER_HOOK_ADDRESSES[chainId]?.toLowerCase() ?? "";
+
+    const slices: Hex[] = [];
+    const prepared = [approveAcp];
+
+    for (const hook of params.hookConfigs) {
+      const normalizedHook = hook.toLowerCase();
+      if (subHookAddr && normalizedHook === subHookAddr) {
+        if (!params.subscriptionTerms) {
+          throw new Error(
+            "SubscriptionHook is configured on the router but no subscriptionTerms were provided"
+          );
+        }
+        slices.push(
+          encodeSubscriptionOptParams(
+            params.subscriptionTerms.duration,
+            params.subscriptionTerms.packageId
+          )
+        );
+      } else if (fundHookAddr && normalizedHook === fundHookAddr) {
+        if (!params.transferAmount || !params.destination) {
+          throw new Error(
+            "FundTransferHook is configured on the router but no transferAmount/destination were provided"
+          );
+        }
+        const approveHook = await this.client.approveAllowance(chainId, {
+          tokenAddress: params.transferAmount.address,
+          spenderAddress: hook,
+          amount: params.transferAmount.rawAmount,
+        });
+        prepared.push(approveHook);
+        slices.push(
+          encodeFundTransferOptParams(
+            params.transferAmount.address as Address,
+            params.transferAmount.rawAmount,
+            params.destination
+          )
+        );
+      } else {
+        throw new Error(
+          `Unknown sub-hook configured on router at ${hook}. The SDK can only build optParams slices for SubscriptionHook and FundTransferHook.`
+        );
+      }
+    }
+
+    const optParams = encodeRouterOptParams(slices);
+
+    const fundPrepared = await this.client.fund(chainId, {
+      jobId: params.jobId,
+      expectedBudget: params.amount.rawAmount,
+      optParams,
+    });
+    prepared.push(fundPrepared);
+
+    return this.client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */

@@ -469,13 +469,16 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const { smartWalletClient } = this.getClients(chainId);
     const suffix = this.builderCodeSuffix;
     const { id } = await smartWalletClient.sendCalls({
-      calls: _calls.map((call) => ({
-        to: call.to,
-        data: suffix
-          ? appendBuilderCodeData(call.data ?? "0x", suffix)
-          : call.data ?? "0x",
-        value: call.value ?? 0n,
-      })),
+      calls: _calls.map((call) => {
+        const value = call.value ?? 0n;
+        return {
+          to: call.to,
+          data: suffix
+            ? appendBuilderCodeData(call.data ?? "0x", suffix)
+            : call.data ?? "0x",
+          ...(value !== 0n ? { value } : {}),
+        };
+      }),
       capabilities: {
         nonceOverride: {
           nonceKey: this.getRandomNonce(),

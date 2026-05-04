@@ -1,17 +1,20 @@
 import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
-import Ajv from "ajv";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const Ajv: typeof import("ajv").default = require("ajv");
+const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 import {
   type AcpClient,
   type CreateAcpClientInput,
   createAcpClient,
-} from "./clientFactory";
-import { EvmAcpClient } from "./clients/evmAcpClient";
+} from "./clientFactory.js";
+import { EvmAcpClient } from "./clients/evmAcpClient.js";
 import type {
   CompleteParams,
   CreateJobParams,
   RejectParams,
   SubmitParams,
-} from "./core/operations";
+} from "./core/operations.js";
 import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   MULTI_HOOK_ROUTER_ADDRESSES,
@@ -20,21 +23,21 @@ import {
   getAddressForChain,
   MIN_SLA_MINS,
   BUFFER_SECONDS,
-} from "./core/constants";
-import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi";
-import { SUBSCRIPTION_HOOK_ABI } from "./core/subscriptionHookAbi";
-import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi";
+} from "./core/constants.js";
+import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi.js";
+import { SUBSCRIPTION_HOOK_ABI } from "./core/subscriptionHookAbi.js";
+import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi.js";
 import {
   buildSubscriptionWithFundsHookConfig,
   encodeFundTransferOptParams,
   encodeRouterOptParams,
   encodeSubscriptionOptParams,
   type MultiHookConfig,
-} from "./core/hookEncoding";
-import { AssetToken } from "./core/assetToken";
-import { JobSession } from "./jobSession";
-import { AcpApiClient } from "./events/acpApiClient";
-import { AcpHttpClient } from "./events/acpHttpClient";
+} from "./core/hookEncoding.js";
+import { AssetToken } from "./core/assetToken.js";
+import { JobSession } from "./jobSession.js";
+import { AcpApiClient } from "./events/acpApiClient.js";
+import { AcpHttpClient } from "./events/acpHttpClient.js";
 import type {
   AcpAgentDetail,
   AcpAgentOffering,
@@ -44,8 +47,8 @@ import type {
   BrowseAgentParams,
   JobRoomEntry,
   TransportContext,
-} from "./events/types";
-import { SseTransport } from "./events/sseTransport";
+} from "./events/types.js";
+import { SseTransport } from "./events/sseTransport.js";
 
 export type EntryHandler = (
   session: JobSession,
@@ -144,7 +147,7 @@ export class AcpAgent {
   private readonly api: AcpJobApi;
   private started = false;
   private entryHandler: EntryHandler | null = null;
-  private sessions = new Map<string, JobSession>();
+  private sessionMap = new Map<string, JobSession>();
   private address: string | null = null;
 
   constructor(client: AcpClient, transport: AcpChatTransport, api: AcpJobApi) {
@@ -276,7 +279,7 @@ export class AcpAgent {
       await this.transport.disconnect();
       this.started = false;
     }
-    this.sessions.clear();
+    this.sessionMap.clear();
   }
 
   // -------------------------------------------------------------------------
@@ -313,7 +316,34 @@ export class AcpAgent {
   }
 
   getSession(chainId: number, jobId: string): JobSession | undefined {
-    return this.sessions.get(this.getSessionKey(chainId, jobId));
+    return this.sessionMap.get(this.getSessionKey(chainId, jobId));
+  }
+
+  /**
+   * All sessions currently tracked by this agent.
+   *
+   * After `start()`, this includes every job hydrated from
+   * `AcpJobApi.getActiveJobs()` plus any sessions created live during the
+   * run. Sessions stay in the map across status transitions until `stop()`
+   * clears them — filter by `session.status` if you only want non-terminal
+   * jobs.
+   *
+   * Use this on startup to detect in-flight jobs that should be resumed
+   * rather than re-initiated:
+   *
+   * ```ts
+   * await agent.start();
+   * const inFlight = agent.sessions.filter(
+   *   (s) => s.roles.includes("client") &&
+   *     !["completed", "rejected", "expired"].includes(s.status)
+   * );
+   * if (inFlight.length === 0) {
+   *   await agent.createJobFromOffering(...);
+   * }
+   * ```
+   */
+  get sessions(): JobSession[] {
+    return Array.from(this.sessionMap.values());
   }
 
   private getOrCreateSession(
@@ -321,7 +351,7 @@ export class AcpAgent {
     chainId: number,
     initialEntries: JobRoomEntry[] = []
   ): JobSession {
-    let session = this.sessions.get(this.getSessionKey(chainId, jobId));
+    let session = this.sessionMap.get(this.getSessionKey(chainId, jobId));
     if (session) return session;
 
     const roles = this.inferRoles(initialEntries);
@@ -333,7 +363,7 @@ export class AcpAgent {
       roles,
       initialEntries
     );
-    this.sessions.set(this.getSessionKey(chainId, jobId), session);
+    this.sessionMap.set(this.getSessionKey(chainId, jobId), session);
     return session;
   }
 
@@ -384,7 +414,7 @@ export class AcpAgent {
           roles,
           session.entries
         );
-        this.sessions.set(this.getSessionKey(chainId, jobId), newSession);
+        this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
         await newSession.fetchJob();
         this.fireHandler(newSession, entry);
         return;
@@ -538,6 +568,37 @@ export class AcpAgent {
     return jobId;
   }
 
+  /**
+   * Create a job from a registry offering and send the requirement message.
+   *
+   * The `opts.evaluatorAddress` choice picks one of three lifecycle shapes:
+   *
+   *   • **Self-evaluation** — `{ evaluatorAddress: <buyer> }`.
+   *     The buyer is their own evaluator. They receive `job.submitted`
+   *     and must call `session.complete(...)` or `session.reject(...)`
+   *     themselves to release funds (or refund).
+   *
+   *   • **Third-party evaluation** — `{ evaluatorAddress: <other wallet> }`.
+   *     A separate agent on that wallet must call `complete`/`reject` on
+   *     `job.submitted`. The buyer only observes the terminal
+   *     `job.completed` / `job.rejected` events.
+   *
+   *   • **Skip evaluation** — omit `evaluatorAddress` (defaults to the
+   *     zero address). The contract treats this as "no evaluator required":
+   *     a successful `submit` auto-completes the job and releases funds.
+   *     `job.submitted` won't fire for anyone in this mode. Suitable for
+   *     trusted-provider flows where the buyer doesn't need a quality gate
+   *     before payment.
+   *
+   * @param chainId            Chain to create the job on.
+   * @param offering           Offering to fulfill (selects price + SLA).
+   * @param providerAddress    Provider's wallet address.
+   * @param requirementData    Requirement payload, validated against
+   *                           `offering.requirements` if it's a JSON schema.
+   * @param opts.evaluatorAddress  See above. Defaults to the zero address
+   *                               (skip-evaluation mode).
+   * @param opts.hookAddress       Optional fund-transfer hook override.
+   */
   async createJobFromOffering(
     chainId: number,
     offering: AcpAgentOffering,
@@ -549,13 +610,14 @@ export class AcpAgent {
       packageId?: number;
     }
   ): Promise<bigint> {
-    // Validate requirement data against JSON schema if requirements is an object
+    // Validate requirement data against JSON schema if requirements is an object.
     if (
       offering.requirements &&
       typeof offering.requirements === "object" &&
       typeof requirementData === "object"
     ) {
-      const ajv = new Ajv({ allErrors: true });
+      const ajv = new Ajv({ allErrors: true, strictSchema: false });
+      addFormats(ajv);
       const validate = ajv.compile(offering.requirements);
       if (!validate(requirementData)) {
         throw new Error(
@@ -626,6 +688,17 @@ export class AcpAgent {
     return jobId;
   }
 
+  /**
+   * Convenience wrapper: looks up the provider, finds the offering by name,
+   * and forwards to {@link createJobFromOffering}.
+   *
+   * See `createJobFromOffering` for the three evaluation modes the
+   * `opts.evaluatorAddress` choice selects (self / third-party / skip).
+   * Notably, omitting `evaluatorAddress` defaults to the zero address,
+   * which puts the job in **skip-evaluation** mode (auto-completes on
+   * deliverable submission). Pass an explicit address if you want a
+   * quality gate before payment.
+   */
   async createJobByOfferingName(
     chainId: number,
     offeringName: string,

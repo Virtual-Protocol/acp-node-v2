@@ -4,7 +4,7 @@ import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
   SUBSCRIPTION_HOOK_ADDRESSES,
-} from "./constants";
+} from "./constants.js";
 
 export type MultiHookConfig = {
   selectors: Hex[];

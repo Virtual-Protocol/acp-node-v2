@@ -10,9 +10,9 @@ import {
   type Hex,
 } from "viem";
 
-import { BaseAcpClient } from "./baseAcpClient";
-import { ACP_ABI } from "../core/acpAbi";
-import { MULTI_HOOK_ROUTER_ABI } from "../core/multiHookRouterAbi";
+import { ACP_ABI } from "../core/acpAbi.js";
+import { MULTI_HOOK_ROUTER_ABI } from "../core/multiHookRouterAbi.js";
+import { BaseAcpClient } from "./baseAcpClient.js";
 import type {
   ApproveAllowanceParams,
   BatchConfigureHooksParams,
@@ -26,9 +26,12 @@ import type {
   RejectParams,
   SetBudgetParams,
   SubmitParams,
-} from "../core/operations";
-import type { IEvmProviderAdapter } from "../providers/types";
-import { parseJobIdFromReceipt, type JobCreatedFilter } from "../utils/events";
+} from "../core/operations.js";
+import type { IEvmProviderAdapter } from "../providers/types.js";
+import {
+  parseJobIdFromReceipt,
+  type JobCreatedFilter,
+} from "../utils/events.js";
 
 export class EvmAcpClient extends BaseAcpClient<Call[]> {
   private readonly provider: IEvmProviderAdapter;
@@ -196,9 +199,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       args: [
         BigInt(params.jobId),
         params.selectors,
-        params.hooksPerSelector.map((hooks) =>
-          hooks.map((h) => h as Address)
-        ),
+        params.hooksPerSelector.map((hooks) => hooks.map((h) => h as Address)),
       ],
     });
     return this.wrap(chainId, {

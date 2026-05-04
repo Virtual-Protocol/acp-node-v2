@@ -1,6 +1,6 @@
-import type { NetworkContext } from "./chains";
+import type { NetworkContext } from "./chains.js";
 import type { Call, Hex } from "viem";
-import type { SolanaInstructionLike } from "../providers/types";
+import type { SolanaInstructionLike } from "../providers/types.js";
 
 export type CapabilityFlags = {
   supportsBatch: boolean;

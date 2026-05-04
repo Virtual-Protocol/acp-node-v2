@@ -1,5 +1,5 @@
-import type { TransportContext } from "./types";
-import { ACP_SERVER_URL } from "../core/constants";
+import type { TransportContext } from "./types.js";
+import { ACP_SERVER_URL } from "../core/constants.js";
 
 export type AcpHttpClientOptions = {
   serverUrl?: string;

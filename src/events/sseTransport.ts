@@ -1,6 +1,6 @@
 import { EventSource } from "eventsource";
-import type { AcpChatTransport, JobRoomEntry } from "./types";
-import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
+import type { AcpChatTransport, JobRoomEntry } from "./types.js";
+import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient.js";
 
 export type SseTransportOptions = AcpHttpClientOptions;
 

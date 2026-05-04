@@ -1,11 +1,11 @@
-import { EvmAcpClient } from "./clients/evmAcpClient";
-import { SolanaAcpClient } from "./clients/solanaAcpClient";
-import { ACP_CONTRACT_ADDRESSES } from "./core/constants";
+import { EvmAcpClient } from "./clients/evmAcpClient.js";
+import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
+import { ACP_CONTRACT_ADDRESSES } from "./core/constants.js";
 import type {
   IEvmProviderAdapter,
   IProviderAdapter,
   ISolanaProviderAdapter,
-} from "./providers/types";
+} from "./providers/types.js";
 
 export type AcpClient = EvmAcpClient | SolanaAcpClient;
 

@@ -1,8 +1,8 @@
-import { createSolanaNetworkContext, type SolanaCluster } from "../../core/chains";
+import { createSolanaNetworkContext, type SolanaCluster } from "../../core/chains.js";
 import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
-} from "../types";
+} from "../types.js";
 
 export class SolanaProviderAdapter implements ISolanaProviderAdapter {
   public readonly providerName: string;

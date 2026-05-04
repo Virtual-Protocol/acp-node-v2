@@ -2,7 +2,7 @@ import { AcpAgent } from "../acpAgent";
 import { AssetToken } from "../core/assetToken";
 import { baseSepolia } from "@account-kit/infra";
 import { PrivyAlchemyEvmProviderAdapter } from "../providers/evm/privyAlchemyEvmProviderAdapter";
-import { type JobSession, type JobRoomEntry, SocketTransport } from "../index";
+import { type JobSession, type JobRoomEntry } from "../index";
 
 async function main(): Promise<void> {
   const seller = await AcpAgent.create({
@@ -12,7 +12,6 @@ async function main(): Promise<void> {
       signerPrivateKey: "0xSellerSignerPrivateKey",
       chains: [baseSepolia],
     }),
-    transport: new SocketTransport(),
   });
 
   const sellerAddress = (await seller.getAddress()) as `0x${string}`;
@@ -28,7 +27,6 @@ async function main(): Promise<void> {
         case "job.funded":
           console.log(`[seller] job ${session.jobId} funded, delivering…`);
           await session.sendMessage("Got the funds. Working on it now.");
-
           await session.submit("Test deliverable");
           console.log(`[seller] submitted deliverable on job ${session.jobId}`);
           break;
@@ -50,6 +48,8 @@ async function main(): Promise<void> {
         `[seller] received requirement for "${requirement.name}":`,
         requirement.requirement
       );
+
+      const transferAmount = AssetToken.usdc(0.022, session.chainId);
 
       if (entry.packageId) {
         const job = await session.fetchJob();
@@ -75,13 +75,19 @@ async function main(): Promise<void> {
         const totalPrice =
           offeringPrice + (isActiveSubscription ? 0 : subscription.price);
 
-        await session.setBudgetWithSubscription(
+        await session.setBudgetWithSubscriptionAndFundRequest(
           AssetToken.usdc(totalPrice, session.chainId),
           BigInt(subscription.duration),
-          BigInt(subscription.packageId)
+          BigInt(subscription.packageId),
+          transferAmount,
+          sellerAddress
         );
       } else {
-        await session.setBudget(AssetToken.usdc(0.1, session.chainId));
+        await session.setBudgetWithFundRequest(
+          AssetToken.usdc(0.1, session.chainId),
+          transferAmount,
+          sellerAddress
+        );
       }
 
       console.log(`[seller] set budget on job ${session.jobId}`);

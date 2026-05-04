@@ -1,7 +1,6 @@
 import type {
   JobRoomEntry,
   AgentMessage,
-  SystemEntry,
   AcpTool,
   AcpToolParameter,
   AgentRole,
@@ -325,9 +324,10 @@ export class JobSession {
     );
   }
 
-  private async detectConfiguredHooks(
-    selector: Hex
-  ): Promise<{ hasSub: boolean; hasFund: boolean }> {
+  private detectConfiguredHooks(selector: Hex): {
+    hasSub: boolean;
+    hasFund: boolean;
+  } {
     if (!this._job) throw new Error("Job not loaded");
 
     const hook = this._job.hookAddress.toLowerCase();
@@ -350,13 +350,16 @@ export class JobSession {
     };
   }
 
-  async setBudget(
-    amount: AssetToken,
-    opts?: { packageId?: bigint; duration?: bigint }
-  ): Promise<void> {
-    const { hasSub, hasFund } = await this.detectConfiguredHooks(
+  async setBudget(amount: AssetToken): Promise<void> {
+    const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
+
+    if (hasSub && hasFund) {
+      throw new Error(
+        "setBudget cannot be called directly when SubscriptionHook + FundTransferHook are configured for this selector — use setBudgetWithSubscriptionAndFundRequest instead."
+      );
+    }
 
     if (hasFund) {
       throw new Error(
@@ -365,17 +368,9 @@ export class JobSession {
     }
 
     if (hasSub) {
-      if (opts?.packageId === undefined || opts.duration === undefined) {
-        throw new Error(
-          "setBudget routed to SubscriptionHook requires opts.packageId and opts.duration"
-        );
-      }
-      await this.setBudgetWithSubscription(
-        amount,
-        opts.duration,
-        opts.packageId
+      throw new Error(
+        "setBudget cannot be called directly when SubscriptionHook is configured for this selector — use setBudgetWithSubscription instead."
       );
-      return;
     }
 
     await this.agent.internalSetBudget(this.chainId, {
@@ -387,40 +382,32 @@ export class JobSession {
   async setBudgetWithFundRequest(
     amount: AssetToken,
     transferAmount: AssetToken,
-    destination: Address,
-    opts?: { packageId?: bigint; duration?: bigint }
+    destination: Address
   ): Promise<void> {
-    const { hasSub, hasFund } = await this.detectConfiguredHooks(
+    const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
     if (hasSub && hasFund) {
-      if (opts?.packageId === undefined || opts.duration === undefined) {
-        throw new Error(
-          "setBudgetWithFundRequest with SubscriptionHook + FundTransferHook requires opts.packageId and opts.duration"
-        );
-      }
-      await this.setBudgetWithSubscriptionAndFundRequest(
-        amount,
-        opts.duration,
-        opts.packageId,
-        transferAmount,
-        destination
+      throw new Error(
+        "setBudgetWithFundRequest cannot be called directly when SubscriptionHook + FundTransferHook are configured for this selector — use setBudgetWithSubscriptionAndFundRequest instead."
       );
-      return;
     }
 
-    if (hasFund) {
-      await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
-        jobId: BigInt(this.jobId),
-        amount,
-        transferAmount,
-        destination,
-      });
-      return;
+    if (!hasFund) {
+      throw new Error(
+        `setBudgetWithFundRequest cannot be called directly when FundTransferHook is not configured for this selector — use ${
+          hasSub ? "setBudgetWithSubscription" : "setBudget"
+        } instead.`
+      );
     }
 
-    await this.setBudget(amount, opts);
+    await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
+      jobId: BigInt(this.jobId),
+      amount,
+      transferAmount,
+      destination,
+    });
   }
 
   async setBudgetWithSubscription(
@@ -428,7 +415,21 @@ export class JobSession {
     duration: bigint,
     packageId: bigint
   ): Promise<void> {
-    if (!this._job) throw new Error("Job not loaded");
+    const { hasSub, hasFund } = this.detectConfiguredHooks(
+      ACP_SELECTORS.setBudget
+    );
+
+    if (!hasSub) {
+      throw new Error(
+        "setBudgetWithSubscription requires SubscriptionHook to be configured"
+      );
+    }
+
+    if (hasFund) {
+      throw new Error(
+        "setBudgetWithSubscription cannot be called directly when SubscriptionHook + FundTransferHook are configured for this selector — use setBudgetWithSubscriptionAndFundRequest instead."
+      );
+    }
 
     await this.agent.internalSetBudgetWithSubscription(this.chainId, {
       jobId: BigInt(this.jobId),
@@ -445,7 +446,21 @@ export class JobSession {
     transferAmount: AssetToken,
     destination: Address
   ): Promise<void> {
-    if (!this._job) throw new Error("Job not loaded");
+    const { hasSub, hasFund } = this.detectConfiguredHooks(
+      ACP_SELECTORS.setBudget
+    );
+
+    if (!hasSub) {
+      throw new Error(
+        "setBudgetWithSubscriptionAndFundRequest requires SubscriptionHook to be configured"
+      );
+    }
+
+    if (!hasFund) {
+      throw new Error(
+        "setBudgetWithSubscriptionAndFundRequest requires FundTransferHook to be configured"
+      );
+    }
 
     await this.agent.internalSetBudgetWithSubscriptionAndFundRequest(
       this.chainId,
@@ -472,12 +487,12 @@ export class JobSession {
 
     if (router && hook === router) {
       const hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
-      if (!hookConfigs) {
+      if (!hookConfigs || hookConfigs.length === 0) {
         throw new Error(
           "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
         );
       }
-      const { hasSub, hasFund } = await this.detectConfiguredHooks(
+      const { hasSub, hasFund } = this.detectConfiguredHooks(
         ACP_SELECTORS.fund
       );
 
@@ -521,9 +536,7 @@ export class JobSession {
       return;
     }
 
-    const { hasSub, hasFund } = await this.detectConfiguredHooks(
-      ACP_SELECTORS.fund
-    );
+    const { hasSub, hasFund } = this.detectConfiguredHooks(ACP_SELECTORS.fund);
 
     if (hasSub) {
       const terms = await this.agent.getProposedSubscriptionTerms(

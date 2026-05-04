@@ -159,12 +159,12 @@ export type OffChainIntent = {
 // ---------------------------------------------------------------------------
 
 export enum AcpJobStatus {
-  REQUEST = 0,
-  NEGOTIATION = 1,
-  TRANSACTION = 2,
-  EVALUATION = 3,
-  COMPLETED = 4,
-  REJECTED = 5,
+  OPEN = "OPEN",
+  FUNDED = "FUNDED",
+  SUBMITTED = "SUBMITTED",
+  COMPLETED = "COMPLETED",
+  REJECTED = "REJECTED",
+  EXPIRED = "EXPIRED",
 }
 
 // ---------------------------------------------------------------------------

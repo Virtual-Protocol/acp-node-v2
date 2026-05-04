@@ -1,5 +1,6 @@
 import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
 import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import {
   type AcpClient,
   type CreateAcpClientInput,
@@ -493,13 +494,14 @@ export class AcpAgent {
       hookAddress?: string;
     }
   ): Promise<bigint> {
-    // Validate requirement data against JSON schema if requirements is an object
+    // Validate requirement data against JSON schema if requirements is an object.
     if (
       offering.requirements &&
       typeof offering.requirements === "object" &&
       typeof requirementData === "object"
     ) {
-      const ajv = new Ajv({ allErrors: true });
+      const ajv = new Ajv({ allErrors: true, strictSchema: false });
+      addFormats(ajv);
       const validate = ajv.compile(offering.requirements);
       if (!validate(requirementData)) {
         throw new Error(

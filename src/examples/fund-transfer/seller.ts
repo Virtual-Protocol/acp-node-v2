@@ -1,8 +1,8 @@
-import { AcpAgent } from "../../acpAgent";
-import { AssetToken } from "../../core/assetToken";
+import { AcpAgent } from "../../acpAgent.js";
+import { AssetToken } from "../../core/assetToken.js";
 import { base } from "@account-kit/infra";
-import { PrivyAlchemyEvmProviderAdapter } from "../../providers/evm/privyAlchemyEvmProviderAdapter";
-import { type JobSession, type JobRoomEntry } from "../../index";
+import { PrivyAlchemyEvmProviderAdapter } from "../../providers/evm/privyAlchemyEvmProviderAdapter.js";
+import { type JobSession, type JobRoomEntry } from "../../index.js";
 
 const shortAddr = (a: string): string =>
   !a || !a.startsWith("0x") || a.length < 12

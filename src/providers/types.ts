@@ -1,6 +1,6 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
 
-import type { NetworkContext, SolanaCluster } from "../core/chains";
+import type { NetworkContext, SolanaCluster } from "../core/chains.js";
 
 export type SolanaInstructionLike = {
   programId: string;

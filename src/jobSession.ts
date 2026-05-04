@@ -6,10 +6,10 @@ import type {
   AcpToolParameter,
   AgentRole,
   AcpJobEventType,
-} from "./events/types";
-import type { AcpAgent } from "./acpAgent";
-import { AcpJob } from "./acpJob";
-import { AssetToken } from "./core/assetToken";
+} from "./events/types.js";
+import type { AcpAgent } from "./acpAgent.js";
+import { AcpJob } from "./acpJob.js";
+import { AssetToken } from "./core/assetToken.js";
 import { Address } from "viem";
 
 // ---------------------------------------------------------------------------

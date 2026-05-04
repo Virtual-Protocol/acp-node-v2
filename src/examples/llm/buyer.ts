@@ -2,10 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { base } from "@account-kit/infra";
 import dotenv from "dotenv";
 import * as readline from "node:readline";
-import { AcpAgent } from "../../acpAgent";
-import { PrivyAlchemyEvmProviderAdapter } from "../../index";
-import type { AcpTool, AcpAgentOffering } from "../../events/types";
-import type { JobSession, JobRoomEntry } from "../../index";
+import { AcpAgent } from "../../acpAgent.js";
+import { PrivyAlchemyEvmProviderAdapter } from "../../index.js";
+import type { AcpTool, AcpAgentOffering } from "../../events/types.js";
+import type { JobSession, JobRoomEntry } from "../../index.js";
 
 dotenv.config({ quiet: true });
 

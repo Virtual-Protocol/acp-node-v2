@@ -22,12 +22,12 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains";
+import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains.js";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
-} from "../types";
+} from "../types.js";
 import {
   formatRequestForAuthorizationSignature,
   generateAuthorizationSignature,
@@ -38,8 +38,8 @@ import {
   type SmartWalletClient,
   alchemyWalletTransport,
 } from "@alchemy/wallet-apis";
-import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants";
-import { ProviderAuthClient } from "../providerAuthClient";
+import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants.js";
+import { ProviderAuthClient } from "../providerAuthClient.js";
 
 export type SignFn = (payload: Uint8Array) => Promise<string>;
 

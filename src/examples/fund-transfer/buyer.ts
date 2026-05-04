@@ -1,11 +1,11 @@
-import { AcpAgent } from "../../acpAgent";
-import { ACP_CONTRACT_ADDRESSES } from "../../core/constants";
+import { AcpAgent } from "../../acpAgent.js";
+import { ACP_CONTRACT_ADDRESSES } from "../../core/constants.js";
 import { base } from "@account-kit/infra";
 import {
   type JobSession,
   type JobRoomEntry,
   PrivyAlchemyEvmProviderAdapter,
-} from "../../index";
+} from "../../index.js";
 import { Address } from "viem";
 
 const SELLER_ADDRESS: Address = "0xSellerAddress";

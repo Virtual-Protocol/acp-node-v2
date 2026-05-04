@@ -10,8 +10,8 @@ import {
   type Hex,
 } from "viem";
 
-import { BaseAcpClient } from "./baseAcpClient";
-import { ACP_ABI } from "../core/acpAbi";
+import { BaseAcpClient } from "./baseAcpClient.js";
+import { ACP_ABI } from "../core/acpAbi.js";
 import type {
   ApproveAllowanceParams,
   CapabilityFlags,
@@ -24,9 +24,9 @@ import type {
   RejectParams,
   SetBudgetParams,
   SubmitParams,
-} from "../core/operations";
-import type { IEvmProviderAdapter } from "../providers/types";
-import { parseJobIdFromReceipt, type JobCreatedFilter } from "../utils/events";
+} from "../core/operations.js";
+import type { IEvmProviderAdapter } from "../providers/types.js";
+import { parseJobIdFromReceipt, type JobCreatedFilter } from "../utils/events.js";
 
 export class EvmAcpClient extends BaseAcpClient<Call[]> {
   private readonly provider: IEvmProviderAdapter;

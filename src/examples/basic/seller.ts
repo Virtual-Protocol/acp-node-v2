@@ -7,7 +7,7 @@ import {
   type AcpAgentOffering,
   type JobRoomEntry,
   type JobSession,
-} from "../../index";
+} from "../../index.js";
 
 dotenv.config({ quiet: true });
 

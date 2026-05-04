@@ -1,11 +1,13 @@
-import type { Address } from "viem";
-import { AssetToken } from "./core/assetToken";
-import type { AcpClient } from "./clientFactory";
-import type { OnChainJob } from "./core/operations";
-import { JobStatus } from "./clients/baseAcpClient";
-import { AcpJobStatus, type OffChainIntent, type OffChainJob } from "./events/types";
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { zeroAddress, type Address } from "viem";
+import { AssetToken } from "./core/assetToken.js";
+import type { AcpClient } from "./clientFactory.js";
+import type { OnChainJob } from "./core/operations.js";
+import { JobStatus } from "./clients/baseAcpClient.js";
+import {
+  AcpJobStatus,
+  type OffChainIntent,
+  type OffChainJob,
+} from "./events/types.js";
 
 function statusFromOnChain(n: number): AcpJobStatus {
   const name = JobStatus[n] as keyof typeof AcpJobStatus | undefined;
@@ -115,7 +117,7 @@ export class AcpJob {
           Math.floor(new Date(data.expiredAt).getTime() / 1000)
         ),
         status: statusToOnChain(data.jobStatus),
-        hook: data.hookAddress ?? ZERO_ADDRESS,
+        hook: data.hookAddress ?? zeroAddress,
       },
       intents,
       data.deliverable ?? null

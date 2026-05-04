@@ -10,8 +10,8 @@ import type {
   RejectParams,
   SetBudgetParams,
   SubmitParams,
-} from "../core/operations";
-import type { JobCreatedFilter } from "../utils/events";
+} from "../core/operations.js";
+import type { JobCreatedFilter } from "../utils/events.js";
 
 export enum JobStatus {
   OPEN = 0,

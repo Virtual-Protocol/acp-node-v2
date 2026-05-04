@@ -3,8 +3,8 @@ import type {
   AcpJobApi,
   BrowseAgentParams,
   OffChainJob,
-} from "./types";
-import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
+} from "./types.js";
+import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient.js";
 
 export class AcpApiClient extends AcpHttpClient implements AcpJobApi {
   constructor(opts: AcpHttpClientOptions = {}) {

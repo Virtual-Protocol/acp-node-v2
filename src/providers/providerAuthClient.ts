@@ -1,4 +1,4 @@
-import { ACP_SERVER_URL } from "../core/constants";
+import { ACP_SERVER_URL } from "../core/constants.js";
 
 export interface ProviderAuthClientOptions {
   serverUrl?: string;

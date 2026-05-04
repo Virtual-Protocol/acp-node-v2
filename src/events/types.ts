@@ -1,5 +1,5 @@
-import type { AcpClient } from "../clientFactory";
-import { AgentSort, OnlineStatus } from "../clients/baseAcpClient";
+import type { AcpClient } from "../clientFactory.js";
+import { AgentSort, OnlineStatus } from "../clients/baseAcpClient.js";
 
 // ---------------------------------------------------------------------------
 // ACP job events (discriminated union — used inside SystemEntry.event)

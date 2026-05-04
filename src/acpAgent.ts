@@ -1,28 +1,30 @@
 import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const Ajv: typeof import("ajv").default = require("ajv");
+const addFormats: typeof import("ajv-formats").default = require("ajv-formats");
 import {
   type AcpClient,
   type CreateAcpClientInput,
   createAcpClient,
-} from "./clientFactory";
-import { EvmAcpClient } from "./clients/evmAcpClient";
+} from "./clientFactory.js";
+import { EvmAcpClient } from "./clients/evmAcpClient.js";
 import type {
   CompleteParams,
   CreateJobParams,
   RejectParams,
   SubmitParams,
-} from "./core/operations";
+} from "./core/operations.js";
 import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   getAddressForChain,
   MIN_SLA_MINS,
   BUFFER_SECONDS,
-} from "./core/constants";
-import { AssetToken } from "./core/assetToken";
-import { JobSession } from "./jobSession";
-import { AcpApiClient } from "./events/acpApiClient";
-import { AcpHttpClient } from "./events/acpHttpClient";
+} from "./core/constants.js";
+import { AssetToken } from "./core/assetToken.js";
+import { JobSession } from "./jobSession.js";
+import { AcpApiClient } from "./events/acpApiClient.js";
+import { AcpHttpClient } from "./events/acpHttpClient.js";
 import type {
   AcpAgentDetail,
   AcpAgentOffering,
@@ -32,8 +34,8 @@ import type {
   BrowseAgentParams,
   JobRoomEntry,
   TransportContext,
-} from "./events/types";
-import { SseTransport } from "./events/sseTransport";
+} from "./events/types.js";
+import { SseTransport } from "./events/sseTransport.js";
 
 export type EntryHandler = (
   session: JobSession,

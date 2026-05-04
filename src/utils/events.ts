@@ -3,7 +3,7 @@ import {
   type Address,
   type TransactionReceipt,
 } from "viem";
-import { ACP_ABI } from "../core/acpAbi";
+import { ACP_ABI } from "../core/acpAbi.js";
 
 export type JobCreatedFilter = {
   provider?: string;

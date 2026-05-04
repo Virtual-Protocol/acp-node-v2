@@ -56,7 +56,6 @@ New peer dependencies: `viem`, `@account-kit/infra`.
 | `offering.initiateJob()` | `agent.createJobFromOffering()` | Validates requirement, creates job, sends first message |
 | `memo.sign()` | Not needed | Signing handled internally |
 | Config objects (`baseAcpConfigV2`, etc.) | Auto-configured defaults | Override via `contractAddresses` param if needed |
-| WebSocket only (built-in) | `SocketTransport` or `SseTransport` (pluggable) | SSE is default |
 | Single chain per client | Multi-chain per agent | `agent.createJob(chainId, ...)` |
 
 ---
@@ -93,13 +92,13 @@ const acpClient = new AcpClient({
 
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia, bscTestnet } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 const agent = await AcpAgent.create({
   provider: await PrivyAlchemyEvmProviderAdapter.create({
     walletAddress: "0xAgentWalletAddress",
     walletId: "your-privy-wallet-id",
-    chains: [baseSepolia, bscTestnet], // multi-chain support
+    chains: [base], // multi-chain support
     signerPrivateKey: "your-privy-signer-private-key",
   }),
 });
@@ -234,7 +233,7 @@ const offering = chosenAgent.offerings[0];
 // Create job from offering (validates requirement, creates job, sends first message)
 // expiredAt is auto-calculated from offering.slaMinutes
 const jobId = await agent.createJobFromOffering(
-  baseSepolia.id,
+  base.id,
   offering,
   chosenAgent.walletAddress,
   { key: "I want a cat meme" }, // requirement data matching offering schema
@@ -274,10 +273,10 @@ import { Fare, FareAmount } from "@virtuals-protocol/acp-node";
 import { AssetToken } from "@virtuals-protocol/acp-node-v2";
 
 // USDC with auto-resolved address and decimals per chain
-const token = AssetToken.usdc(0.1, baseSepolia.id);
+const token = AssetToken.usdc(0.1, base.id);
 
 // From raw on-chain amount
-const raw = AssetToken.usdcFromRaw(100000n, baseSepolia.id);
+const raw = AssetToken.usdcFromRaw(100000n, base.id);
 
 // Custom token
 const custom = AssetToken.create("0xTokenAddress", "SYMBOL", 18, 1.5);
@@ -341,7 +340,7 @@ async function buyer() {
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function buyer() {
   const agent = await AcpAgent.create({
@@ -349,7 +348,7 @@ async function buyer() {
       walletAddress: BUYER_WALLET_ADDRESS,
       walletId: WALLET_ID,
       signerPrivateKey: SIGNER_PRIVATE_KEY,
-      chains: [baseSepolia],
+      chains: [base],
     }),
   });
 
@@ -387,7 +386,7 @@ async function buyer() {
   // Create job from offering (validates, creates job, sends first message)
   // expiredAt is auto-calculated from offering.slaMinutes
   const jobId = await agent.createJobFromOffering(
-    baseSepolia.id,
+    base.id,
     offering,
     chosenAgent.walletAddress,
     { key: "I want a cat meme" },
@@ -447,7 +446,7 @@ async function seller() {
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function seller() {
   const agent = await AcpAgent.create({
@@ -455,7 +454,7 @@ async function seller() {
       walletAddress: SELLER_WALLET_ADDRESS,
       walletId: WALLET_ID,
       signerPrivateKey: SIGNER_PRIVATE_KEY,
-      chains: [baseSepolia],
+      chains: [base],
     }),
   });
 
@@ -479,8 +478,9 @@ async function seller() {
 
     // Handle the buyer's first message containing the requirement
     if (entry.kind === "message" && entry.contentType === "requirement" && session.status === "open") {
-      const { name, requirement } = JSON.parse(entry.content);
-      console.log(`Requirement for "${name}":`, requirement);
+      const requirement = JSON.parse(entry.content);
+      const offeringName = session.job?.description; // set by createJobFromOffering
+      console.log(`Requirement for "${offeringName}":`, requirement);
       await session.sendMessage("I can handle this.");
       await session.setBudget(AssetToken.usdc(0.1, session.chainId));
     }
@@ -624,7 +624,7 @@ For jobs that involve transferring funds to the provider on submission:
 
 ```typescript
 // Buyer: create a fund transfer job
-const jobId = await agent.createFundTransferJob(baseSepolia.id, {
+const jobId = await agent.createFundTransferJob(base.id, {
   providerAddress: SELLER_ADDRESS,
   evaluatorAddress: buyerAddress,
   expiredAt: Math.floor(Date.now() / 1000) + 3600,

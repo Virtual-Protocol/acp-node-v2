@@ -43,5 +43,5 @@
 
     "esModuleInterop": true,
   },
-  "exclude": ["src/examples*", "dist"]
+  "exclude": ["src/examples/**", "dist"]
 }

@@ -91,7 +91,7 @@ export class AcpAgent {
   private readonly api: AcpJobApi;
   private started = false;
   private entryHandler: EntryHandler | null = null;
-  private sessions = new Map<string, JobSession>();
+  private sessionMap = new Map<string, JobSession>();
   private address: string | null = null;
 
   constructor(client: AcpClient, transport: AcpChatTransport, api: AcpJobApi) {
@@ -214,7 +214,7 @@ export class AcpAgent {
       await this.transport.disconnect();
       this.started = false;
     }
-    this.sessions.clear();
+    this.sessionMap.clear();
   }
 
   // -------------------------------------------------------------------------
@@ -251,7 +251,34 @@ export class AcpAgent {
   }
 
   getSession(chainId: number, jobId: string): JobSession | undefined {
-    return this.sessions.get(this.getSessionKey(chainId, jobId));
+    return this.sessionMap.get(this.getSessionKey(chainId, jobId));
+  }
+
+  /**
+   * All sessions currently tracked by this agent.
+   *
+   * After `start()`, this includes every job hydrated from
+   * `AcpJobApi.getActiveJobs()` plus any sessions created live during the
+   * run. Sessions stay in the map across status transitions until `stop()`
+   * clears them — filter by `session.status` if you only want non-terminal
+   * jobs.
+   *
+   * Use this on startup to detect in-flight jobs that should be resumed
+   * rather than re-initiated:
+   *
+   * ```ts
+   * await agent.start();
+   * const inFlight = agent.sessions.filter(
+   *   (s) => s.roles.includes("client") &&
+   *     !["completed", "rejected", "expired"].includes(s.status)
+   * );
+   * if (inFlight.length === 0) {
+   *   await agent.createJobFromOffering(...);
+   * }
+   * ```
+   */
+  get sessions(): JobSession[] {
+    return Array.from(this.sessionMap.values());
   }
 
   private getOrCreateSession(
@@ -259,7 +286,7 @@ export class AcpAgent {
     chainId: number,
     initialEntries: JobRoomEntry[] = []
   ): JobSession {
-    let session = this.sessions.get(this.getSessionKey(chainId, jobId));
+    let session = this.sessionMap.get(this.getSessionKey(chainId, jobId));
     if (session) return session;
 
     const roles = this.inferRoles(initialEntries);
@@ -271,7 +298,7 @@ export class AcpAgent {
       roles,
       initialEntries
     );
-    this.sessions.set(this.getSessionKey(chainId, jobId), session);
+    this.sessionMap.set(this.getSessionKey(chainId, jobId), session);
     return session;
   }
 
@@ -322,7 +349,7 @@ export class AcpAgent {
           roles,
           session.entries
         );
-        this.sessions.set(this.getSessionKey(chainId, jobId), newSession);
+        this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
         await newSession.fetchJob();
         this.fireHandler(newSession, entry);
         return;
@@ -425,6 +452,37 @@ export class AcpAgent {
     });
   }
 
+  /**
+   * Create a job from a registry offering and send the requirement message.
+   *
+   * The `opts.evaluatorAddress` choice picks one of three lifecycle shapes:
+   *
+   *   • **Self-evaluation** — `{ evaluatorAddress: <buyer> }`.
+   *     The buyer is their own evaluator. They receive `job.submitted`
+   *     and must call `session.complete(...)` or `session.reject(...)`
+   *     themselves to release funds (or refund).
+   *
+   *   • **Third-party evaluation** — `{ evaluatorAddress: <other wallet> }`.
+   *     A separate agent on that wallet must call `complete`/`reject` on
+   *     `job.submitted`. The buyer only observes the terminal
+   *     `job.completed` / `job.rejected` events.
+   *
+   *   • **Skip evaluation** — omit `evaluatorAddress` (defaults to the
+   *     zero address). The contract treats this as "no evaluator required":
+   *     a successful `submit` auto-completes the job and releases funds.
+   *     `job.submitted` won't fire for anyone in this mode. Suitable for
+   *     trusted-provider flows where the buyer doesn't need a quality gate
+   *     before payment.
+   *
+   * @param chainId            Chain to create the job on.
+   * @param offering           Offering to fulfill (selects price + SLA).
+   * @param providerAddress    Provider's wallet address.
+   * @param requirementData    Requirement payload, validated against
+   *                           `offering.requirements` if it's a JSON schema.
+   * @param opts.evaluatorAddress  See above. Defaults to the zero address
+   *                               (skip-evaluation mode).
+   * @param opts.hookAddress       Optional fund-transfer hook override.
+   */
   async createJobFromOffering(
     chainId: number,
     offering: AcpAgentOffering,
@@ -489,6 +547,17 @@ export class AcpAgent {
     return jobId;
   }
 
+  /**
+   * Convenience wrapper: looks up the provider, finds the offering by name,
+   * and forwards to {@link createJobFromOffering}.
+   *
+   * See `createJobFromOffering` for the three evaluation modes the
+   * `opts.evaluatorAddress` choice selects (self / third-party / skip).
+   * Notably, omitting `evaluatorAddress` defaults to the zero address,
+   * which puts the job in **skip-evaluation** mode (auto-completes on
+   * deliverable submission). Pass an explicit address if you want a
+   * quality gate before payment.
+   */
   async createJobByOfferingName(
     chainId: number,
     offeringName: string,

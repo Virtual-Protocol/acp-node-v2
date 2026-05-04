@@ -24,8 +24,10 @@ export * from "./providers/solana/solanaProviderAdapter";
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient";
 export { AcpApiClient } from "./events/acpApiClient";
-export { SocketTransport } from "./events/socketTransport";
 export { SseTransport } from "./events/sseTransport";
+
+// Public enums
+export { AcpJobStatus } from "./events/types";
 
 // Event / room types (public)
 export type {

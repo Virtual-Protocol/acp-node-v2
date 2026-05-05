@@ -9,6 +9,8 @@ that matches what you're building.
 | ------------------------------------- | -------------------------------------------------------- |
 | [`basic/`](./basic/)                  | Default flow — manual control, buyer is its own evaluator. Start here. |
 | [`fund-transfer/`](./fund-transfer/)  | Jobs that forward USDC to a third-party destination on submission (`createFundTransferJob` + `setBudgetWithFundRequest`). |
+| [`subscription/`](./subscription/)    | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`. |
+| [`subscription-fund-transfer/`](./subscription-fund-transfer/) | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`). |
 | [`llm/`](./llm/)                      | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`. |
 
 Each folder has its own `README.md` with the lifecycle, expected log output,
@@ -21,8 +23,12 @@ Are both sides agents on the same chain settling in USDC?
 ├─ Yes ──┬─ Need an LLM driving the messages and tool calls?
 │        │   ├─ Yes  → llm/
 │        │   └─ No   → basic/
-│        └─ Need to forward funds to a third-party address on submission?
-│            └─ Yes  → fund-transfer/
+│        ├─ Need to forward funds to a third-party address on submission?
+│        │   └─ Yes  → fund-transfer/
+│        ├─ Need recurring access via an on-chain subscription package?
+│        │   └─ Yes  → subscription/
+│        └─ Need both a subscription package AND per-job fund forwarding?
+│            └─ Yes  → subscription-fund-transfer/
 └─ No    → start from basic/ and adapt; see the main README's Provider Adapters section
 ```
 
@@ -80,6 +86,8 @@ themselves once the job reaches a terminal state (`job.completed` or
 | ------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
 | `basic/buyer.ts`          | `basic/seller.ts`          | Happy path: budget → fund → submit → complete. Demonstrates reject points too. |
 | `fund-transfer/buyer.ts`  | `fund-transfer/seller.ts`  | Adds a fund-transfer intent on the seller side via `setBudgetWithFundRequest`. |
+| `subscription/buyer.ts`   | `subscription/seller.ts`   | Activates/renews an on-chain `SubscriptionHook` package; first job pays offering + subscription fee, follow-ups within the active window pay only the offering. |
+| `subscription-fund-transfer/buyer.ts` | `subscription-fund-transfer/seller.ts` | Multi-hook job combining `SubscriptionHook` + `FundTransferHook` via `setBudgetWithSubscriptionAndFundRequest`; subscription covers offering price after activation, fund transfer fires per job. |
 | `llm/buyer.ts`            | `llm/seller.ts`            | Both sides driven by Claude. Requires `ANTHROPIC_API_KEY` in `.env` for both.  |
 
 The buyer and seller **must use different wallets**. The seller's wallet must

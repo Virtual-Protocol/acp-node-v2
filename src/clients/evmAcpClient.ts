@@ -10,10 +10,12 @@ import {
   type Hex,
 } from "viem";
 
-import { BaseAcpClient } from "./baseAcpClient.js";
 import { ACP_ABI } from "../core/acpAbi.js";
+import { MULTI_HOOK_ROUTER_ABI } from "../core/multiHookRouterAbi.js";
+import { BaseAcpClient } from "./baseAcpClient.js";
 import type {
   ApproveAllowanceParams,
+  BatchConfigureHooksParams,
   CapabilityFlags,
   CompleteParams,
   CreateJobParams,
@@ -26,7 +28,10 @@ import type {
   SubmitParams,
 } from "../core/operations.js";
 import type { IEvmProviderAdapter } from "../providers/types.js";
-import { parseJobIdFromReceipt, type JobCreatedFilter } from "../utils/events.js";
+import {
+  parseJobIdFromReceipt,
+  type JobCreatedFilter,
+} from "../utils/events.js";
 
 export class EvmAcpClient extends BaseAcpClient<Call[]> {
   private readonly provider: IEvmProviderAdapter;
@@ -182,6 +187,26 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
         params.optParams ?? "0x",
       ])
     );
+  }
+
+  async batchConfigureHooks(
+    chainId: number,
+    params: BatchConfigureHooksParams
+  ): Promise<PreparedEvmTx> {
+    const data = encodeFunctionData({
+      abi: MULTI_HOOK_ROUTER_ABI,
+      functionName: "batchConfigureHooks",
+      args: [
+        BigInt(params.jobId),
+        params.selectors,
+        params.hooksPerSelector.map((hooks) => hooks.map((h) => h as Address)),
+      ],
+    });
+    return this.wrap(chainId, {
+      to: params.routerAddress as Address,
+      data,
+      value: 0n,
+    });
   }
 
   override async getJobIdFromTxHash(

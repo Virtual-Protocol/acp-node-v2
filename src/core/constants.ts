@@ -1,4 +1,4 @@
-import { Address } from "viem";
+import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
 
 // ---------------------------------------------------------------------------
@@ -18,10 +18,33 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
+  [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
-  [base.id]: "0x90717828D78731313CB350D6a58b0f91668Ea702",
+  [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
+
+export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
+  [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
+};
+
+export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
+  [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
+};
+
+export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
+  [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
+};
+
+export const ACP_SELECTORS = {
+  setBudget: toFunctionSelector("setBudget(uint256,uint256,bytes)"),
+  fund: toFunctionSelector("fund(uint256,uint256,bytes)"),
+  submit: toFunctionSelector("submit(uint256,bytes32,bytes)"),
+  complete: toFunctionSelector("complete(uint256,bytes32,bytes)"),
+  reject: toFunctionSelector("reject(uint256,bytes32,bytes)"),
+} as const;
 
 export const USDC_DECIMALS: Record<number, number> = {
   [baseSepolia.id]: 6,

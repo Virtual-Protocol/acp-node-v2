@@ -71,6 +71,13 @@ export type RejectParams = {
   optParams?: Hex;
 };
 
+export type BatchConfigureHooksParams = {
+  routerAddress: string;
+  jobId: bigint;
+  selectors: Hex[];
+  hooksPerSelector: string[][];
+};
+
 export type OnChainJob = {
   id: bigint;
   client: string;

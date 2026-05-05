@@ -59,9 +59,7 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
 
       const key = `${entry.timestamp}:${entry.kind}:${
         "from" in entry ? entry.from : ""
-      }:${
-        "content" in entry ? entry.content : (entry as any).event?.type
-      }`;
+      }:${"content" in entry ? entry.content : (entry as any).event?.type}`;
       if (this.seenEntries.has(key)) return;
       this.seenEntries.add(key);
 
@@ -74,7 +72,6 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
         this.entryHandler(entry);
       }
     };
-
   }
 
   async disconnect(): Promise<void> {
@@ -104,9 +101,10 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): void {
-    this.postMessage(chainId, jobId, content, contentType).catch(
+    this.postMessage(chainId, jobId, content, contentType, packageId).catch(
       console.error
     );
   }
@@ -115,7 +113,8 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): Promise<void> {
     await this.ensureAuthenticated();
     const res = await this.authedFetch(
@@ -123,7 +122,7 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, contentType }),
+        body: JSON.stringify({ content, contentType, packageId }),
       }
     );
 
@@ -144,5 +143,4 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;
   }
-
 }

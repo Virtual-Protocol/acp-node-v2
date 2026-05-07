@@ -51,9 +51,24 @@ If `SELLER_WALLET_ADDRESS` is set, the script will also exercise the
 `getAgentByWalletAddress` lookup against that address. Otherwise that
 subsection is skipped with a note.
 
-The script does NOT call `agent.start()` until the active-jobs section
-runs, and explicitly disconnects via `agent.stop()` before exiting — so
-it leaves no SSE subscription open.
+The script does NOT call `agent.start()` until the hydrated-sessions
+section runs, and explicitly disconnects via `agent.stop()` before
+exiting — so it leaves no SSE subscription open.
+
+## Type-checking
+
+The repo's root `tsconfig.json` excludes `src/examples*` from the SDK
+build, so `npx tsc --noEmit` does NOT type-check this file. Run a
+file-scoped check before committing changes here:
+
+```bash
+npx tsc --noEmit --rootDir . --module nodenext --moduleResolution nodenext \
+  --target es2020 --strict --skipLibCheck --types node --esModuleInterop \
+  --noUncheckedIndexedAccess --exactOptionalPropertyTypes \
+  src/examples/helpers/acpHelperFunctions.ts
+```
+
+Expected: exits 0 with no output.
 
 ## Expected output sections
 
@@ -79,12 +94,12 @@ ACP SDK Public Helper Functions
    <up to 3 jobs, each with full off-chain record + chat history>
 
 --- Hydrated sessions (after agent.start) ---
-   <session.status, roles, availableTools, last 3 entries>
+   <per-session: status, roles, entries-count, availableTools>
 
 --- Session render (toContext / toMessages) ---
    <transcript and LLM-shaped messages of the most recent session>
 
---- Subscription state ---
+--- Subscription state (on-chain reads) ---
    <expiry, isActive — only printed when a subscription hook is in play>
 
 --- Asset token resolution ---

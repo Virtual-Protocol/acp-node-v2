@@ -236,11 +236,15 @@ async function main(): Promise<void> {
       const subHook = (
         process.env.SUBSCRIPTION_HOOK_ADDRESS ?? ""
       ).toLowerCase();
-      // Heuristic: any session whose job has hookConfigs or whose hook
-      // matches a configured subscription hook env override. Falls back to
-      // "first session with hookConfigs", which is set by SubscriptionHook
-      // and MultiHookRouter jobs.
-      return Boolean(s.job?.hookConfigs) || (subHook && hook === subHook);
+      // Prefer the strict signal: jobs that activated a subscription
+      // expose `clientSubscription` on AcpJob. Fall back to a hookConfigs
+      // truthiness check (set by SubscriptionHook + MultiHookRouter jobs)
+      // or an explicit env override.
+      return (
+        s.job?.clientSubscription != null ||
+        Boolean(s.job?.hookConfigs) ||
+        (subHook && hook === subHook)
+      );
     });
 
     if (!subscriptionSession || !subscriptionSession.job) {
@@ -250,7 +254,7 @@ async function main(): Promise<void> {
       );
     } else {
       const job = subscriptionSession.job;
-      console.log(`probing subscription state for job ${job.jobId}`);
+      console.log(`probing subscription state for job ${subscriptionSession.jobId}`);
 
       try {
         const terms = await agent.getProposedSubscriptionTerms(

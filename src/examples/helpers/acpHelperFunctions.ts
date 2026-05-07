@@ -177,6 +177,54 @@ async function main(): Promise<void> {
     // read API — call it when a multi-hook router job is in flight to see
     // which sub-hooks are configured for a given selector. Skipped here
     // because demoing it requires fabricating selector bytes.
+
+    /* ---------------- HYDRATED SESSIONS ---------------- */
+    subsection("Hydrated sessions (after agent.start)");
+    // agent.start() opens the SSE transport and calls hydrateSessions(),
+    // which builds a JobSession for every active job this wallet is on.
+    // The single-entry handler is a no-op here — we only want hydration.
+    agent.on("entry", () => {});
+    await agent.start();
+    const sessions = agent.sessions;
+    console.log(`${sessions.length} hydrated session(s):`);
+    for (const s of sessions.slice(0, 3)) {
+      console.log(
+        `  - job ${s.jobId} (chain ${s.chainId}): status=${s.status}, ` +
+          `roles=[${s.roles.join(",")}], entries=${s.entries.length}`
+      );
+      console.log(
+        `    availableTools: [${s.availableTools().map((t) => t.name).join(", ")}]`
+      );
+    }
+
+    /* ---------------- SESSION RENDER ---------------- */
+    subsection("Session render (toContext / toMessages)");
+    const sample = sessions[0];
+    if (sample) {
+      // session.fetchJob() forces a refresh of session.job from the backend
+      // — useful when you need the latest off-chain state mid-flow. After
+      // hydration the SDK has typically already populated session.job.
+      await sample.fetchJob();
+      console.log(`sample session: job ${sample.jobId}`);
+      console.log("\n  toContext():");
+      const ctx = await sample.toContext();
+      for (const line of ctx.split("\n").slice(0, 8)) {
+        console.log(`    ${line}`);
+      }
+      const ctxLines = ctx.split("\n").length;
+      if (ctxLines > 8) console.log(`    …(${ctxLines - 8} more line(s))`);
+
+      console.log("\n  toMessages() (LLM-shaped):");
+      const msgs = await sample.toMessages();
+      for (const m of msgs.slice(0, 4)) {
+        const preview =
+          m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
+        console.log(`    ${m.role}: ${preview}`);
+      }
+      if (msgs.length > 4) console.log(`    …(${msgs.length - 4} more)`);
+    } else {
+      console.log("no hydrated sessions to render — skipping");
+    }
   } finally {
     await agent.stop();
   }

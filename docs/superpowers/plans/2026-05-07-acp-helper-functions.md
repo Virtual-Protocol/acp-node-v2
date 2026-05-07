@@ -601,11 +601,15 @@ Demos `agent.getProposedSubscriptionTerms`, `agent.getSubscriptionExpiry`, `agen
       const subHook = (
         process.env.SUBSCRIPTION_HOOK_ADDRESS ?? ""
       ).toLowerCase();
-      // Heuristic: any session whose job has hookConfigs or whose hook
-      // matches a configured subscription hook env override. Falls back to
-      // "first session with hookConfigs", which is set by SubscriptionHook
-      // and MultiHookRouter jobs.
-      return Boolean(s.job?.hookConfigs) || (subHook && hook === subHook);
+      // Prefer the strict signal: jobs that activated a subscription
+      // expose `clientSubscription` on AcpJob. Fall back to a hookConfigs
+      // truthiness check (set by SubscriptionHook + MultiHookRouter jobs)
+      // or an explicit env override.
+      return (
+        s.job?.clientSubscription != null ||
+        Boolean(s.job?.hookConfigs) ||
+        (subHook && hook === subHook)
+      );
     });
 
     if (!subscriptionSession || !subscriptionSession.job) {
@@ -615,7 +619,7 @@ Demos `agent.getProposedSubscriptionTerms`, `agent.getSubscriptionExpiry`, `agen
       );
     } else {
       const job = subscriptionSession.job;
-      console.log(`probing subscription state for job ${job.jobId}`);
+      console.log(`probing subscription state for job ${subscriptionSession.jobId}`);
 
       try {
         const terms = await agent.getProposedSubscriptionTerms(
@@ -831,9 +835,20 @@ EOF
 
 - [ ] **Step 1: Full compile**
 
-Run: `npx tsc --noEmit`
+The repo's root `tsconfig.json` has `"exclude": ["src/examples*", "dist"]` — so plain `npx tsc --noEmit` does NOT type-check anything under `src/examples/`. Use a file-scoped invocation that bypasses the exclude:
 
-Expected: exits 0 with no output. If it fails, fix and re-run before continuing.
+Run:
+
+```bash
+npx tsc --noEmit --rootDir . --module nodenext --moduleResolution nodenext \
+  --target es2020 --strict --skipLibCheck --types node --esModuleInterop \
+  --noUncheckedIndexedAccess --exactOptionalPropertyTypes \
+  src/examples/helpers/acpHelperFunctions.ts
+```
+
+Expected: exits 0 with no output.
+
+(The repo's `npx tsc --noEmit` from root will report 4 pre-existing TS6059 errors about `examples-local/` — those are unrelated and predate this work; do not chase them.)
 
 - [ ] **Step 2: Confirm the script's structure with a no-side-effect parse check**
 

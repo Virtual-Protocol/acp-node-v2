@@ -286,6 +286,48 @@ async function main(): Promise<void> {
         console.log(`  subscription read failed: ${err}`);
       }
     }
+
+    /* ---------------- ASSET TOKEN RESOLUTION ---------------- */
+    subsection("Asset token resolution");
+    // resolveAssetToken / resolveRawAssetToken read decimals + symbol from
+    // the ERC-20 contract and return an AssetToken — useful when you have
+    // a token address but don't know its decimals. AssetToken.usdc(...) is
+    // the shorthand most examples use; this section demonstrates the
+    // general path for any ERC-20 (e.g. a chain-specific WETH).
+    //
+    // We resolve USDC on the configured chain by re-using the token address
+    // recorded on a session's job (every job carries a budget token via
+    // its hookConfigs / ACP contract address resolution). Skipped if no
+    // session is available.
+    if (sample?.job) {
+      const intent = sample.job.getFundRequestIntent() ?? sample.job.getFundTransferIntent();
+      const tokenAddress = (intent?.tokenAddress ?? null) as `0x${string}` | null;
+      if (tokenAddress) {
+        const oneUnit = await agent.resolveAssetToken(
+          tokenAddress,
+          1,
+          sample.chainId
+        );
+        console.log(
+          `  resolveAssetToken: 1 of ${tokenAddress} → ` +
+            `${oneUnit.amount} ${oneUnit.symbol} (raw ${oneUnit.rawAmount})`
+        );
+
+        const oneRaw = await agent.resolveRawAssetToken(
+          tokenAddress,
+          1_000_000n,
+          sample.chainId
+        );
+        console.log(
+          `  resolveRawAssetToken: 1_000_000 raw of ${tokenAddress} → ` +
+            `${oneRaw.amount} ${oneRaw.symbol}`
+        );
+      } else {
+        console.log("skipped — no token address available on the sample session");
+      }
+    } else {
+      console.log("skipped — no sample session available");
+    }
   } finally {
     await agent.stop();
   }

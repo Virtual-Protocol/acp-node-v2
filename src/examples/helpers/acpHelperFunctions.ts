@@ -54,8 +54,64 @@ async function main(): Promise<void> {
 
   try {
     // Subsections added in subsequent tasks plug in here.
-    subsection("Skeleton");
-    console.log("(no demos yet — see Task 3+ in the implementation plan)");
+    /* ---------------- AGENT IDENTITY ---------------- */
+    subsection("Agent identity");
+    const address = await agent.getAddress();
+    console.log(`address:           ${address}`);
+    console.log(`supported chains:  ${JSON.stringify(agent.getSupportedChainIds())}`);
+
+    /* ---------------- SELF REGISTRY PROFILE ---------------- */
+    subsection("Self registry profile (getMe)");
+    try {
+      const me = await agent.getMe();
+      console.log(`name:              ${me.name}`);
+      console.log(`role:              ${me.role}`);
+      console.log(`offerings:         ${me.offerings.length}`);
+      for (const o of me.offerings) {
+        console.log(
+          `  - "${o.name}" — ${o.priceValue} USDC, sla=${o.slaMinutes}min, ` +
+            `requiredFunds=${o.requiredFunds}, hidden=${o.isHidden}`
+        );
+      }
+      console.log(`subscriptions:     ${me.subscriptions.length}`);
+      for (const s of me.subscriptions) {
+        console.log(
+          `  - "${s.name}" packageId=${s.packageId}, ${s.price} USDC, ${s.duration}s`
+        );
+      }
+    } catch (err) {
+      console.log(`getMe failed (is this wallet registered?): ${err}`);
+    }
+
+    /* ---------------- DIRECT LOOKUP ---------------- */
+    subsection("Direct lookup (getAgentByWalletAddress)");
+    const sellerAddress = process.env.SELLER_WALLET_ADDRESS;
+    if (sellerAddress) {
+      const seller = await agent.getAgentByWalletAddress(sellerAddress);
+      if (seller) {
+        console.log(
+          `found "${seller.name}" at ${seller.walletAddress} — ` +
+            `${seller.offerings.length} offering(s)`
+        );
+      } else {
+        console.log(`no agent registered at ${sellerAddress}`);
+      }
+    } else {
+      console.log("skipped — SELLER_WALLET_ADDRESS not set");
+    }
+
+    /* ---------------- REGISTRY BROWSE ---------------- */
+    subsection("Registry browse (browseAgents)");
+    const browsed = await agent.browseAgents("agent", {
+      topK: 3,
+      showHidden: true,
+    });
+    console.log(`top ${browsed.length} agent(s) matching "agent":`);
+    for (const a of browsed) {
+      console.log(
+        `  - "${a.name}" ${a.walletAddress} — ${a.offerings.length} offering(s)`
+      );
+    }
   } finally {
     await agent.stop();
   }

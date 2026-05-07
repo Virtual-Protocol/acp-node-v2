@@ -112,6 +112,71 @@ async function main(): Promise<void> {
         `  - "${a.name}" ${a.walletAddress} — ${a.offerings.length} offering(s)`
       );
     }
+
+    /* ---------------- ACTIVE JOBS ---------------- */
+    subsection("Active jobs (getApi().getActiveJobs)");
+    const api = agent.getApi();
+    const activeJobs = await api.getActiveJobs();
+    console.log(`${activeJobs.length} active job(s):`);
+
+    // Inspect up to the first 3 active jobs in detail. v1's helper paged
+    // with `getActiveJobs(1, 3)`; v2's getActiveJobs() returns all jobs the
+    // wallet is on (no pagination), so we slice client-side.
+    for (const ref of activeJobs.slice(0, 3)) {
+      console.log(`\n  job ${ref.onChainJobId} on chain ${ref.chainId}:`);
+
+      /* ---- per-job off-chain record ---- */
+      const job = await api.getJob(ref.chainId, ref.onChainJobId);
+      if (!job) {
+        console.log(`    (no off-chain record)`);
+        continue;
+      }
+      console.log(`    status:      ${job.jobStatus}`);
+      console.log(`    client:      ${job.clientAddress}`);
+      console.log(`    provider:    ${job.providerAddress}`);
+      console.log(`    evaluator:   ${job.evaluatorAddress}`);
+      console.log(`    description: ${job.description ?? "(none)"}`);
+      console.log(`    budget:      ${job.budget ?? "(unset)"}`);
+      console.log(`    expiredAt:   ${job.expiredAt}`);
+      console.log(`    hookAddress: ${job.hookAddress ?? "(none)"}`);
+      if (job.hookConfigs) {
+        console.log(`    hookConfigs: ${JSON.stringify(job.hookConfigs)}`);
+      }
+      if (job.intents && job.intents.length > 0) {
+        console.log(`    intents:     ${job.intents.length}`);
+        for (const i of job.intents) {
+          console.log(
+            `      - ${i.actor} → ${i.recipientAddress}, ` +
+              `${i.amount ?? "(amount tbd)"} ${i.tokenAddress ?? ""} ` +
+              `(escrow=${i.isEscrow}, signed=${i.isSigned})`
+          );
+        }
+      }
+
+      /* ---- per-job chat history ---- */
+      const transport = agent.getTransport();
+      const history = await transport.getHistory(ref.chainId, ref.onChainJobId);
+      console.log(`    history:     ${history.length} entry(ies)`);
+      for (const e of history.slice(-3)) {
+        if (e.kind === "system") {
+          console.log(`      [system] ${e.event.type}`);
+        } else {
+          const preview = e.content.length > 60
+            ? `${e.content.slice(0, 60)}…`
+            : e.content;
+          console.log(`      [${e.from}] (${e.contentType}) ${preview}`);
+        }
+      }
+    }
+
+    if (activeJobs.length > 3) {
+      console.log(`\n  …and ${activeJobs.length - 3} more`);
+    }
+
+    // Note: agent.getRouterHooks(chainId, jobId, selector) is also a public
+    // read API — call it when a multi-hook router job is in flight to see
+    // which sub-hooks are configured for a given selector. Skipped here
+    // because demoing it requires fabricating selector bytes.
   } finally {
     await agent.stop();
   }

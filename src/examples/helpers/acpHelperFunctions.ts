@@ -225,6 +225,67 @@ async function main(): Promise<void> {
     } else {
       console.log("no hydrated sessions to render — skipping");
     }
+
+    /* ---------------- SUBSCRIPTION STATE ---------------- */
+    subsection("Subscription state (on-chain reads)");
+    // These three methods read from the SubscriptionHook + SubscriptionState
+    // contracts. They only return meaningful data when there's a job using
+    // the SubscriptionHook in scope, so we look for one before calling.
+    const subscriptionSession = sessions.find((s) => {
+      const hook = s.job?.hookAddress?.toLowerCase();
+      const subHook = (
+        process.env.SUBSCRIPTION_HOOK_ADDRESS ?? ""
+      ).toLowerCase();
+      // Heuristic: any session whose job has hookConfigs or whose hook
+      // matches a configured subscription hook env override. Falls back to
+      // "first session with hookConfigs", which is set by SubscriptionHook
+      // and MultiHookRouter jobs.
+      return Boolean(s.job?.hookConfigs) || (subHook && hook === subHook);
+    });
+
+    if (!subscriptionSession || !subscriptionSession.job) {
+      console.log(
+        "no subscription-hook session in scope — skipping " +
+          "(set up a subscription/ example flow first to exercise this)"
+      );
+    } else {
+      const job = subscriptionSession.job;
+      console.log(`probing subscription state for job ${job.jobId}`);
+
+      try {
+        const terms = await agent.getProposedSubscriptionTerms(
+          subscriptionSession.chainId,
+          BigInt(subscriptionSession.jobId)
+        );
+        console.log(
+          `  proposed terms: duration=${terms.duration}s, packageId=${terms.packageId}`
+        );
+
+        const packageId = Number(terms.packageId);
+        const expiry = await agent.getSubscriptionExpiry(
+          subscriptionSession.chainId,
+          job.clientAddress,
+          job.providerAddress,
+          packageId
+        );
+        const isActive = await agent.isSubscriptionActive(
+          subscriptionSession.chainId,
+          job.clientAddress,
+          job.providerAddress,
+          packageId
+        );
+        const nowSec = Math.floor(Date.now() / 1000);
+        const remaining = Number(expiry) - nowSec;
+        console.log(
+          `  expiry:         ${expiry} (${
+            remaining > 0 ? `${remaining}s remaining` : "expired"
+          })`
+        );
+        console.log(`  isActive:       ${isActive}`);
+      } catch (err) {
+        console.log(`  subscription read failed: ${err}`);
+      }
+    }
   } finally {
     await agent.stop();
   }

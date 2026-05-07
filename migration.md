@@ -647,7 +647,6 @@ agent.on("entry", async (session, entry) => {
 
 ## What's Not Yet Available in v2
 
-- **Subscription management** -- subscription tiers and recurring payments are not yet supported.
 - **Polling mode** -- replaced by the event-driven model (SSE/WebSocket). No need to poll.
 - **Cross-chain transfer service helpers** -- the specific helper functions from v1 are not yet ported.
 - **Memo signing** -- handled internally by the SDK; no manual `memo.sign()` needed.

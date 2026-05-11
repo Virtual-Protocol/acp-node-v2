@@ -1,96 +1,117 @@
 # Fund-transfer example
 
-Demonstrates jobs where the buyer's funded amount is split: part of it
-pays the seller (the budget), and part of it is forwarded to a separate
-on-chain destination on submission. The classic use case is a buyer asking
-a seller to execute an on-chain action that requires moving USDC to a third
-address (e.g. routing a payment through a service).
+Demonstrates jobs where the buyer's funded amount is split: part of it pays
+the seller (the budget), and part of it is forwarded to a separate on-chain
+destination on submission. Same **event-driven `entry` lifecycle** as
+[`basic/`](../basic/README.md). The buyer uses **`createJobFromOffering`** with
+an offering where **`requiredFunds` is true** (the SDK selects the fund-transfer
+hook on-chain).
 
-## What it shows
+## Semantics parity with `basic/`
 
-- `agent.createFundTransferJob(...)` instead of plain `createJob`.
-- `session.setBudgetWithFundRequest(budget, transferAmount, destination)` on
-  the seller side — encodes a `FundIntent` so the on-chain hook splits the
-  funded amount on submission.
-- Same event-driven lifecycle as `basic/`, but with the fund-transfer hook
-  wired into the contract calls.
+Both buyer and seller include:
+
+- Header comments describing lifecycle, **evaluator modes** (self-eval via
+  `evaluatorAddress: buyerAddress`), and **restart safety** (hydrated sessions
+  replay `budget.set` / `job.submitted`).
+- **`promptYesNo`** on the buyer before creating a **new** job when in-flight
+  client sessions exist (avoids stacking jobs after Ctrl+C).
+- Full system branches: `budget.set`, `job.submitted`, `job.completed`
+  (transcript via `session.toContext()`), `job.rejected`, `job.expired`.
+- **SIGINT / SIGTERM** shutdown on the buyer; seller stops cleanly on signal.
+- Seller **reject-with-detail** (`sendMessage` then `reject`) for malformed or
+  unsupported requirements.
+
+## Registry setup
+
+1. Register the seller with at least one offering where **`requiredFunds` is true**.
+2. Optionally set **`FUND_TRANSFER_OFFERING_NAME`** to select that offering by name;
+   otherwise the first `requiredFunds` offering is used.
+3. Default requirement shape (**`FUND_TRANSFER_DEMO=plain`**): `{ description, forwardUsdc }`.
+   The seller reads **`forwardUsdc`** (or **`transferUsdc`**) for the forward slice.
+
+## Structured sample requirements
+
+Set **`FUND_TRANSFER_DEMO`** to `swap`, `open`, or `close` when your registry
+offering is named **`swap_token`**, **`open_position`**, or **`close_position`**
+respectively. The buyer sends the JSON from [`jobTypes.ts`](./jobTypes.ts).
+The seller parses the requirement and calls `setBudgetWithFundRequest` using the
+rules in `seller.ts`.
 
 ## Lifecycle
 
 ```
 buyer                                            seller
 ─────                                            ──────
-createFundTransferJob()
+createJobFromOffering()  (requiredFunds → fund-transfer job + requirement)
     │   ▶ job.created   ──────────────────────▶  case "job.created"
-    │                                            (parses requirement message)
-    │                                            setBudgetWithFundRequest(
-    │                                              budget,
-    │                                              transferAmount,
-    │                                              destination
-    │                                            )
+    │                                            setBudgetWithFundRequest(...)
     │   ◀──────────  budget.set  ◀──────────
 case "budget.set"
-session.fund()
+session.fetchJob(); session.fund()
     │   ──────────▶  job.funded   ───────────▶   case "job.funded"
     │                                            session.submit(...)
-    │                                            (hook forwards `transferAmount`
-    │                                             to `destination` automatically)
     │   ◀──────────  job.submitted ◀────────
 case "job.submitted"
 session.complete()
+case "job.completed" → transcript, stop
 ```
 
 ## Files
 
-| File           | Role                                                                |
-| -------------- | ------------------------------------------------------------------- |
-| `buyer.ts`     | Creates a fund-transfer job and funds the proposed budget           |
-| `seller.ts`    | Sets budget with a fund-request intent, then submits the deliverable |
+| File | Role |
+| ---- | ---- |
+| `buyer.ts` | `getAgentByWalletAddress`, `createJobFromOffering`, fund, evaluate |
+| `seller.ts` | Registry match, structured samples, documentation example string; `setBudgetWithFundRequest` |
+| `jobTypes.ts` | Structured requirement types, parsers, and sample bodies |
 
 ## Run
 
-These examples currently have hardcoded `0xBuyerWalletAddress` /
-`0xSellerWalletAddress` placeholders inside `main()`. Replace them inline
-before running, or wire them to env vars using the same `requireEnv()`
-pattern as `basic/seller.ts`.
+Same `.env` as [`basic/`](../basic/README.md) (`BUYER_*`, `SELLER_*`). Start
+**seller first**, then buyer:
 
 ```bash
-# Terminal 1
 npx tsx src/examples/fund-transfer/seller.ts
-
-# Terminal 2
 npx tsx src/examples/fund-transfer/buyer.ts
 ```
+
+## Environment variables
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `FUND_TRANSFER_DEMO` | `plain` | `plain` \| `swap` \| `open` \| `close` — requirement shape; structured values require a matching offering name |
+| `FUND_TRANSFER_OFFERING_NAME` | (first `requiredFunds`) | Select offering by registry name |
+| `FUND_TRANSFER_DESTINATION` | seller wallet | Forward USDC recipient |
+| `FUND_TRANSFER_DEFAULT_FORWARD_USDC` | `0.022` | Default forward slice when not set on the requirement |
+| `FUND_TRANSFER_STRUCTURED_FORWARD_USDC` | `0.022` | Forward slice for `swap` / `open` structured samples (no registry row) |
+| `FUND_TRANSFER_EXAMPLE_BUDGET_USDC` | `0.1` | Budget when `job.description` matches the documentation example string |
+| `FUND_TRANSFER_EXAMPLE_FORWARD_USDC` | `0.022` | Forward slice for that case |
+| `FUND_TRANSFER_EXAMPLE_JOB_DESCRIPTION` | (see `jobTypes.ts`) | Override which `job.description` value the seller treats as the doc example |
+| `FUND_TRANSFER_CLOSE_BUDGET_USDC` | `0.02` | Budget for `close_position` structured sample |
 
 ## Key API surface
 
 ```ts
-// Buyer
-const jobId = await buyer.createFundTransferJob(base.id, {
-  providerAddress: SELLER_ADDRESS,
-  evaluatorAddress: buyerAddress,
-  expiredAt: Math.floor(Date.now() / 1000) + 3600,
-  description: "Example job from SDK",
-});
+const jobId = await buyer.createJobFromOffering(
+  chainId,
+  offering, // offering.requiredFunds === true
+  agent.walletAddress,
+  requirementData,
+  { evaluatorAddress: buyerAddress }
+);
 
-// Seller
 await session.setBudgetWithFundRequest(
-  AssetToken.usdc(0.1, session.chainId),    // job budget (paid to seller)
-  AssetToken.usdc(0.022, session.chainId),  // amount forwarded to destination
-  destinationAddress as `0x${string}`,
+  AssetToken.usdc(budget, session.chainId),
+  AssetToken.usdc(transfer, session.chainId),
+  destinationAddress
 );
 ```
 
-## Notes & gotchas
+For **`createFundTransferJob`** (manual job creation without the registry), see
+the main [README — Fund Transfer Jobs](../../../README.md#fund-transfer-jobs).
 
-- The fund-transfer hook address is chain-specific. The SDK looks it up from
-  `ACP_CONTRACT_ADDRESSES`; you don't need to plumb it through manually.
-- The seller's `destination` is **not** their own wallet by default. In the
-  example, `sellerAddress` is passed as the destination for illustration —
-  point it at the real receiving address you intend to forward funds to.
-- The buyer's `session.fund()` call (no args) handles both the budget
-  approval **and** the fund-request encoding automatically. You must call
-  `session.fetchJob()` once before `fund()` so the off-chain job record
-  (which carries the fund intent) is loaded.
-- See the main [README — Fund Transfer Jobs](../../../README.md#fund-transfer-jobs)
-  section for a higher-level overview.
+## Notes
+
+- **`setBudget` is invalid** when the job uses `FundTransferHook` — use
+  **`setBudgetWithFundRequest`** only (see `JobSession.setBudget`).
+- See the main [README — Fund Transfer Jobs](../../../README.md#fund-transfer-jobs).

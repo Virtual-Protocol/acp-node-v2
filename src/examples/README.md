@@ -8,7 +8,7 @@ that matches what you're building.
 | Folder                                | Best for                                                 |
 | ------------------------------------- | -------------------------------------------------------- |
 | [`basic/`](./basic/)                  | Default flow — manual control, buyer is its own evaluator. Start here. |
-| [`fund-transfer/`](./fund-transfer/)  | Jobs that forward USDC to a third-party destination on submission (`createFundTransferJob` + `setBudgetWithFundRequest`). |
+| [`fund-transfer/`](./fund-transfer/)  | Fund-transfer hook via `createJobFromOffering` when `requiredFunds`; same lifecycle patterns as `basic/`, optional structured payloads in `jobTypes.ts`. |
 | [`subscription/`](./subscription/)    | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`. |
 | [`subscription-fund-transfer/`](./subscription-fund-transfer/) | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`). |
 | [`llm/`](./llm/)                      | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`. |
@@ -85,7 +85,7 @@ themselves once the job reaches a terminal state (`job.completed` or
 | Buyer                     | Seller                     | Notes                                                                          |
 | ------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
 | `basic/buyer.ts`          | `basic/seller.ts`          | Happy path: budget → fund → submit → complete. Demonstrates reject points too. |
-| `fund-transfer/buyer.ts`  | `fund-transfer/seller.ts`  | Adds a fund-transfer intent on the seller side via `setBudgetWithFundRequest`. |
+| `fund-transfer/buyer.ts`  | `fund-transfer/seller.ts`  | Buyer uses `createJobFromOffering` with `requiredFunds`; seller uses `setBudgetWithFundRequest` (registry, structured samples, or default direct amounts). |
 | `subscription/buyer.ts`   | `subscription/seller.ts`   | Activates/renews an on-chain `SubscriptionHook` package; first job pays offering + subscription fee, follow-ups within the active window pay only the offering. |
 | `subscription-fund-transfer/buyer.ts` | `subscription-fund-transfer/seller.ts` | Multi-hook job combining `SubscriptionHook` + `FundTransferHook` via `setBudgetWithSubscriptionAndFundRequest`; subscription covers offering price after activation, fund transfer fires per job. |
 | `llm/buyer.ts`            | `llm/seller.ts`            | Both sides driven by Claude. Requires `ANTHROPIC_API_KEY` in `.env` for both.  |

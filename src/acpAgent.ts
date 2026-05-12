@@ -250,11 +250,11 @@ export class AcpAgent {
       contractAddresses: this.client.getContractAddresses(),
       providerSupportedChainIds: providerChainIds,
       client: this.client,
-      signMessage: (chainId: number, msg: string) => {
+      signTypedData: (chainId: number, typedData: unknown) => {
         if (this.client instanceof EvmAcpClient) {
-          return this.client.getProvider().signMessage(chainId, msg);
+          return this.client.getProvider().signTypedData(chainId, typedData);
         }
-        throw new Error("signMessage is not supported for this provider");
+        throw new Error("signTypedData is not supported for this provider");
       },
     };
   }

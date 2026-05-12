@@ -1,6 +1,7 @@
 import { EventSource } from "eventsource";
 import type { AcpChatTransport, JobRoomEntry } from "./types.js";
 import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient.js";
+import { resolveApproval, type ApprovalEvent } from "../core/approvalGate.js";
 
 export type SseTransportOptions = AcpHttpClientOptions;
 
@@ -50,10 +51,20 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     this.eventSource.onmessage = (event) => {
       if (!event.data) return;
 
-      let entry: JobRoomEntry;
+      let entry: JobRoomEntry | ApprovalEvent;
       try {
         entry = JSON.parse(event.data);
       } catch {
+        return;
+      }
+
+      if (entry.kind === "approval") {
+        resolveApproval(
+          entry.approvalId,
+          entry.status,
+          entry.result,
+          entry.reason
+        );
         return;
       }
 

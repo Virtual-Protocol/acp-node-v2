@@ -1,4 +1,5 @@
 import {
+  BaseError,
   concatHex,
   createWalletClient,
   http,
@@ -22,7 +23,10 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains.js";
+import {
+  createEvmNetworkContext,
+  EVM_MAINNET_CHAINS,
+} from "../../core/chains.js";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -40,6 +44,10 @@ import {
 } from "@alchemy/wallet-apis";
 import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
+import {
+  ApprovalRequiredError,
+  awaitApproval,
+} from "../../core/approvalGate.js";
 
 export type SignFn = (payload: Uint8Array) => Promise<string>;
 
@@ -97,9 +105,29 @@ async function serverPost<T>(
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(
-      data?.detail ?? data?.error ?? `Server error ${res.status}`
-    );
+    const payload = data?.code ? data : data?.message;
+    if (res.status === 403 && payload?.code === "APPROVAL_REQUIRED") {
+      const approvalId = payload.details?.approvalId ?? "";
+      const approvalUrl = payload.details?.approvalUrl ?? "";
+      const detail = payload.detail ?? "Manual approval required";
+      console.error(
+        `[PrivyAlchemy] Manual approval required.\n` +
+          `  Approve at: ${approvalUrl}\n` +
+          `  Approval ID: ${approvalId}\n` +
+          `  Reason: ${detail}`
+      );
+      throw new ApprovalRequiredError(approvalId, approvalUrl, detail);
+    }
+
+    const msg =
+      data?.detail ??
+      data?.error ??
+      data?.shortMessage ??
+      `Server error ${res.status}`;
+
+    throw new BaseError(msg, {
+      details: data?.details,
+    });
   }
   return data as T;
 }
@@ -130,11 +158,18 @@ async function signedServerCall<T>(
     );
   }
 
-  return serverPost<T>(
-    executePath,
-    { ...payload, authorizationSignature },
-    serverUrl
-  );
+  try {
+    return await serverPost<T>(
+      executePath,
+      { ...payload, authorizationSignature },
+      serverUrl
+    );
+  } catch (err) {
+    if (err instanceof ApprovalRequiredError) {
+      return awaitApproval<T>(err.approvalId);
+    }
+    throw err;
+  }
 }
 
 function replaceBigInts<T>(obj: T, replacer: (v: bigint) => unknown): T {
@@ -189,7 +224,7 @@ function createRemoteSigner(params: {
       const TTypedData extends
         | Record<string, unknown>
         | Record<string, unknown>,
-      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData,
+      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData
     >(
       typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>
     ) => {
@@ -226,7 +261,11 @@ function createRemoteSigner(params: {
 
       // Map viem tx fields to Privy's snake_case format
       const TX_TYPE_MAP: Record<string, number> = {
-        legacy: 0, eip2930: 1, eip1559: 2, eip4844: 3, eip7702: 4,
+        legacy: 0,
+        eip2930: 1,
+        eip1559: 2,
+        eip4844: 3,
+        eip7702: 4,
       };
       const privyTx: Record<string, unknown> = {
         ...(raw.to != null ? { to: raw.to } : {}),
@@ -236,14 +275,19 @@ function createRemoteSigner(params: {
         ...(raw.nonce != null ? { nonce: raw.nonce } : {}),
         ...(raw.gas != null ? { gas_limit: raw.gas } : {}),
         ...(raw.gasPrice != null ? { gas_price: raw.gasPrice } : {}),
-        ...(raw.maxFeePerGas != null ? { max_fee_per_gas: raw.maxFeePerGas } : {}),
-        ...(raw.maxPriorityFeePerGas != null ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas } : {}),
+        ...(raw.maxFeePerGas != null
+          ? { max_fee_per_gas: raw.maxFeePerGas }
+          : {}),
+        ...(raw.maxPriorityFeePerGas != null
+          ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas }
+          : {}),
         ...(raw.chainId != null ? { chain_id: raw.chainId } : {}),
       };
       if (raw.type != null) {
-        privyTx.type = typeof raw.type === "string"
-          ? (TX_TYPE_MAP[raw.type] ?? Number(raw.type))
-          : raw.type;
+        privyTx.type =
+          typeof raw.type === "string"
+            ? TX_TYPE_MAP[raw.type] ?? Number(raw.type)
+            : raw.type;
       }
 
       const rpcBody = {
@@ -372,7 +416,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const authClient = new ProviderAuthClient({
       serverUrl,
       walletAddress: params.walletAddress,
-      signMessage: (msg) => signer.signMessage({ message: msg }),
+      signTypedData: (typedData) => signer.signTypedData(typedData as any),
       chainId: chains[0]!.id,
     });
 

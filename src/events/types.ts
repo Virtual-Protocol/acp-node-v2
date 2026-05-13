@@ -201,8 +201,13 @@ export type OffChainSubscription = {
 // Transport interfaces
 // ---------------------------------------------------------------------------
 
+export type SupportedStreams = "chat" | "wallet";
+
 export interface AcpChatTransport {
-  connect(onConnected?: () => void): Promise<void>;
+  connect(
+    onConnected?: () => void,
+    streams?: SupportedStreams[]
+  ): Promise<void>;
   disconnect(): Promise<void>;
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;

@@ -166,7 +166,13 @@ async function signedServerCall<T>(
     );
   } catch (err) {
     if (err instanceof ApprovalRequiredError) {
-      return awaitApproval<T>(err.approvalId);
+      const result = await awaitApproval<T>(err.approvalId);
+      if (result === undefined) {
+        throw new Error(
+          `Approval ${err.approvalId} resolved as approved but no result payload was provided`
+        );
+      }
+      return result;
     }
     throw err;
   }

@@ -137,7 +137,7 @@ export type TransportContext = {
   contractAddresses: Record<number, string>;
   providerSupportedChainIds: number[];
   client: AcpClient;
-  signMessage: (chainId: number, message: string) => Promise<string>;
+  signTypedData: (chainId: number, typedData: unknown) => Promise<string>;
 };
 
 // ---------------------------------------------------------------------------
@@ -201,8 +201,13 @@ export type OffChainSubscription = {
 // Transport interfaces
 // ---------------------------------------------------------------------------
 
+export type SupportedStreams = "chat" | "wallet";
+
 export interface AcpChatTransport {
-  connect(onConnected?: () => void): Promise<void>;
+  connect(
+    onConnected?: () => void,
+    streams?: SupportedStreams[]
+  ): Promise<void>;
   disconnect(): Promise<void>;
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;

@@ -14,6 +14,7 @@ export * from "./core/acpAbi.js";
 export * from "./core/chains.js";
 export * from "./core/constants.js";
 export * from "./core/assetToken.js";
+export * from "./core/approvalGate.js";
 
 // Provider interfaces & adapters
 export * from "./providers/types.js";
@@ -24,7 +25,7 @@ export * from "./providers/solana/solanaProviderAdapter.js";
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient.js";
 export { AcpApiClient } from "./events/acpApiClient.js";
-export { SseTransport } from "./events/sseTransport.js";
+export { SseTransport, STREAMS } from "./events/sseTransport.js";
 
 // Public enums
 export { AcpJobStatus } from "./events/types.js";
@@ -57,6 +58,7 @@ export type {
   AcpAgentSubscription,
   BrowseAgentParams,
   FundIntent,
+  SupportedStreams,
 } from "./events/types.js";
 
 // Utilities

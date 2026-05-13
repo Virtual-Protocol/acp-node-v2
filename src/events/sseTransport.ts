@@ -7,6 +7,7 @@ export type SseTransportOptions = AcpHttpClientOptions;
 
 export class SseTransport extends AcpHttpClient implements AcpChatTransport {
   private eventSource: EventSource | null = null;
+  private walletEventSource: EventSource | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
   private lastEventTimestamp: number | null = null;
   private seenEntries = new Set<string>();
@@ -22,49 +23,31 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
   async connect(onConnected?: () => void): Promise<void> {
     await this.ensureAuthenticated();
 
-    this.eventSource = new EventSource(`${this.serverUrl}/chats/stream`, {
-      fetch: async (url, init) => {
-        await this.refreshTokenIfNeeded();
-        return fetch(url, {
-          ...init,
-          headers: {
-            ...(init?.headers as Record<string, string>),
-            Authorization: `Bearer ${this.token}`,
-            "x-supported-chains": JSON.stringify(
-              this.ctx?.providerSupportedChainIds ?? []
-            ),
-          },
-        });
-      },
-    });
+    let chatStream: EventSource | null = null;
+    let walletStream: EventSource | null = null;
+    try {
+      [chatStream, walletStream] = await Promise.all([
+        this.openStream("/chats/stream"),
+        this.openStream("/wallets/stream"),
+      ]);
+    } catch (err) {
+      chatStream?.close();
+      walletStream?.close();
+      throw err;
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      this.eventSource!.onopen = () => resolve();
-      this.eventSource!.onerror = (err) => {
-        if (this.eventSource!.readyState === EventSource.CONNECTING) return;
-        reject(err);
-      };
-    });
+    this.eventSource = chatStream;
+    this.walletEventSource = walletStream;
 
     onConnected?.();
 
     this.eventSource.onmessage = (event) => {
       if (!event.data) return;
 
-      let entry: JobRoomEntry | ApprovalEvent;
+      let entry: JobRoomEntry;
       try {
         entry = JSON.parse(event.data);
       } catch {
-        return;
-      }
-
-      if (entry.kind === "approval") {
-        resolveApproval(
-          entry.approvalId,
-          entry.status,
-          entry.result,
-          entry.reason
-        );
         return;
       }
 
@@ -83,12 +66,34 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
         this.entryHandler(entry);
       }
     };
+
+    this.walletEventSource.onmessage = (event) => {
+      if (!event.data) return;
+
+      let entry: ApprovalEvent;
+      try {
+        entry = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+
+      resolveApproval(
+        entry.approvalId,
+        entry.status,
+        entry.result,
+        entry.reason
+      );
+    };
   }
 
   async disconnect(): Promise<void> {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+    }
+    if (this.walletEventSource) {
+      this.walletEventSource.close();
+      this.walletEventSource = null;
     }
     this.ctx = null;
     this.entryHandler = null;
@@ -153,5 +158,32 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     );
     const data = (await res.json()) as { entries: JobRoomEntry[] };
     return data.entries;
+  }
+
+  private openStream(path: string): Promise<EventSource> {
+    const source = new EventSource(`${this.serverUrl}${path}`, {
+      fetch: async (url, init) => {
+        await this.refreshTokenIfNeeded();
+        return fetch(url, {
+          ...init,
+          headers: {
+            ...(init?.headers as Record<string, string>),
+            Authorization: `Bearer ${this.token}`,
+            "x-supported-chains": JSON.stringify(
+              this.ctx?.providerSupportedChainIds ?? []
+            ),
+          },
+        });
+      },
+    });
+
+    return new Promise<EventSource>((resolve, reject) => {
+      source.onopen = () => resolve(source);
+      source.onerror = (err) => {
+        if (source.readyState === EventSource.CONNECTING) return;
+        source.close();
+        reject(err);
+      };
+    });
   }
 }

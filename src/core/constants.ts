@@ -1,4 +1,4 @@
-import { Address, toFunctionSelector } from "viem";
+import { Address, Hex, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,28 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
 };
+
+export const DELEGATE_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0xa66ded501ce4fa2d8e2b98dc86cad33ea9f57c54",
+};
+
+export const MODE_BATCH: Hex =
+  "0x0100000000000000000000000000000000000000000000000000000000000000";
+
+export const EXECUTE_WITH_SIG_TYPES = {
+  ExecuteWithSig: [
+    { name: "mode", type: "bytes32" },
+    { name: "calls", type: "Call" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint48" },
+    { name: "recipient", type: "address" },
+  ],
+  Call: [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+  ],
+} as const;
 
 export const ACP_SELECTORS = {
   setBudget: toFunctionSelector("setBudget(uint256,uint256,bytes)"),

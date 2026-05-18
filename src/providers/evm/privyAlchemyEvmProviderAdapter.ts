@@ -1,6 +1,9 @@
 import {
   concatHex,
   createWalletClient,
+  decodeFunctionData,
+  encodeFunctionData,
+  erc20Abi,
   http,
   LocalAccount,
   pad,
@@ -15,6 +18,7 @@ import {
   type TransactionReceipt,
   type WalletClient,
 } from "viem";
+import { encodeCalls } from "viem/experimental/erc7821";
 import { Attribution } from "ox/erc8021";
 import {
   getTransactionReceipt,
@@ -22,7 +26,10 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains.js";
+import {
+  createEvmNetworkContext,
+  EVM_MAINNET_CHAINS,
+} from "../../core/chains.js";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -38,7 +45,15 @@ import {
   type SmartWalletClient,
   alchemyWalletTransport,
 } from "@alchemy/wallet-apis";
-import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants.js";
+import {
+  ACP_SERVER_URL,
+  DELEGATE_ADDRESSES,
+  EXECUTE_WITH_SIG_TYPES,
+  MODE_BATCH,
+  PRIVY_APP_ID,
+  getAddressForChain,
+} from "../../core/constants.js";
+import { DELEGATION_ABI } from "../../core/delegationAbi.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 
 export type SignFn = (payload: Uint8Array) => Promise<string>;
@@ -189,7 +204,7 @@ function createRemoteSigner(params: {
       const TTypedData extends
         | Record<string, unknown>
         | Record<string, unknown>,
-      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData,
+      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData
     >(
       typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>
     ) => {
@@ -226,7 +241,11 @@ function createRemoteSigner(params: {
 
       // Map viem tx fields to Privy's snake_case format
       const TX_TYPE_MAP: Record<string, number> = {
-        legacy: 0, eip2930: 1, eip1559: 2, eip4844: 3, eip7702: 4,
+        legacy: 0,
+        eip2930: 1,
+        eip1559: 2,
+        eip4844: 3,
+        eip7702: 4,
       };
       const privyTx: Record<string, unknown> = {
         ...(raw.to != null ? { to: raw.to } : {}),
@@ -236,14 +255,32 @@ function createRemoteSigner(params: {
         ...(raw.nonce != null ? { nonce: raw.nonce } : {}),
         ...(raw.gas != null ? { gas_limit: raw.gas } : {}),
         ...(raw.gasPrice != null ? { gas_price: raw.gasPrice } : {}),
-        ...(raw.maxFeePerGas != null ? { max_fee_per_gas: raw.maxFeePerGas } : {}),
-        ...(raw.maxPriorityFeePerGas != null ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas } : {}),
+        ...(raw.maxFeePerGas != null
+          ? { max_fee_per_gas: raw.maxFeePerGas }
+          : {}),
+        ...(raw.maxPriorityFeePerGas != null
+          ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas }
+          : {}),
         ...(raw.chainId != null ? { chain_id: raw.chainId } : {}),
       };
       if (raw.type != null) {
-        privyTx.type = typeof raw.type === "string"
-          ? (TX_TYPE_MAP[raw.type] ?? Number(raw.type))
-          : raw.type;
+        privyTx.type =
+          typeof raw.type === "string"
+            ? TX_TYPE_MAP[raw.type] ?? Number(raw.type)
+            : raw.type;
+      }
+
+      if (Array.isArray(raw.authorizationList)) {
+        privyTx.authorization_list = (
+          raw.authorizationList as Array<Record<string, unknown>>
+        ).map((auth) => ({
+          contract: auth.address,
+          chain_id: auth.chainId,
+          nonce: auth.nonce,
+          y_parity: auth.yParity,
+          r: auth.r,
+          s: auth.s,
+        }));
       }
 
       const rpcBody = {
@@ -312,6 +349,21 @@ type ChainClients = {
   smartWalletClient: SmartWalletClient;
   walletClient: WalletClient;
 };
+
+// Identify the semantic recipient of a call for the AccountWithSig binding.
+// ERC-20 transfer → destination, ERC-20 approve → spender, otherwise → target.
+function extractRecipient(call: Call): Address {
+  try {
+    const { functionName, args } = decodeFunctionData({
+      abi: erc20Abi,
+      data: call.data ?? "0x",
+    });
+    if (functionName === "transfer" || functionName === "approve") {
+      return args[0] as Address;
+    }
+  } catch {}
+  return call.to;
+}
 
 export function appendBuilderCodeData(data: Hex, suffix: Hex): Hex {
   const opDataByteLength = (data.length - 2) / 2;
@@ -453,12 +505,71 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async sendTransaction(chainId: number, call: Call): Promise<Address> {
     const { walletClient } = this.getClients(chainId);
+
+    const signedCall = {
+      to: call.to,
+      value: call.value ?? 0n,
+      data: call.data ?? ("0x" as Hex),
+    };
+    const recipient = extractRecipient(call);
+    const executionData = encodeCalls([signedCall]);
+    const deadline = Math.floor(Date.now() / 1000) + 300;
+
+    const delegateAddress = getAddressForChain(
+      DELEGATE_ADDRESSES,
+      chainId,
+      "delegate"
+    );
+
+    const [authorization, nonce] = await Promise.all([
+      walletClient.signAuthorization({
+        account: walletClient.account!,
+        contractAddress: delegateAddress,
+        executor: "self",
+      }),
+      // Read sigNonce from the EOA's slot under 7702 delegation. On a fresh
+      // EOA with no prior delegation the call has no code to route to and
+      // throws — that's the bootstrap case, slot is unwritten so nonce is 0.
+      (
+        readContract(walletClient, {
+          address: this.address,
+          abi: DELEGATION_ABI,
+          functionName: "sigNonce",
+        }) as Promise<bigint>
+      ).catch(() => 0n),
+    ]);
+
+    const signature = (await this.signer.signTypedData({
+      domain: {
+        name: "AccountWithSig",
+        version: "1",
+        chainId: walletClient.chain!.id,
+        verifyingContract: this.address,
+      },
+      types: EXECUTE_WITH_SIG_TYPES,
+      primaryType: "ExecuteWithSig",
+      message: {
+        mode: MODE_BATCH,
+        calls: signedCall,
+        nonce,
+        deadline,
+        recipient,
+      },
+    })) as Hex;
+
+    const data = encodeFunctionData({
+      abi: DELEGATION_ABI,
+      functionName: "executeWithSignature",
+      args: [MODE_BATCH, executionData, deadline, signature, recipient],
+    });
+
     return walletClient.sendTransaction({
       account: walletClient.account!,
       chain: walletClient.chain,
-      to: call.to,
-      data: call.data,
-      value: call.value,
+      authorizationList: [authorization],
+      to: walletClient.account!.address,
+      data,
+      value: 0n,
     });
   }
 

@@ -515,21 +515,28 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const executionData = encodeCalls([signedCall]);
     const deadline = Math.floor(Date.now() / 1000) + 300;
 
+    const delegateAddress = getAddressForChain(
+      DELEGATE_ADDRESSES,
+      chainId,
+      "delegate"
+    );
+
     const [authorization, nonce] = await Promise.all([
       walletClient.signAuthorization({
         account: walletClient.account!,
-        contractAddress: getAddressForChain(
-          DELEGATE_ADDRESSES,
-          chainId,
-          "delegate"
-        ),
+        contractAddress: delegateAddress,
         executor: "self",
       }),
-      readContract(walletClient, {
-        address: this.address,
-        abi: DELEGATION_ABI,
-        functionName: "sigNonce",
-      }) as Promise<bigint>,
+      // Read sigNonce from the EOA's slot under 7702 delegation. On a fresh
+      // EOA with no prior delegation the call has no code to route to and
+      // throws — that's the bootstrap case, slot is unwritten so nonce is 0.
+      (
+        readContract(walletClient, {
+          address: this.address,
+          abi: DELEGATION_ABI,
+          functionName: "sigNonce",
+        }) as Promise<bigint>
+      ).catch(() => 0n),
     ]);
 
     const signature = (await this.signer.signTypedData({

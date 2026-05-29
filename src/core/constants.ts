@@ -75,6 +75,12 @@ export const ACP_TESTNET_SERVER_URL = "https://api-dev.acp.virtuals.io";
 
 export const PRIVY_APP_ID = "cltsev9j90f67yhyw4sngtrpv";
 
+// Account implementation / EIP-7702 delegate (Alchemy ModularAccountV2). Passed as
+// `contract` to Privy's eth_signUserOperation so it computes the userOpHash for this
+// account. Must match the backend's ALCHEMY_SIGNING_CONTRACT.
+export const ALCHEMY_SIGNING_CONTRACT =
+  "0x69007702764179f14F51cdce752f4f775d74E139";
+
 export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
 export const SUPPORTED_CHAINS = [

@@ -3,7 +3,9 @@ import {
   createWalletClient,
   http,
   LocalAccount,
+  numberToHex,
   pad,
+  serializeSignature,
   toHex,
   TypedDataDefinition,
   type Address,
@@ -22,7 +24,10 @@ import {
   getLogs,
   getBlockNumber,
 } from "viem/actions";
-import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains.js";
+import {
+  createEvmNetworkContext,
+  EVM_MAINNET_CHAINS,
+} from "../../core/chains.js";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
@@ -38,7 +43,11 @@ import {
   type SmartWalletClient,
   alchemyWalletTransport,
 } from "@alchemy/wallet-apis";
-import { ACP_SERVER_URL, PRIVY_APP_ID } from "../../core/constants.js";
+import {
+  ACP_SERVER_URL,
+  ALCHEMY_SIGNING_CONTRACT,
+  PRIVY_APP_ID,
+} from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 
 export type SignFn = (payload: Uint8Array) => Promise<string>;
@@ -189,7 +198,7 @@ function createRemoteSigner(params: {
       const TTypedData extends
         | Record<string, unknown>
         | Record<string, unknown>,
-      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData,
+      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData
     >(
       typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>
     ) => {
@@ -226,7 +235,11 @@ function createRemoteSigner(params: {
 
       // Map viem tx fields to Privy's snake_case format
       const TX_TYPE_MAP: Record<string, number> = {
-        legacy: 0, eip2930: 1, eip1559: 2, eip4844: 3, eip7702: 4,
+        legacy: 0,
+        eip2930: 1,
+        eip1559: 2,
+        eip4844: 3,
+        eip7702: 4,
       };
       const privyTx: Record<string, unknown> = {
         ...(raw.to != null ? { to: raw.to } : {}),
@@ -236,14 +249,19 @@ function createRemoteSigner(params: {
         ...(raw.nonce != null ? { nonce: raw.nonce } : {}),
         ...(raw.gas != null ? { gas_limit: raw.gas } : {}),
         ...(raw.gasPrice != null ? { gas_price: raw.gasPrice } : {}),
-        ...(raw.maxFeePerGas != null ? { max_fee_per_gas: raw.maxFeePerGas } : {}),
-        ...(raw.maxPriorityFeePerGas != null ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas } : {}),
+        ...(raw.maxFeePerGas != null
+          ? { max_fee_per_gas: raw.maxFeePerGas }
+          : {}),
+        ...(raw.maxPriorityFeePerGas != null
+          ? { max_priority_fee_per_gas: raw.maxPriorityFeePerGas }
+          : {}),
         ...(raw.chainId != null ? { chain_id: raw.chainId } : {}),
       };
       if (raw.type != null) {
-        privyTx.type = typeof raw.type === "string"
-          ? (TX_TYPE_MAP[raw.type] ?? Number(raw.type))
-          : raw.type;
+        privyTx.type =
+          typeof raw.type === "string"
+            ? TX_TYPE_MAP[raw.type] ?? Number(raw.type)
+            : raw.type;
       }
 
       const rpcBody = {
@@ -310,6 +328,7 @@ function createRemoteSigner(params: {
 
 type ChainClients = {
   smartWalletClient: SmartWalletClient;
+  smartWalletClientErc20: SmartWalletClient;
   walletClient: WalletClient;
 };
 
@@ -325,22 +344,65 @@ export function appendBuilderCodeData(data: Hex, suffix: Hex): Hex {
   return concatHex([paddedData, paddedSuffix]);
 }
 
+type SignConfig = {
+  walletId: string;
+  signerPrivateKey: string | undefined;
+  signFn: SignFn | undefined;
+  serverUrl: string;
+  privyAppId: string;
+};
+
+type PrivyUserOperation = {
+  sender: Address;
+  nonce: Hex;
+  callData: Hex;
+  callGasLimit: Hex;
+  verificationGasLimit: Hex;
+  preVerificationGas: Hex;
+  maxFeePerGas: Hex;
+  maxPriorityFeePerGas: Hex;
+  paymaster: Hex;
+  paymasterData: Hex;
+  paymasterVerificationGasLimit: Hex;
+  paymasterPostOpGasLimit: Hex;
+};
+
+function toPrivyUserOperation(u: PrivyUserOperation) {
+  return {
+    sender: u.sender,
+    nonce: u.nonce,
+    call_data: u.callData,
+    call_gas_limit: u.callGasLimit,
+    verification_gas_limit: u.verificationGasLimit,
+    pre_verification_gas: u.preVerificationGas,
+    max_fee_per_gas: u.maxFeePerGas,
+    max_priority_fee_per_gas: u.maxPriorityFeePerGas,
+    paymaster: u.paymaster,
+    paymaster_data: u.paymasterData,
+    paymaster_verification_gas_limit: u.paymasterVerificationGasLimit,
+    paymaster_post_op_gas_limit: u.paymasterPostOpGasLimit,
+  };
+}
+
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
   private readonly chainClients: Map<number, ChainClients>;
   private readonly signer: LocalAccount<"privy-remote">;
   private readonly builderCodeSuffix: Hex | undefined;
+  private readonly signConfig: SignConfig;
 
   private constructor(
     address: Address,
     chainClients: Map<number, ChainClients>,
     signer: LocalAccount<"privy-remote">,
+    signConfig: SignConfig,
     builderCode?: string
   ) {
     this.address = address;
     this.chainClients = chainClients;
     this.signer = signer;
+    this.signConfig = signConfig;
     this.builderCodeSuffix = builderCode
       ? Attribution.toDataSuffix({ codes: [builderCode] })
       : undefined;
@@ -400,6 +462,16 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         account: params.walletAddress,
       });
 
+      const smartWalletClientErc20 = createSmartWalletClient({
+        transport: alchemyWalletTransport({
+          url: `${serverUrl}/wallets/alchemy-rpc-erc20`,
+          fetchFn: authedFetch,
+        }),
+        chain,
+        signer,
+        account: params.walletAddress,
+      });
+
       const walletClient = createWalletClient({
         account: signer,
         chain,
@@ -408,13 +480,24 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         }),
       });
 
-      chainClients.set(chain.id, { smartWalletClient, walletClient });
+      chainClients.set(chain.id, {
+        smartWalletClient,
+        smartWalletClientErc20,
+        walletClient,
+      });
     }
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
       chainClients,
       signer,
+      {
+        walletId: params.walletId,
+        signerPrivateKey: params.signerPrivateKey,
+        signFn: params.signFn,
+        serverUrl,
+        privyAppId: params.privyAppId ?? PRIVY_APP_ID,
+      },
       params.builderCode
     );
   }
@@ -451,15 +534,159 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
-  async sendTransaction(chainId: number, call: Call): Promise<Address> {
-    const { walletClient } = this.getClients(chainId);
-    return walletClient.sendTransaction({
-      account: walletClient.account!,
-      chain: walletClient.chain,
+  // Sign a prepared (v0.7) userOp through the backend's Privy eth_signUserOperation.
+  // Privy decodes the userOp and enforces wallet policy here (vs personal_sign, which
+  // only signs an opaque hash). The authorization signature must be computed over the
+  // exact body the backend forwards to Privy, so the snake_case `user_operation` below
+  private async signUserOperation(
+    chainId: number,
+    contract: Address,
+    userOp: any
+  ): Promise<Hex> {
+    const userOperation: PrivyUserOperation = {
+      sender: userOp.sender as Address,
+      nonce: numberToHex(userOp.nonce),
+      callData: userOp.callData as Hex,
+      callGasLimit: numberToHex(userOp.callGasLimit),
+      verificationGasLimit: numberToHex(userOp.verificationGasLimit),
+      preVerificationGas: numberToHex(userOp.preVerificationGas),
+      maxFeePerGas: numberToHex(userOp.maxFeePerGas),
+      maxPriorityFeePerGas: numberToHex(userOp.maxPriorityFeePerGas),
+      paymaster: (userOp.paymaster ?? "0x") as Hex,
+      paymasterData: (userOp.paymasterData ?? "0x") as Hex,
+      paymasterVerificationGasLimit:
+        userOp.paymasterVerificationGasLimit != null
+          ? numberToHex(userOp.paymasterVerificationGasLimit)
+          : "0x0",
+      paymasterPostOpGasLimit:
+        userOp.paymasterPostOpGasLimit != null
+          ? numberToHex(userOp.paymasterPostOpGasLimit)
+          : "0x0",
+    };
+
+    const rpcBody = {
+      method: "eth_signUserOperation" as const,
+      chain_type: "ethereum" as const,
+      params: {
+        chain_id: chainId,
+        contract,
+        user_operation: toPrivyUserOperation(userOperation),
+      },
+    };
+
+    const result = await signedServerCall<{ signature: Hex }>(
+      "/wallets/sign-user-operation",
+      this.signConfig.walletId,
+      rpcBody,
+      {
+        walletAddress: this.address,
+        walletId: this.signConfig.walletId,
+        chainId,
+        contract,
+        userOperation,
+      },
+      this.signConfig.signerPrivateKey,
+      this.signConfig.serverUrl,
+      this.signConfig.privyAppId,
+      this.signConfig.signFn
+    );
+
+    const sig = result.signature;
+    return (sig.startsWith("0x") ? sig : `0x${sig}`) as Hex;
+  }
+
+  // Sign a prepareCalls result for sendPreparedCalls, mirroring the alchemy client's
+  // signPreparedCalls but routing the userOp through Privy eth_signUserOperation (for
+  // policy enforcement). Handles both a single v070 userOp and the `array` result
+  // returned when the account still needs an EIP-7702 authorization (first tx of an
+  // undelegated account): the authorization is signed via Privy eth_sign7702Authorization,
+  // the userOp via eth_signUserOperation.
+  private async signPreparedViaPrivy(
+    chainId: number,
+    prepared: any
+  ): Promise<any> {
+    const contract = ALCHEMY_SIGNING_CONTRACT as Address;
+
+    const signUserOpEntry = async (entry: any) => {
+      const { signatureRequest: _sr, feePayment: _fp, ...rest } = entry;
+      const signature = await this.signUserOperation(
+        chainId,
+        contract,
+        entry.data
+      );
+      return { ...rest, signature: { type: "secp256k1", data: signature } };
+    };
+
+    const signAuthEntry = async (entry: any) => {
+      const { signatureRequest: _sr, ...rest } = entry;
+      const auth: any = await (this.signer.signAuthorization as any)({
+        ...entry.data,
+        chainId: entry.chainId,
+      });
+      return {
+        ...rest,
+        signature: {
+          type: "secp256k1",
+          data: serializeSignature({
+            r: auth.r,
+            s: auth.s,
+            yParity: Number(auth.yParity),
+          }),
+        },
+      };
+    };
+
+    if (prepared.type === "user-operation-v070") {
+      return signUserOpEntry(prepared);
+    }
+    if (prepared.type === "array") {
+      const data = await Promise.all(
+        prepared.data.map((entry: any) =>
+          entry.type === "authorization"
+            ? signAuthEntry(entry)
+            : signUserOpEntry(entry)
+        )
+      );
+      return { type: "array", data };
+    }
+    throw new Error(`Unexpected prepareCalls result type: ${prepared.type}`);
+  }
+
+  // Map an ACP call to the smart-wallet call shape, applying the builder-code suffix.
+  private toSponsoredCall(call: Call) {
+    const value = call.value ?? 0n;
+    return {
       to: call.to,
-      data: call.data,
-      value: call.value,
+      data: this.builderCodeSuffix
+        ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
+        : call.data ?? "0x",
+      ...(value !== 0n ? { value } : {}),
+    };
+  }
+
+  private async waitForTransactionHash(
+    client: SmartWalletClient,
+    id: Hex
+  ): Promise<Address> {
+    const status = await client.waitForCallsStatus({ id });
+    if (!status.receipts?.[0]?.transactionHash) {
+      throw new Error("Transaction failed");
+    }
+    return status.receipts[0].transactionHash;
+  }
+
+  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+    const { smartWalletClientErc20 } = this.getClients(chainId);
+
+    const prepared = await smartWalletClientErc20.prepareCalls({
+      calls: [this.toSponsoredCall(call)],
     });
+
+    const signed = await this.signPreparedViaPrivy(chainId, prepared);
+
+    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+
+    return this.waitForTransactionHash(smartWalletClientErc20, id);
   }
 
   async sendCalls(
@@ -467,18 +694,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[]
   ): Promise<Address | Address[]> {
     const { smartWalletClient } = this.getClients(chainId);
-    const suffix = this.builderCodeSuffix;
     const { id } = await smartWalletClient.sendCalls({
-      calls: _calls.map((call) => {
-        const value = call.value ?? 0n;
-        return {
-          to: call.to,
-          data: suffix
-            ? appendBuilderCodeData(call.data ?? "0x", suffix)
-            : call.data ?? "0x",
-          ...(value !== 0n ? { value } : {}),
-        };
-      }),
+      calls: _calls.map((call) => this.toSponsoredCall(call)),
       capabilities: {
         nonceOverride: {
           nonceKey: this.getRandomNonce(),
@@ -486,13 +703,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    const status = await smartWalletClient.waitForCallsStatus({ id });
-
-    if (!status.receipts?.[0]?.transactionHash) {
-      throw new Error("Transaction failed");
-    }
-
-    return status.receipts?.[0]?.transactionHash;
+    return this.waitForTransactionHash(smartWalletClient, id);
   }
 
   async getTransactionReceipt(

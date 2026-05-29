@@ -2,6 +2,19 @@ import type { Address, Call, Log, TransactionReceipt } from "viem";
 
 import type { NetworkContext, SolanaCluster } from "../core/chains.js";
 
+/**
+ * Call shape accepted by sendTransaction / sendCalls. Extends viem's Call
+ * with an optional `gas` field so callers can override the wallet's
+ * gas-limit estimate (useful when an aggregator like LiFi already
+ * supplies a padded recommended gas limit and the bundler's default
+ * estimate runs too tight).
+ *
+ * Pass-through is best-effort: implementations forward `gas` to the
+ * underlying viem/Alchemy client. If a particular backend ignores it,
+ * the bundler falls back to its own estimate (current behaviour).
+ */
+export type EvmCall = Call<unknown, { gas?: bigint }>;
+
 export type SolanaInstructionLike = {
   programId: string;
   keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
@@ -31,8 +44,8 @@ export type GetLogsParams = {
 
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
-  sendTransaction(chainId: number, call: Call): Promise<Address>;
-  sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
+  sendTransaction(chainId: number, call: EvmCall): Promise<Address>;
+  sendCalls(chainId: number, calls: EvmCall[]): Promise<Address | Address[]>;
   getTransactionReceipt(
     chainId: number,
     hash: Address

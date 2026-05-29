@@ -1,7 +1,8 @@
-import type { Address, Call, Log, TransactionReceipt } from "viem";
+import type { Address, Log, TransactionReceipt } from "viem";
 
 import { createEvmNetworkContext } from "../../core/chains.js";
 import type {
+  EvmCall,
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
@@ -26,11 +27,11 @@ export class ViemProviderAdapter implements IEvmProviderAdapter {
     return createEvmNetworkContext(chainId);
   }
 
-  async sendTransaction(_chainId: number, _call: Call): Promise<Address> {
+  async sendTransaction(_chainId: number, _call: EvmCall): Promise<Address> {
     throw new Error("sendTransaction() not implemented. Override in subclass.");
   }
 
-  async sendCalls(_chainId: number, _calls: Call[]): Promise<Address | Address[]> {
+  async sendCalls(_chainId: number, _calls: EvmCall[]): Promise<Address | Address[]> {
     throw new Error("sendCalls() not implemented. Override in subclass.");
   }
 

@@ -7,7 +7,6 @@ import {
   toHex,
   TypedDataDefinition,
   type Address,
-  type Call,
   type Chain,
   type Hex,
   type Log,
@@ -24,6 +23,7 @@ import {
 } from "viem/actions";
 import { createEvmNetworkContext, EVM_MAINNET_CHAINS } from "../../core/chains.js";
 import type {
+  EvmCall,
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
@@ -451,7 +451,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
-  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+  async sendTransaction(chainId: number, call: EvmCall): Promise<Address> {
     const { walletClient } = this.getClients(chainId);
     return walletClient.sendTransaction({
       account: walletClient.account!,
@@ -459,12 +459,17 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       to: call.to,
       data: call.data,
       value: call.value,
+      // Forward an explicit gas limit when the caller supplies one.
+      // Avoids the bundler's default estimate running too tight on
+      // complex routes (e.g. LiFi multi-hop with FeeCollector +
+      // DEX legs), which we've seen revert at ~95% gas utilization.
+      ...(call.gas !== undefined ? { gas: call.gas } : {}),
     });
   }
 
   async sendCalls(
     chainId: number,
-    _calls: Call[]
+    _calls: EvmCall[]
   ): Promise<Address | Address[]> {
     const { smartWalletClient } = this.getClients(chainId);
     const suffix = this.builderCodeSuffix;
@@ -477,6 +482,10 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
             ? appendBuilderCodeData(call.data ?? "0x", suffix)
             : call.data ?? "0x",
           ...(value !== 0n ? { value } : {}),
+          // Per-call gas hint, forwarded to the bundler so it doesn't
+          // underestimate. Best-effort: if the smart wallet client
+          // ignores the field, behavior is unchanged.
+          ...(call.gas !== undefined ? { gas: call.gas } : {}),
         };
       }),
       capabilities: {

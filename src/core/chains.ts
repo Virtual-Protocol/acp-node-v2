@@ -1,8 +1,13 @@
 import {
+  arbitrum,
   base,
   baseSepolia,
+  bsc,
   bscTestnet,
   mainnet,
+  monad,
+  optimism,
+  polygon,
   sepolia,
   Chain,
 } from "viem/chains";
@@ -18,6 +23,11 @@ export const ERC20_SPONSORED_CHAINS: Chain[] = [
   baseSepolia,
   mainnet,
   sepolia,
+  arbitrum,
+  bsc,
+  polygon,
+  optimism,
+  monad,
 ] as const;
 
 export const EVM_CHAINS = [

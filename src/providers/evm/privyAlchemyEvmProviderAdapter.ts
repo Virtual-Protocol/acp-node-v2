@@ -6,6 +6,7 @@ import {
   type LocalAccount,
   numberToHex,
   pad,
+  serializeSignature,
   toHex,
   TypedDataDefinition,
   type Address,
@@ -27,6 +28,7 @@ import {
 import {
   createEvmNetworkContext,
   EVM_MAINNET_CHAINS,
+  ERC20_SPONSORED_CHAINS,
 } from "../../core/chains.js";
 import type {
   GetLogsParams,
@@ -423,11 +425,6 @@ function createRemoteSigner(params: {
   };
 }
 
-type ChainClients = {
-  smartWalletClient: SmartWalletClient;
-  walletClient: WalletClient;
-};
-
 export function appendBuilderCodeData(data: Hex, suffix: Hex): Hex {
   const opDataByteLength = (data.length - 2) / 2;
   const suffixByteLength = (suffix.length - 2) / 2;
@@ -440,22 +437,74 @@ export function appendBuilderCodeData(data: Hex, suffix: Hex): Hex {
   return concatHex([paddedData, paddedSuffix]);
 }
 
+type SignConfig = {
+  walletId: string;
+  signerPrivateKey: string | undefined;
+  signFn: SignFn | undefined;
+  serverUrl: string;
+  privyAppId: string;
+};
+
+type PrivyUserOperation = {
+  sender: Address;
+  nonce: Hex;
+  callData: Hex;
+  callGasLimit: Hex;
+  verificationGasLimit: Hex;
+  preVerificationGas: Hex;
+  maxFeePerGas: Hex;
+  maxPriorityFeePerGas: Hex;
+  paymaster: Hex;
+  paymasterData: Hex;
+  paymasterVerificationGasLimit: Hex;
+  paymasterPostOpGasLimit: Hex;
+};
+
+function toPrivyUserOperation(u: PrivyUserOperation) {
+  return {
+    sender: u.sender,
+    nonce: u.nonce,
+    call_data: u.callData,
+    call_gas_limit: u.callGasLimit,
+    verification_gas_limit: u.verificationGasLimit,
+    pre_verification_gas: u.preVerificationGas,
+    max_fee_per_gas: u.maxFeePerGas,
+    max_priority_fee_per_gas: u.maxPriorityFeePerGas,
+    paymaster: u.paymaster,
+    paymaster_data: u.paymasterData,
+    paymaster_verification_gas_limit: u.paymasterVerificationGasLimit,
+    paymaster_post_op_gas_limit: u.paymasterPostOpGasLimit,
+  };
+}
+
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
-  private readonly chainClients: Map<number, ChainClients>;
+  // Gasless ACP client — driven by the per-instance `chains` config.
+  private readonly acpClients: Map<number, SmartWalletClient>;
+  // ERC20-sponsored client — fixed supported set (ERC20_SPONSORED_CHAINS).
+  private readonly erc20Clients: Map<number, SmartWalletClient>;
+  // Read/EOA client — built for every chain either smart client can touch.
+  private readonly walletClients: Map<number, WalletClient>;
   private readonly signer: RemoteSigner;
   private readonly builderCodeSuffix: Hex | undefined;
+  private readonly signConfig: SignConfig;
 
   private constructor(
     address: Address,
-    chainClients: Map<number, ChainClients>,
+    acpClients: Map<number, SmartWalletClient>,
+    erc20Clients: Map<number, SmartWalletClient>,
+    walletClients: Map<number, WalletClient>,
     signer: RemoteSigner,
+    signConfig: SignConfig,
     builderCode?: string
   ) {
     this.address = address;
-    this.chainClients = chainClients;
+    this.acpClients = acpClients;
+    this.erc20Clients = erc20Clients;
+    this.walletClients = walletClients;
     this.signer = signer;
+    this.signConfig = signConfig;
     this.builderCodeSuffix = builderCode
       ? Attribution.toDataSuffix({ codes: [builderCode] })
       : undefined;
@@ -469,8 +518,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
       );
     }
-
-    const chainClients = new Map<number, ChainClients>();
 
     const { chains = EVM_MAINNET_CHAINS } = params;
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
@@ -504,43 +551,100 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       });
     };
 
-    for (const chain of chains) {
-      const smartWalletClient = createSmartWalletClient({
-        transport: alchemyWalletTransport({
-          url: `${serverUrl}/wallets/alchemy-rpc`,
-          fetchFn: authedFetch,
-        }),
+    const makeSmartClient = (chain: Chain, url: string) =>
+      createSmartWalletClient({
+        transport: alchemyWalletTransport({ url, fetchFn: authedFetch }),
         chain,
         signer,
         account: params.walletAddress,
       });
 
-      const walletClient = createWalletClient({
-        account: signer as LocalAccount<"privy-remote">,
-        chain,
-        transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
-          fetchFn: authedFetch,
-        }),
-      });
+    // Gasless ACP client — only the chains the caller configured.
+    const acpClients = new Map<number, SmartWalletClient>();
+    for (const chain of chains) {
+      acpClients.set(
+        chain.id,
+        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc`)
+      );
+    }
 
-      chainClients.set(chain.id, { smartWalletClient, walletClient });
+    // ERC20-sponsored client — fixed supported set, independent of `chains`.
+    const erc20Clients = new Map<number, SmartWalletClient>();
+    for (const chain of ERC20_SPONSORED_CHAINS) {
+      erc20Clients.set(
+        chain.id,
+        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc-erc20`)
+      );
+    }
+
+    // Read/EOA client — every chain either smart client can operate on.
+    const walletClients = new Map<number, WalletClient>();
+    for (const chain of [...chains, ...ERC20_SPONSORED_CHAINS]) {
+      if (walletClients.has(chain.id)) continue;
+      walletClients.set(
+        chain.id,
+        createWalletClient({
+          account: signer as LocalAccount<"privy-remote">,
+          chain,
+          transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
+            fetchFn: authedFetch,
+          }),
+        })
+      );
     }
 
     return new PrivyAlchemyEvmProviderAdapter(
       params.walletAddress,
-      chainClients,
+      acpClients,
+      erc20Clients,
+      walletClients,
       signer,
+      {
+        walletId: params.walletId,
+        signerPrivateKey: params.signerPrivateKey,
+        signFn: params.signFn,
+        serverUrl,
+        privyAppId: params.privyAppId ?? PRIVY_APP_ID,
+      },
       params.builderCode
     );
   }
 
-  private getClients(chainId: number): ChainClients {
-    const c = this.chainClients.get(chainId);
+  private getClientOrThrow<T>(
+    map: Map<number, T>,
+    chainId: number,
+    label: string
+  ): T {
+    const c = map.get(chainId);
     if (!c)
       throw new Error(
-        `PrivyAlchemyEvmProviderAdapter: no clients configured for chainId ${chainId}`
+        `PrivyAlchemyEvmProviderAdapter: ${label} for chainId ${chainId}`
       );
     return c;
+  }
+
+  private getAcpClient(chainId: number): SmartWalletClient {
+    return this.getClientOrThrow(
+      this.acpClients,
+      chainId,
+      "ACP not configured"
+    );
+  }
+
+  private getErc20Client(chainId: number): SmartWalletClient {
+    return this.getClientOrThrow(
+      this.erc20Clients,
+      chainId,
+      "ERC20-sponsored sendTransaction not supported"
+    );
+  }
+
+  private getWalletClient(chainId: number): WalletClient {
+    return this.getClientOrThrow(
+      this.walletClients,
+      chainId,
+      "No client configured"
+    );
   }
 
   async getAddress(): Promise<Address> {
@@ -548,7 +652,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async getSupportedChainIds(): Promise<number[]> {
-    return Array.from(this.chainClients.keys());
+    // ACP-supported chains (the gasless smartWalletClient set).
+    return Array.from(this.acpClients.keys());
   }
 
   async getNetworkContext(chainId: number) {
@@ -566,35 +671,166 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
-  async sendTransaction(chainId: number, call: Call): Promise<Address> {
-    const { walletClient } = this.getClients(chainId);
-    return walletClient.sendTransaction({
-      account: walletClient.account!,
-      chain: walletClient.chain,
+  // Sign a prepared (v0.7) userOp through the backend's Privy eth_signUserOperation.
+  // Privy decodes the userOp and enforces wallet policy here (vs personal_sign, which
+  // only signs an opaque hash). The authorization signature must be computed over the
+  // exact body the backend forwards to Privy, so the snake_case `user_operation` below
+  private async signUserOperation(
+    chainId: number,
+    contract: Address,
+    userOp: any
+  ): Promise<Hex> {
+    const userOperation: PrivyUserOperation = {
+      sender: userOp.sender as Address,
+      nonce: numberToHex(userOp.nonce),
+      callData: userOp.callData as Hex,
+      callGasLimit: numberToHex(userOp.callGasLimit),
+      verificationGasLimit: numberToHex(userOp.verificationGasLimit),
+      preVerificationGas: numberToHex(userOp.preVerificationGas),
+      maxFeePerGas: numberToHex(userOp.maxFeePerGas),
+      maxPriorityFeePerGas: numberToHex(userOp.maxPriorityFeePerGas),
+      paymaster: (userOp.paymaster ?? "0x") as Hex,
+      paymasterData: (userOp.paymasterData ?? "0x") as Hex,
+      paymasterVerificationGasLimit:
+        userOp.paymasterVerificationGasLimit != null
+          ? numberToHex(userOp.paymasterVerificationGasLimit)
+          : "0x0",
+      paymasterPostOpGasLimit:
+        userOp.paymasterPostOpGasLimit != null
+          ? numberToHex(userOp.paymasterPostOpGasLimit)
+          : "0x0",
+    };
+
+    const rpcBody = {
+      method: "eth_signUserOperation" as const,
+      chain_type: "ethereum" as const,
+      params: {
+        chain_id: chainId,
+        contract,
+        user_operation: toPrivyUserOperation(userOperation),
+      },
+    };
+
+    const result = await signedServerCall<{ signature: Hex }>(
+      "/wallets/sign-user-operation",
+      this.signConfig.walletId,
+      rpcBody,
+      {
+        walletAddress: this.address,
+        walletId: this.signConfig.walletId,
+        chainId,
+        contract,
+        userOperation,
+      },
+      this.signConfig.signerPrivateKey,
+      this.signConfig.serverUrl,
+      this.signConfig.privyAppId,
+      this.signConfig.signFn
+    );
+
+    const sig = result.signature;
+    return (sig.startsWith("0x") ? sig : `0x${sig}`) as Hex;
+  }
+
+  // Handles both a single v070 userOp and the `array` result
+  // returned when the account still needs an EIP-7702 authorization (first tx of an
+  // undelegated account): the authorization is signed via Privy eth_sign7702Authorization,
+  // the userOp via eth_signUserOperation.
+  private async signPreparedViaPrivy(
+    chainId: number,
+    prepared: any
+  ): Promise<any> {
+    const contract = ALCHEMY_SIGNING_CONTRACT as Address;
+
+    const signUserOpEntry = async (entry: any) => {
+      const { signatureRequest: _sr, feePayment: _fp, ...rest } = entry;
+      const signature = await this.signUserOperation(
+        chainId,
+        contract,
+        entry.data
+      );
+      return { ...rest, signature: { type: "secp256k1", data: signature } };
+    };
+
+    const signAuthEntry = async (entry: any) => {
+      const { signatureRequest: _sr, ...rest } = entry;
+      const auth: any = await (this.signer.signAuthorization as any)({
+        ...entry.data,
+        chainId: entry.chainId,
+      });
+      return {
+        ...rest,
+        signature: {
+          type: "secp256k1",
+          data: serializeSignature({
+            r: auth.r,
+            s: auth.s,
+            yParity: Number(auth.yParity),
+          }),
+        },
+      };
+    };
+
+    if (prepared.type === "user-operation-v070") {
+      return signUserOpEntry(prepared);
+    }
+    if (prepared.type === "array") {
+      const data = await Promise.all(
+        prepared.data.map((entry: any) =>
+          entry.type === "authorization"
+            ? signAuthEntry(entry)
+            : signUserOpEntry(entry)
+        )
+      );
+      return { type: "array", data };
+    }
+    throw new Error(`Unexpected prepareCalls result type: ${prepared.type}`);
+  }
+
+  // Map an ACP call to the smart-wallet call shape, applying the builder-code suffix.
+  private toSponsoredCall(call: Call) {
+    const value = call.value ?? 0n;
+    return {
       to: call.to,
-      data: call.data,
-      value: call.value,
+      data: this.builderCodeSuffix
+        ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
+        : call.data ?? "0x",
+      ...(value !== 0n ? { value } : {}),
+    };
+  }
+
+  private async waitForTransactionHash(
+    client: SmartWalletClient,
+    id: Hex
+  ): Promise<Address> {
+    const status = await client.waitForCallsStatus({ id });
+    if (!status.receipts?.[0]?.transactionHash) {
+      throw new Error("Transaction failed");
+    }
+    return status.receipts[0].transactionHash;
+  }
+
+  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+    const smartWalletClientErc20 = this.getErc20Client(chainId);
+
+    const prepared = await smartWalletClientErc20.prepareCalls({
+      calls: [this.toSponsoredCall(call)],
     });
+
+    const signed = await this.signPreparedViaPrivy(chainId, prepared);
+
+    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+
+    return this.waitForTransactionHash(smartWalletClientErc20, id);
   }
 
   async sendCalls(
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    const { smartWalletClient } = this.getClients(chainId);
-    const suffix = this.builderCodeSuffix;
-
-    const preparedCall = await smartWalletClient.prepareCalls({
-      calls: _calls.map((call) => {
-        const value = call.value ?? 0n;
-        return {
-          to: call.to,
-          data: suffix
-            ? appendBuilderCodeData(call.data ?? "0x", suffix)
-            : call.data ?? "0x",
-          ...(value !== 0n ? { value } : {}),
-        };
-      }),
+    const smartWalletClient = this.getAcpClient(chainId);
+    const { id } = await smartWalletClient.sendCalls({
+      calls: _calls.map((call) => this.toSponsoredCall(call)),
       capabilities: {
         nonceOverride: {
           nonceKey: this.getRandomNonce(),
@@ -602,33 +838,14 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    const signature = await this.signer.signUserOperation({
-      chainId,
-      contract: ALCHEMY_SIGNING_CONTRACT,
-      userOperation: preparedCall.data,
-    });
-
-    const { id } = await smartWalletClient.sendPreparedCalls({
-      type: preparedCall.type,
-      data: preparedCall.data,
-      chainId: preparedCall.chainId,
-      signature: { type: "secp256k1", data: signature },
-    });
-
-    const status = await smartWalletClient.waitForCallsStatus({ id });
-
-    if (!status.receipts?.[0]?.transactionHash) {
-      throw new Error("Transaction failed");
-    }
-
-    return status.receipts?.[0]?.transactionHash;
+    return this.waitForTransactionHash(smartWalletClient, id);
   }
 
   async getTransactionReceipt(
     chainId: number,
     hash: Address
   ): Promise<TransactionReceipt> {
-    return getTransactionReceipt(this.getClients(chainId).walletClient, {
+    return getTransactionReceipt(this.getWalletClient(chainId), {
       hash,
     });
   }
@@ -637,15 +854,15 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     params: ReadContractParams
   ): Promise<unknown> {
-    return readContract(this.getClients(chainId).walletClient, params);
+    return readContract(this.getWalletClient(chainId), params);
   }
 
   async getLogs(chainId: number, params: GetLogsParams): Promise<Log[]> {
-    return getLogs(this.getClients(chainId).walletClient, params);
+    return getLogs(this.getWalletClient(chainId), params);
   }
 
   async getBlockNumber(chainId: number): Promise<bigint> {
-    return getBlockNumber(this.getClients(chainId).walletClient);
+    return getBlockNumber(this.getWalletClient(chainId));
   }
 
   async signMessage(chainId: number, _message: string): Promise<string> {

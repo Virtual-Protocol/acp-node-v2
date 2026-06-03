@@ -1,5 +1,7 @@
+import type { Address } from "viem";
 import type { TransportContext } from "./types.js";
 import { ACP_SERVER_URL } from "../core/constants.js";
+import { buildAgentAuthTypedData } from "../core/agentAuth.js";
 
 export type AcpHttpClientOptions = {
   serverUrl?: string;
@@ -32,9 +34,17 @@ export class AcpHttpClient {
     if (!this.ctx) throw new Error("Transport context not set");
 
     const chainId = this.ctx.providerSupportedChainIds[0];
+    if (chainId == null) {
+      throw new Error("No provider-supported chain available for auth");
+    }
 
-    const message = `acp-auth:${Date.now()}`;
-    const signature = await this.ctx.signMessage(chainId!, message);
+    const issuedAt = Date.now();
+    const typedData = buildAgentAuthTypedData({
+      wallet: this.ctx.agentAddress as Address,
+      chainId,
+      issuedAt,
+    });
+    const signature = await this.ctx.signTypedData(chainId, typedData);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
@@ -42,7 +52,7 @@ export class AcpHttpClient {
       body: JSON.stringify({
         walletAddress: this.ctx.agentAddress,
         signature,
-        message,
+        issuedAt,
         chainId,
       }),
     });

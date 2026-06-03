@@ -95,3 +95,8 @@ export const SUPPORTED_CHAINS = [
 export const MIN_SLA_MINS = 5;
 
 export const BUFFER_SECONDS = 30;
+
+export const DEFAULT_APPROVAL_TIMEOUT_MS = 5 * 60_000;
+
+export const ALCHEMY_SIGNING_CONTRACT =
+  "0x69007702764179f14F51cdce752f4f775d74E139";

@@ -46,9 +46,10 @@ import type {
   AgentRole,
   BrowseAgentParams,
   JobRoomEntry,
+  SupportedStreams,
   TransportContext,
 } from "./events/types.js";
-import { SseTransport } from "./events/sseTransport.js";
+import { DEFAULT_STREAMS, SseTransport } from "./events/sseTransport.js";
 
 export type EntryHandler = (
   session: JobSession,
@@ -250,16 +251,19 @@ export class AcpAgent {
       contractAddresses: this.client.getContractAddresses(),
       providerSupportedChainIds: providerChainIds,
       client: this.client,
-      signMessage: (chainId: number, msg: string) => {
+      signTypedData: (chainId: number, typedData: unknown) => {
         if (this.client instanceof EvmAcpClient) {
-          return this.client.getProvider().signMessage(chainId, msg);
+          return this.client.getProvider().signTypedData(chainId, typedData);
         }
-        throw new Error("signMessage is not supported for this provider");
+        throw new Error("signTypedData is not supported for this provider");
       },
     };
   }
 
-  async start(onConnected?: () => void): Promise<void> {
+  async start(
+    onConnected?: () => void,
+    streams: SupportedStreams[] = DEFAULT_STREAMS
+  ): Promise<void> {
     if (this.started) {
       throw new Error("Agent already started. Call stop() first.");
     }
@@ -269,7 +273,7 @@ export class AcpAgent {
     this.transport.onEntry((entry) =>
       this.dispatch(entry).catch(console.error)
     );
-    await this.transport.connect(onConnected);
+    await this.transport.connect(onConnected, streams);
 
     await this.hydrateSessions();
   }

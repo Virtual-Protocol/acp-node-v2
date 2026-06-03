@@ -20,7 +20,6 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
   - [Agent Discovery](#agent-discovery)
   - [LLM Integration](#llm-integration)
   - [Provider Adapters](#provider-adapters)
-  - [Transport Options](#transport-options)
   - [Fund Transfer Jobs](#fund-transfer-jobs)
   - [Examples](#examples)
   - [Migrating from v1](#migrating-from-v1)
@@ -36,7 +35,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 - **Event-Driven Architecture** -- Single `agent.on("entry", handler)` for all job events and messages.
 - **LLM-Native** -- `session.availableTools()`, `session.toMessages()`, and `session.executeTool()` for plug-and-play LLM agent loops.
 - **Multi-Chain** -- One agent, multiple chains. Specify chain per job with `agent.createJob(chainId, ...)`.
-- **Pluggable Transports** -- SSE.
+- **SSE event stream** -- low-overhead push transport for live job entries.
 - **EVM + Solana** -- Provider adapters for Alchemy smart accounts, Privy wallets, and Solana.
 - **Role-Based Tools** -- `JobSession` automatically gates available actions by your role (client/provider/evaluator) and job status.
 
@@ -44,7 +43,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 
 Register your agent with the [Service Registry](https://app.virtuals.io/acp/new) before interacting with other agents. You can find your `walletId` and add a signer under the **Signers** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io/acp/agents/). Click **+ Add Signer** to generate a signer private key, then use **Copy Key** to retrieve it.
 
-Your `builderCode` (e.g. `bc-...`) can be found under the **Settings** tab on your agent's page. It is optional but recommended for tracking transactions associated with your agent.
+Your `builderCode` (e.g. `bc-...`) is a [Base builder code](https://docs.base.org/apps/builder-codes/builder-codes); transactions made through this SDK are attributed to it on [base.dev](https://base.dev). You can find it under the **Settings** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io/acp/agents/). Optional but recommended.
 
 ## Installation
 
@@ -403,18 +402,6 @@ All EVM provider adapters implement the `IEvmProviderAdapter` interface, which i
 - `readContract(chainId, params)` — Read contract state
 - `getLogs(chainId, params)` — Query event logs
 
-## Transport Options
-
-```typescript
-// SSE (default -- no argument needed)
-const agent = await AcpAgent.create({ provider });
-
-// WebSocket
-const agent = await AcpAgent.create({
-  provider,
-});
-```
-
 ## Fund Transfer Jobs
 
 For jobs that involve transferring funds to the provider on submission:
@@ -440,11 +427,13 @@ await session.setBudgetWithFundRequest(
 
 Runnable buyer/seller pairs are organized by use case under [`src/examples/`](./src/examples/):
 
-| Folder                                                  | Best for                                                                |
-| ------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [`basic/`](./src/examples/basic/)                       | Default flow — manual control, buyer is its own evaluator. Start here.  |
-| [`fund-transfer/`](./src/examples/fund-transfer/)       | Jobs that forward USDC to a third-party destination on submission       |
-| [`llm/`](./src/examples/llm/)                           | Both sides driven by Claude through `availableTools()` + `executeTool()` |
+| Folder                                                                          | Best for                                                                                                                                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`basic/`](./src/examples/basic/)                                               | Default flow — manual control, buyer is its own evaluator. Start here.                                                                                         |
+| [`fund-transfer/`](./src/examples/fund-transfer/)                               | Jobs that forward USDC on submission: buyer uses `createJobFromOffering` when `requiredFunds`; seller uses `setBudgetWithFundRequest`.                         |
+| [`subscription/`](./src/examples/subscription/)                                 | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`.                 |
+| [`subscription-fund-transfer/`](./src/examples/subscription-fund-transfer/)     | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`).                                        |
+| [`llm/`](./src/examples/llm/)                                                   | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`.                                        |
 
 Each folder has its own README with the lifecycle, expected log output, and any
 variant-specific gotchas. The shared env setup, `tsx` invocation, and

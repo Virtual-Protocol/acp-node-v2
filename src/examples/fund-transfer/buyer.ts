@@ -1,14 +1,67 @@
-import { AcpAgent } from "../../acpAgent.js";
-import { ACP_CONTRACT_ADDRESSES } from "../../core/constants.js";
 import { base } from "@account-kit/infra";
+import dotenv from "dotenv";
+import * as readline from "node:readline";
 import {
-  type JobSession,
-  type JobRoomEntry,
+  AcpAgent,
   PrivyAlchemyEvmProviderAdapter,
+  type JobRoomEntry,
+  type JobSession,
 } from "../../index.js";
-import { Address } from "viem";
+import {
+  exampleClosePositionRequirement,
+  exampleOpenPositionRequirement,
+  exampleSwapTokenRequirement,
+  JOB_CLOSE_POSITION,
+  JOB_OPEN_POSITION,
+  JOB_SWAP_TOKEN,
+} from "./jobTypes.js";
 
-const SELLER_ADDRESS: Address = "0xSellerAddress";
+dotenv.config({ quiet: true });
+
+// ---------------------------------------------------------------------------
+// Fund-transfer buyer lifecycle (same event shape as `basic/buyer.ts`):
+//
+//   1. getAgentByWalletAddress()  → resolve provider
+//   2. pick an offering           → must have requiredFunds (fund-transfer hook)
+//   3. createJobFromOffering()    → validates requirement, creates job, sends
+//                                   the first requirement message
+//   4. budget.set                 → session.fetchJob(); session.fund()
+//   5. job.submitted              → session.complete() (or reject())
+//   6. job.completed              → transcript, buyer.stop()
+//   7. job.rejected / job.expired → log, buyer.stop()
+//
+// Evaluation modes match `basic/buyer.ts` (self-eval via evaluatorAddress).
+//
+// Restart safety: same in-flight prompt as basic.
+//
+// Required env: BUYER_WALLET_ADDRESS, BUYER_WALLET_ID, BUYER_SIGNER_PRIVATE_KEY,
+//   SELLER_WALLET_ADDRESS
+// Optional: FUND_TRANSFER_OFFERING_NAME, FUND_TRANSFER_DEMO=plain|swap|open|close
+// ---------------------------------------------------------------------------
+
+const chain = base;
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing required env var: ${name}`);
+  return v;
+}
+
+function promptYesNo(question: string, defaultYes: boolean): Promise<boolean> {
+  if (!process.stdin.isTTY) return Promise.resolve(defaultYes);
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(question, (answer) => {
+      rl.close();
+      const a = answer.trim().toLowerCase();
+      if (a === "") return resolve(defaultYes);
+      resolve(a === "y" || a === "yes");
+    });
+  });
+}
 
 const shortAddr = (a: string): string =>
   !a || !a.startsWith("0x") || a.length < 12
@@ -45,12 +98,11 @@ const log = {
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    contractAddresses: ACP_CONTRACT_ADDRESSES,
     provider: await PrivyAlchemyEvmProviderAdapter.create({
-      walletAddress: "0xBuyerWalletAddress",
-      walletId: "your-privy-wallet-id",
-      chains: [base],
-      signerPrivateKey: "your-privy-signer-private-key",
+      walletAddress: requireEnv("BUYER_WALLET_ADDRESS") as `0x${string}`,
+      walletId: requireEnv("BUYER_WALLET_ID"),
+      signerPrivateKey: requireEnv("BUYER_SIGNER_PRIVATE_KEY"),
+      chains: [chain],
     }),
   });
 
@@ -68,22 +120,60 @@ async function main(): Promise<void> {
 
     if (entry.kind === "system") {
       switch (entry.event.type) {
-        case "budget.set":
+        case "budget.set": {
+          const proposedUsdc = entry.event.amount;
           log.job(
             session.jobId,
-            `proposed budget ${entry.event.amount} USDC`
+            `proposed budget ${proposedUsdc} USDC`
           );
-          log.send(session, "Looks good, funding now.");
-          await session.sendMessage("Looks good, funding now.");
-          await session.fetchJob();
-          await session.fund();
-          log.job(session.jobId, "funded");
+          try {
+            log.send(session, "Looks good, funding now.");
+            await session.sendMessage("Looks good, funding now.");
+            await session.fetchJob();
+            await session.fund();
+            log.job(
+              session.jobId,
+              `funded with ${proposedUsdc} USDC`
+            );
+          } catch (err) {
+            log.error(`funding failed on job ${session.jobId}`, err);
+          }
           break;
+        }
 
         case "job.submitted":
-          log.job(session.jobId, "deliverable received, completing");
-          await session.complete("Evaluated");
+          log.job(
+            session.jobId,
+            `deliverable received: ${entry.event.deliverable}`
+          );
+          log.job(session.jobId, "evaluating");
+          try {
+            await session.complete("Evaluated");
+          } catch (err) {
+            log.error(`completion failed on job ${session.jobId}`, err);
+          }
+          break;
+
+        case "job.completed":
           log.job(session.jobId, "completed");
+          log.info("---- transcript ----");
+          console.log(await session.toContext());
+          log.info("---- end transcript ----");
+          await buyer.stop();
+          break;
+
+        case "job.rejected": {
+          const role = counterpartyRole(session, entry.event.rejector);
+          log.job(
+            session.jobId,
+            `rejected by ${role} ${shortAddr(entry.event.rejector)}: ${entry.event.reason}`
+          );
+          await buyer.stop();
+          break;
+        }
+
+        case "job.expired":
+          log.job(session.jobId, "expired");
           await buyer.stop();
           break;
       }
@@ -93,14 +183,123 @@ async function main(): Promise<void> {
   await buyer.start();
   log.info("ready");
 
-  const jobId = await buyer.createFundTransferJob(base.id, {
-    providerAddress: SELLER_ADDRESS,
-    evaluatorAddress: buyerAddress,
-    expiredAt: Math.floor(Date.now() / 1000) + 3600,
-    description: "Example job from SDK",
-  });
+  const shutdown = async (signal: NodeJS.Signals) => {
+    log.info(`received ${signal}, shutting down`);
+    await buyer.stop();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
-  log.job(jobId.toString(), "created — waiting for seller");
+  const inFlight = buyer.sessions.filter(
+    (s) =>
+      s.chainId === chain.id &&
+      s.roles.includes("client") &&
+      !["completed", "rejected", "expired"].includes(s.status)
+  );
+  if (inFlight.length > 0) {
+    log.info(
+      `found ${inFlight.length} in-flight job(s) initiated by this wallet:`
+    );
+    for (const s of inFlight) {
+      log.info(
+        `  - job ${s.jobId} — status=${s.status}, provider ${shortAddr(
+          s.job!.providerAddress
+        )}`
+      );
+    }
+    const createNew = await promptYesNo(
+      "[buyer-fund] create another job in addition to the resuming one(s)? [y/N] ",
+      false
+    );
+    if (!createNew) {
+      log.info(
+        "resuming existing job(s); not creating a new one — buyer will stop when the current job reaches a terminal state"
+      );
+      return;
+    }
+    log.info("user opted in: creating a new job alongside the resuming one(s)");
+  }
+
+  const sellerWallet = requireEnv("SELLER_WALLET_ADDRESS");
+  log.info(`looking up seller at ${sellerWallet}`);
+  const agent = await buyer.getAgentByWalletAddress(sellerWallet);
+  if (!agent) {
+    log.error(`no agent registered at ${shortAddr(sellerWallet)}`);
+    await buyer.stop();
+    return;
+  }
+
+  const nameFilter = process.env.FUND_TRANSFER_OFFERING_NAME?.trim();
+  const withFunds = agent.offerings.filter((o) => o.requiredFunds);
+  const offering = nameFilter
+    ? withFunds.find((o) => o.name === nameFilter)
+    : withFunds[0];
+
+  if (!offering) {
+    log.error(
+      nameFilter
+        ? `no offering named "${nameFilter}" with requiredFunds=true`
+        : "no offerings with requiredFunds=true on this agent"
+    );
+    await buyer.stop();
+    return;
+  }
+
+  log.info(
+    `selected offering "${offering.name}" (${offering.priceValue} USDC, requiredFunds=true, sla=${offering.slaMinutes}min)`
+  );
+
+  const demo = (process.env.FUND_TRANSFER_DEMO ?? "plain").toLowerCase();
+  let requirementData: Record<string, unknown>;
+  if (demo === "plain") {
+    requirementData = {
+      description: "Fund-transfer request",
+      forwardUsdc: Number(
+        process.env.FUND_TRANSFER_DEFAULT_FORWARD_USDC ?? "0.022"
+      ),
+    };
+  } else if (demo === "swap" || demo === "open" || demo === "close") {
+    const expectedName =
+      demo === "swap"
+        ? JOB_SWAP_TOKEN
+        : demo === "open"
+          ? JOB_OPEN_POSITION
+          : JOB_CLOSE_POSITION;
+    if (offering.name !== expectedName) {
+      log.error(
+        `FUND_TRANSFER_DEMO=${demo} requires an offering named "${expectedName}", got "${offering.name}"`
+      );
+      await buyer.stop();
+      return;
+    }
+    requirementData =
+      demo === "swap"
+        ? { ...exampleSwapTokenRequirement }
+        : demo === "open"
+          ? { ...exampleOpenPositionRequirement }
+          : { ...exampleClosePositionRequirement };
+  } else {
+    log.error(`Unknown FUND_TRANSFER_DEMO=${demo}`);
+    await buyer.stop();
+    return;
+  }
+
+  log.info(`requirement: ${JSON.stringify(requirementData)}`);
+
+  try {
+    const jobId = await buyer.createJobFromOffering(
+      chain.id,
+      offering,
+      agent.walletAddress,
+      requirementData,
+      { evaluatorAddress: buyerAddress }
+    );
+    log.job(jobId.toString(), "created — waiting for seller");
+  } catch (err) {
+    log.error("createJobFromOffering failed", err);
+    await buyer.stop();
+  }
 }
 
 main().catch(console.error);

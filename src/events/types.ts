@@ -138,7 +138,6 @@ export type TransportContext = {
   providerSupportedChainIds: number[];
   getClientForChain: (chainId: number) => AcpClient;
   signMessage: (chainId: number, message: string) => Promise<string>;
-  signTypedData: (chainId: number, typedData: unknown) => Promise<string>;
 };
 
 // ---------------------------------------------------------------------------

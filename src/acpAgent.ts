@@ -334,14 +334,6 @@ export class AcpAgent {
         }
         throw new Error("signMessage is not supported for this provider");
       },
-      signTypedData: (chainId: number, typedData: unknown) => {
-        const family = getChainFamily(chainId);
-        const client = this.clients.get(family);
-        if (client instanceof EvmAcpClient) {
-          return client.getProvider().signTypedData(chainId, typedData);
-        }
-        throw new Error("signTypedData is not supported for this provider");
-      },
     };
   }
 

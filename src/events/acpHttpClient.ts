@@ -1,7 +1,5 @@
-import type { Address } from "viem";
 import type { TransportContext } from "./types.js";
 import { ACP_SERVER_URL, getChainFamily } from "../core/constants.js";
-import { buildAgentAuthTypedData } from "../core/agentAuth.js";
 
 export type AcpHttpClientOptions = {
   serverUrl?: string;
@@ -43,26 +41,13 @@ export class AcpHttpClient {
       Object.values(this.ctx.agentAddresses)[0] ??
       "";
 
-    let authBody: Record<string, unknown>;
-    if (getChainFamily(chainId) === "solana") {
-      const message = `acp-auth:${Date.now()}`;
-      const signature = await this.ctx.signMessage(chainId, message);
-      authBody = { walletAddress, signature, message, chainId };
-    } else {
-      const issuedAt = Date.now();
-      const typedData = buildAgentAuthTypedData({
-        wallet: walletAddress as Address,
-        chainId,
-        issuedAt,
-      });
-      const signature = await this.ctx.signTypedData(chainId, typedData);
-      authBody = { walletAddress, signature, issuedAt, chainId };
-    }
+    const message = `acp-auth:${Date.now()}`;
+    const signature = await this.ctx.signMessage(chainId, message);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(authBody),
+      body: JSON.stringify({ walletAddress, signature, message, chainId }),
     });
 
     if (!res.ok) {

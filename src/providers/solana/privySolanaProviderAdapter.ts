@@ -18,9 +18,9 @@ import {
   type Signature,
   type SolanaRpcApi,
 } from "@solana/kit";
-import type { SolanaCluster } from "../../core/chains";
-import type { SolanaInstructionLike, SolanaSigner } from "../types";
-import { SolanaProviderAdapter } from "./solanaProviderAdapter";
+import type { SolanaCluster } from "../../core/chains.js";
+import type { SolanaInstructionLike, SolanaSigner } from "../types.js";
+import { SolanaProviderAdapter } from "./solanaProviderAdapter.js";
 import {
   formatRequestForAuthorizationSignature,
   generateAuthorizationSignature,
@@ -31,8 +31,8 @@ import {
   PRIVY_APP_ID,
   SOLANA_DEVNET_CHAIN_ID,
   SOLANA_CHAIN_ID_CLUSTERS,
-} from "../../core/constants";
-import { ProviderAuthClient } from "../providerAuthClient";
+} from "../../core/constants.js";
+import { ProviderAuthClient } from "../providerAuthClient.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -405,19 +405,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     return adapter;
   }
 
-  override async getAddress(): Promise<string> {
+  async getAddress(): Promise<string> {
     return this._address;
   }
 
-  override async getCluster(): Promise<SolanaCluster> {
+  async getCluster(): Promise<SolanaCluster> {
     return this._cluster;
   }
 
-  override getRpc(): Rpc<SolanaRpcApi> {
+  getRpc(): Rpc<SolanaRpcApi> {
     return this._rpc;
   }
 
-  override getSigner(): SolanaSigner {
+  getSigner(): SolanaSigner {
     return this._signer;
   }
 
@@ -496,7 +496,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // sendInstructions
   // -------------------------------------------------------------------------
 
-  override async sendInstructions(
+  async sendInstructions(
     instructions: SolanaInstructionLike[]
   ): Promise<string> {
     const { value: latestBlockhash } = await this._rpc

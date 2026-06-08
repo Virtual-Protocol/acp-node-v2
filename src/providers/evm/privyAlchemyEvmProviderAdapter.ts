@@ -534,7 +534,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const authClient = new ProviderAuthClient({
       serverUrl,
       walletAddress: params.walletAddress,
-      signTypedData: (typedData) => signer.signTypedData(typedData as any),
+      signMessage: (msg) => signer.signMessage({ message: msg }),
       chainId: chains[0]!.id,
     });
 
@@ -871,7 +871,4 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     });
   }
 
-  async signTypedData(chainId: number, typedData: unknown): Promise<string> {
-    return this.signer.signTypedData(typedData as any);
-  }
 }

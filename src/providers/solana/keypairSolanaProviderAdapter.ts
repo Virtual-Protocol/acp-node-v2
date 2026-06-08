@@ -13,9 +13,9 @@ import {
   type Signature,
   type SolanaRpcApi,
 } from "@solana/kit";
-import type { SolanaCluster } from "../../core/chains";
-import type { SolanaInstructionLike } from "../types";
-import { SolanaProviderAdapter } from "./solanaProviderAdapter";
+import type { SolanaCluster } from "../../core/chains.js";
+import type { SolanaInstructionLike } from "../types.js";
+import { SolanaProviderAdapter } from "./solanaProviderAdapter.js";
 
 export class KeypairSolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly signer: KeyPairSigner;

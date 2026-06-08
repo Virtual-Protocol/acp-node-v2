@@ -1,7 +1,7 @@
-import { Address } from "viem";
+import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
-import type { ChainFamily, SolanaCluster } from "./chains";
-export type { ChainFamily } from "./chains";
+import type { ChainFamily, SolanaCluster } from "./chains.js";
+export type { ChainFamily } from "./chains.js";
 
 export const SOLANA_DEVNET_CHAIN_ID = 500;
 export const SOLANA_MAINNET_CHAIN_ID = 501;
@@ -36,12 +36,35 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
-  [baseSepolia.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
+  [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
-  [base.id]: "0x90717828D78731313CB350D6a58b0f91668Ea702",
+  [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [SOLANA_DEVNET_CHAIN_ID]: "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
   [SOLANA_MAINNET_CHAIN_ID]: "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
 };
+
+export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
+  [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
+};
+
+export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
+  [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
+};
+
+export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
+  [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
+  [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
+};
+
+export const ACP_SELECTORS = {
+  setBudget: toFunctionSelector("setBudget(uint256,uint256,bytes)"),
+  fund: toFunctionSelector("fund(uint256,uint256,bytes)"),
+  submit: toFunctionSelector("submit(uint256,bytes32,bytes)"),
+  complete: toFunctionSelector("complete(uint256,bytes32,bytes)"),
+  reject: toFunctionSelector("reject(uint256,bytes32,bytes)"),
+} as const;
 
 export const USDC_DECIMALS: Record<number, number> = {
   [baseSepolia.id]: 6,
@@ -74,6 +97,12 @@ export const ACP_TESTNET_SERVER_URL = "https://api-dev.acp.virtuals.io";
 
 export const PRIVY_APP_ID = "cltsev9j90f67yhyw4sngtrpv";
 
+// Account implementation / EIP-7702 delegate (Alchemy ModularAccountV2). Passed as
+// `contract` to Privy's eth_signUserOperation so it computes the userOpHash for this
+// account. Must match the backend's ALCHEMY_SIGNING_CONTRACT.
+export const ALCHEMY_SIGNING_CONTRACT =
+  "0x69007702764179f14F51cdce752f4f775d74E139";
+
 export const TESTNET_PRIVY_APP_ID = "clsakj3e205soyepnl23x2itv";
 
 export const SUPPORTED_CHAINS = [
@@ -94,3 +123,5 @@ export const SUPPORTED_CHAINS = [
 export const MIN_SLA_MINS = 5;
 
 export const BUFFER_SECONDS = 30;
+
+export const DEFAULT_APPROVAL_TIMEOUT_MS = 5 * 60_000;

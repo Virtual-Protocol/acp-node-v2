@@ -9,7 +9,7 @@ import {
   getUtf8Encoder,
 } from "@solana/kit";
 import { hexToBytes } from "viem";
-import { BaseAcpClient } from "./baseAcpClient";
+import { BaseAcpClient } from "./baseAcpClient.js";
 import type {
   ApproveAllowanceParams,
   CapabilityFlags,
@@ -22,12 +22,12 @@ import type {
   RejectParams,
   SetBudgetParams,
   SubmitParams,
-} from "../core/operations";
+} from "../core/operations.js";
 import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
-} from "../providers/types";
-import { JOB_CREATED_EVENT_DISC } from "../core/solana/constants";
+} from "../providers/types.js";
+import { JOB_CREATED_EVENT_DISC } from "../core/solana/constants.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState";

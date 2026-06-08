@@ -1,9 +1,11 @@
-import { ACP_SERVER_URL } from "../core/constants";
+import type { Address } from "viem";
+import { ACP_SERVER_URL } from "../core/constants.js";
+import { buildAgentAuthTypedData } from "../core/agentAuth.js";
 
 export interface ProviderAuthClientOptions {
   serverUrl?: string;
   walletAddress: string;
-  signMessage: (message: string) => Promise<string>;
+  signTypedData: (typedData: unknown) => Promise<string>;
   chainId: number;
 }
 
@@ -11,13 +13,13 @@ export class ProviderAuthClient {
   private token = "";
   private readonly serverUrl: string;
   private readonly walletAddress: string;
-  private readonly _signMessage: (message: string) => Promise<string>;
+  private readonly _signTypedData: (typedData: unknown) => Promise<string>;
   private readonly chainId: number;
 
   constructor(opts: ProviderAuthClientOptions) {
     this.serverUrl = (opts.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
     this.walletAddress = opts.walletAddress;
-    this._signMessage = opts.signMessage;
+    this._signTypedData = opts.signTypedData;
     this.chainId = opts.chainId;
   }
 
@@ -29,8 +31,13 @@ export class ProviderAuthClient {
   }
 
   private async authenticate(): Promise<string> {
-    const message = `acp-auth:${Date.now()}`;
-    const signature = await this._signMessage(message);
+    const issuedAt = Date.now();
+    const typedData = buildAgentAuthTypedData({
+      wallet: this.walletAddress,
+      chainId: this.chainId,
+      issuedAt,
+    });
+    const signature = await this._signTypedData(typedData);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
@@ -38,7 +45,7 @@ export class ProviderAuthClient {
       body: JSON.stringify({
         walletAddress: this.walletAddress,
         signature,
-        message,
+        issuedAt,
         chainId: this.chainId,
       }),
     });

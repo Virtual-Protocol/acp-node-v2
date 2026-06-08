@@ -1,5 +1,5 @@
-import type { AcpClient } from "../clientFactory";
-import { AgentSort, OnlineStatus } from "../clients/baseAcpClient";
+import type { AcpClient } from "../clientFactory.js";
+import { AgentSort, OnlineStatus } from "../clients/baseAcpClient.js";
 
 // ---------------------------------------------------------------------------
 // ACP job events (discriminated union — used inside SystemEntry.event)
@@ -100,6 +100,7 @@ export type AgentMessage = {
     | "requirement";
   content: string;
   timestamp: number;
+  packageId?: number;
 };
 
 export type JobRoomEntry = SystemEntry | AgentMessage;
@@ -137,6 +138,7 @@ export type TransportContext = {
   providerSupportedChainIds: number[];
   getClientForChain: (chainId: number) => AcpClient;
   signMessage: (chainId: number, message: string) => Promise<string>;
+  signTypedData: (chainId: number, typedData: unknown) => Promise<string>;
 };
 
 // ---------------------------------------------------------------------------
@@ -159,12 +161,12 @@ export type OffChainIntent = {
 // ---------------------------------------------------------------------------
 
 export enum AcpJobStatus {
-  REQUEST = 0,
-  NEGOTIATION = 1,
-  TRANSACTION = 2,
-  EVALUATION = 3,
-  COMPLETED = 4,
-  REJECTED = 5,
+  OPEN = "OPEN",
+  FUNDED = "FUNDED",
+  SUBMITTED = "SUBMITTED",
+  COMPLETED = "COMPLETED",
+  REJECTED = "REJECTED",
+  EXPIRED = "EXPIRED",
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +186,29 @@ export type OffChainJob = {
   hookAddress: string | null;
   deliverable: string | null;
   intents?: OffChainIntent[];
+  hookConfigs: Record<string, string[]> | null;
+  clientSubscription: OffChainSubscription | null;
+};
+
+export type OffChainSubscription = {
+  packageId: number;
+  name: string;
+  price: number;
+  /** Subscription duration in seconds. */
+  duration: number;
 };
 
 // ---------------------------------------------------------------------------
 // Transport interfaces
 // ---------------------------------------------------------------------------
 
+export type SupportedStreams = "chat" | "wallet";
+
 export interface AcpChatTransport {
-  connect(onConnected?: () => void): Promise<void>;
+  connect(
+    onConnected?: () => void,
+    streams?: SupportedStreams[]
+  ): Promise<void>;
   disconnect(): Promise<void>;
 
   onEntry(handler: (entry: JobRoomEntry) => void): void;
@@ -199,13 +216,15 @@ export interface AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType?: string
+    contentType?: string,
+    packageId?: number
   ): void;
   postMessage(
     chainId: number,
     jobId: string,
     content: string,
-    contentType?: string
+    contentType?: string,
+    packageId?: number
   ): Promise<void>;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
 }
@@ -254,7 +273,7 @@ export interface AcpAgentOffering {
   requiredFunds: boolean;
   isHidden: boolean;
   isPrivate: boolean;
-  subscriptions: any[];
+  subscriptions?: Array<AcpAgentSubscription>;
 }
 
 export interface AcpAgentResource {
@@ -287,4 +306,5 @@ export interface AcpAgentDetail {
   chains: Array<AcpAgentChain>;
   offerings: Array<AcpAgentOffering>;
   resources: Array<AcpAgentResource>;
+  subscriptions: Array<AcpAgentSubscription>;
 }

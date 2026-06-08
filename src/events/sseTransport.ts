@@ -1,11 +1,32 @@
 import { EventSource } from "eventsource";
-import type { AcpChatTransport, JobRoomEntry } from "./types";
-import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient";
+import type {
+  AcpChatTransport,
+  SupportedStreams,
+  JobRoomEntry,
+} from "./types.js";
+import { AcpHttpClient, type AcpHttpClientOptions } from "./acpHttpClient.js";
+import { resolveApproval, type ApprovalEvent } from "../core/approvalGate.js";
+
+export const STREAMS = {
+  CHAT: "chat",
+  WALLET: "wallet",
+} as const;
+
+export const DEFAULT_STREAMS: SupportedStreams[] = [
+  STREAMS.CHAT,
+  STREAMS.WALLET,
+];
+
+const STREAM_PATHS: Record<SupportedStreams, string> = {
+  [STREAMS.CHAT]: "/chats/stream",
+  [STREAMS.WALLET]: "/wallets/stream",
+};
 
 export type SseTransportOptions = AcpHttpClientOptions;
 
 export class SseTransport extends AcpHttpClient implements AcpChatTransport {
   private eventSource: EventSource | null = null;
+  private walletEventSource: EventSource | null = null;
   private entryHandler: ((entry: JobRoomEntry) => void) | null = null;
   private lastEventTimestamp: number | null = null;
   private seenEntries = new Set<string>();
@@ -18,69 +39,98 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  async connect(onConnected?: () => void): Promise<void> {
+  async connect(
+    onConnected?: () => void,
+    streams: SupportedStreams[] = DEFAULT_STREAMS
+  ): Promise<void> {
     await this.ensureAuthenticated();
 
-    this.eventSource = new EventSource(`${this.serverUrl}/chats/stream`, {
-      fetch: async (url, init) => {
-        await this.refreshTokenIfNeeded();
-        return fetch(url, {
-          ...init,
-          headers: {
-            ...(init?.headers as Record<string, string>),
-            Authorization: `Bearer ${this.token}`,
-            "x-supported-chains": JSON.stringify(
-              this.ctx?.providerSupportedChainIds ?? []
-            ),
-          },
-        });
-      },
-    });
+    const invalidStreams = streams.filter(
+      (stream) => !DEFAULT_STREAMS.includes(stream)
+    );
+    if (invalidStreams.length > 0) {
+      throw new Error(`Unsupported stream: ${invalidStreams}`);
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      this.eventSource!.onopen = () => resolve();
-      this.eventSource!.onerror = (err) => {
-        if (this.eventSource!.readyState === EventSource.CONNECTING) return;
-        reject(err);
-      };
-    });
+    let chatStream: EventSource | null = null;
+    let walletStream: EventSource | null = null;
+    try {
+      [chatStream, walletStream] = await Promise.all([
+        streams.includes(STREAMS.CHAT)
+          ? this.openStream(STREAM_PATHS[STREAMS.CHAT])
+          : Promise.resolve(null),
+        streams.includes(STREAMS.WALLET)
+          ? this.openStream(STREAM_PATHS[STREAMS.WALLET])
+          : Promise.resolve(null),
+      ]);
+    } catch (err) {
+      chatStream?.close();
+      walletStream?.close();
+      throw err;
+    }
+
+    this.eventSource = chatStream;
+    this.walletEventSource = walletStream;
 
     onConnected?.();
 
-    this.eventSource.onmessage = (event) => {
-      if (!event.data) return;
+    if (this.eventSource) {
+      this.eventSource.onmessage = (event) => {
+        if (!event.data) return;
 
-      let entry: JobRoomEntry;
-      try {
-        entry = JSON.parse(event.data);
-      } catch {
-        return;
-      }
+        let entry: JobRoomEntry;
+        try {
+          entry = JSON.parse(event.data);
+        } catch {
+          return;
+        }
 
-      const key = `${entry.timestamp}:${entry.kind}:${
-        "from" in entry ? entry.from : ""
-      }:${
-        "content" in entry ? entry.content : (entry as any).event?.type
-      }`;
-      if (this.seenEntries.has(key)) return;
-      this.seenEntries.add(key);
+        const key = `${entry.timestamp}:${entry.kind}:${
+          "from" in entry ? entry.from : ""
+        }:${"content" in entry ? entry.content : (entry as any).event?.type}`;
+        if (this.seenEntries.has(key)) return;
+        this.seenEntries.add(key);
 
-      this.lastEventTimestamp = Math.max(
-        this.lastEventTimestamp ?? 0,
-        entry.timestamp
-      );
+        this.lastEventTimestamp = Math.max(
+          this.lastEventTimestamp ?? 0,
+          entry.timestamp
+        );
 
-      if (this.entryHandler) {
-        this.entryHandler(entry);
-      }
-    };
+        if (this.entryHandler) {
+          this.entryHandler(entry);
+        }
+      };
+    }
 
+    if (this.walletEventSource) {
+      this.walletEventSource.onmessage = (event) => {
+        if (!event.data) return;
+
+        let entry: ApprovalEvent;
+        try {
+          entry = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+
+        resolveApproval(
+          entry.approvalId,
+          entry.status,
+          entry.result,
+          entry.reason
+        );
+      };
+    }
   }
 
   async disconnect(): Promise<void> {
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
+    }
+    if (this.walletEventSource) {
+      this.walletEventSource.close();
+      this.walletEventSource = null;
     }
     this.ctx = null;
     this.entryHandler = null;
@@ -104,9 +154,10 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): void {
-    this.postMessage(chainId, jobId, content, contentType).catch(
+    this.postMessage(chainId, jobId, content, contentType, packageId).catch(
       console.error
     );
   }
@@ -115,7 +166,8 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     chainId: number,
     jobId: string,
     content: string,
-    contentType: string = "text"
+    contentType: string = "text",
+    packageId?: number
   ): Promise<void> {
     await this.ensureAuthenticated();
     const res = await this.authedFetch(
@@ -123,7 +175,7 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, contentType }),
+        body: JSON.stringify({ content, contentType, packageId }),
       }
     );
 
@@ -145,4 +197,30 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     return data.entries;
   }
 
+  private openStream(path: string): Promise<EventSource> {
+    const source = new EventSource(`${this.serverUrl}${path}`, {
+      fetch: async (url, init) => {
+        await this.refreshTokenIfNeeded();
+        return fetch(url, {
+          ...init,
+          headers: {
+            ...(init?.headers as Record<string, string>),
+            Authorization: `Bearer ${this.token}`,
+            "x-supported-chains": JSON.stringify(
+              this.ctx?.providerSupportedChainIds ?? []
+            ),
+          },
+        });
+      },
+    });
+
+    return new Promise<EventSource>((resolve, reject) => {
+      source.onopen = () => resolve(source);
+      source.onerror = (err) => {
+        if (source.readyState === EventSource.CONNECTING) return;
+        source.close();
+        reject(err);
+      };
+    });
+  }
 }

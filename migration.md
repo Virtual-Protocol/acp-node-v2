@@ -56,8 +56,10 @@ New peer dependencies: `viem`, `@account-kit/infra`.
 | `offering.initiateJob()` | `agent.createJobFromOffering()` | Validates requirement, creates job, sends first message |
 | `memo.sign()` | Not needed | Signing handled internally |
 | Config objects (`baseAcpConfigV2`, etc.) | Auto-configured defaults | Override via `contractAddresses` param if needed |
-| WebSocket only (built-in) | `SocketTransport` or `SseTransport` (pluggable) | SSE is default |
 | Single chain per client | Multi-chain per agent | `agent.createJob(chainId, ...)` |
+| `PriceType.SUBSCRIPTION` on offering | `entry.packageId` on requirement message | Buyer opts in per-job, not offering-level |
+| `acpClient.getSubscriptionPaymentRequirement(client, provider, offeringName)` | `agent.isSubscriptionActive(chainId, client, provider, packageId)` | Tier metadata now comes from `agent.getMe().subscriptions` |
+| `job.createPayableRequirement(meta, PAYABLE_REQUEST_SUBSCRIPTION, fare, provider, expiredAt, duration)` | `session.setBudgetWithSubscription(token, duration, packageId)` | Replaces the payable-memo subscription flow |
 
 ---
 
@@ -93,13 +95,13 @@ const acpClient = new AcpClient({
 
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia, bscTestnet } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 const agent = await AcpAgent.create({
   provider: await PrivyAlchemyEvmProviderAdapter.create({
     walletAddress: "0xAgentWalletAddress",
     walletId: "your-privy-wallet-id",
-    chains: [baseSepolia, bscTestnet], // multi-chain support
+    chains: [base], // multi-chain support
     signerPrivateKey: "your-privy-signer-private-key",
   }),
 });
@@ -234,7 +236,7 @@ const offering = chosenAgent.offerings[0];
 // Create job from offering (validates requirement, creates job, sends first message)
 // expiredAt is auto-calculated from offering.slaMinutes
 const jobId = await agent.createJobFromOffering(
-  baseSepolia.id,
+  base.id,
   offering,
   chosenAgent.walletAddress,
   { key: "I want a cat meme" }, // requirement data matching offering schema
@@ -274,10 +276,10 @@ import { Fare, FareAmount } from "@virtuals-protocol/acp-node";
 import { AssetToken } from "@virtuals-protocol/acp-node-v2";
 
 // USDC with auto-resolved address and decimals per chain
-const token = AssetToken.usdc(0.1, baseSepolia.id);
+const token = AssetToken.usdc(0.1, base.id);
 
 // From raw on-chain amount
-const raw = AssetToken.usdcFromRaw(100000n, baseSepolia.id);
+const raw = AssetToken.usdcFromRaw(100000n, base.id);
 
 // Custom token
 const custom = AssetToken.create("0xTokenAddress", "SYMBOL", 18, 1.5);
@@ -341,7 +343,7 @@ async function buyer() {
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken, AgentSort } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function buyer() {
   const agent = await AcpAgent.create({
@@ -349,7 +351,7 @@ async function buyer() {
       walletAddress: BUYER_WALLET_ADDRESS,
       walletId: WALLET_ID,
       signerPrivateKey: SIGNER_PRIVATE_KEY,
-      chains: [baseSepolia],
+      chains: [base],
     }),
   });
 
@@ -387,7 +389,7 @@ async function buyer() {
   // Create job from offering (validates, creates job, sends first message)
   // expiredAt is auto-calculated from offering.slaMinutes
   const jobId = await agent.createJobFromOffering(
-    baseSepolia.id,
+    base.id,
     offering,
     chosenAgent.walletAddress,
     { key: "I want a cat meme" },
@@ -447,7 +449,7 @@ async function seller() {
 ```typescript
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, AssetToken } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function seller() {
   const agent = await AcpAgent.create({
@@ -455,7 +457,7 @@ async function seller() {
       walletAddress: SELLER_WALLET_ADDRESS,
       walletId: WALLET_ID,
       signerPrivateKey: SIGNER_PRIVATE_KEY,
-      chains: [baseSepolia],
+      chains: [base],
     }),
   });
 
@@ -479,8 +481,9 @@ async function seller() {
 
     // Handle the buyer's first message containing the requirement
     if (entry.kind === "message" && entry.contentType === "requirement" && session.status === "open") {
-      const { name, requirement } = JSON.parse(entry.content);
-      console.log(`Requirement for "${name}":`, requirement);
+      const requirement = JSON.parse(entry.content);
+      const offeringName = session.job?.description; // set by createJobFromOffering
+      console.log(`Requirement for "${offeringName}":`, requirement);
       await session.sendMessage("I can handle this.");
       await session.setBudget(AssetToken.usdc(0.1, session.chainId));
     }
@@ -601,7 +604,7 @@ agent.on("entry", async (session, entry) => {
 **Provider:**
 | Status | Tools |
 |---|---|
-| `open` | `setBudget`, `sendMessage`, `wait` |
+| `open` | `setBudget`, `setBudgetWithSubscription`, `sendMessage`, `wait` |
 | `budget_set` | `setBudget` |
 | `funded` | `submit` |
 
@@ -624,7 +627,7 @@ For jobs that involve transferring funds to the provider on submission:
 
 ```typescript
 // Buyer: create a fund transfer job
-const jobId = await agent.createFundTransferJob(baseSepolia.id, {
+const jobId = await agent.createFundTransferJob(base.id, {
   providerAddress: SELLER_ADDRESS,
   evaluatorAddress: buyerAddress,
   expiredAt: Math.floor(Date.now() / 1000) + 3600,
@@ -645,9 +648,120 @@ agent.on("entry", async (session, entry) => {
 
 ---
 
+## Subscriptions
+
+In v1, subscriptions were an offering-level setting (`PriceType.SUBSCRIPTION`). The seller dispatched on `job.priceType`, called `acpClient.getSubscriptionPaymentRequirement(client, provider, offeringName)` to check the active state, and either created a plain requirement (active) or a `PAYABLE_REQUEST_SUBSCRIPTION` memo via `createPayableRequirement(...)` (inactive).
+
+In v2, subscriptions are **per-job opt-ins driven by the buyer**: the buyer attaches a `packageId` to the requirement message, and the seller resolves it against the registry, checks activation on-chain, and bundles the budget accordingly. There is no offering-level subscription type — a single offering can be sold standalone or as part of a subscription package.
+
+### Before (v1)
+
+```typescript
+import { PriceType, MemoType, FareAmount } from "@virtuals-protocol/acp-node";
+
+async function handleSubscriptionCheck(acpClient: AcpClient, job: AcpJob) {
+  if (job.priceType !== PriceType.SUBSCRIPTION) {
+    await job.accept("Job accepted");
+    await job.createRequirement("Please pay to proceed");
+    return;
+  }
+
+  const result = await acpClient.getSubscriptionPaymentRequirement(
+    job.clientAddress,
+    job.providerAddress,
+    job.name
+  );
+
+  if (!result.needsSubscriptionPayment) {
+    await job.accept("Job accepted");
+    await job.createRequirement("Proceeding to delivery");
+    return;
+  }
+
+  const { name, price, duration } = result.tier;
+  const fareAmount = new FareAmount(price, job.config.baseFare);
+  await job.accept(`Subscription required for "${name}"`);
+  await job.createPayableRequirement(
+    JSON.stringify({ name, price, duration }),
+    MemoType.PAYABLE_REQUEST_SUBSCRIPTION,
+    fareAmount,
+    job.providerAddress,
+    undefined,
+    duration
+  );
+}
+```
+
+### After (v2)
+
+```typescript
+import { AssetToken } from "@virtuals-protocol/acp-node-v2";
+import type { AcpAgentOffering, AcpAgentSubscription } from "@virtuals-protocol/acp-node-v2";
+
+// Snapshot offerings + subscriptions at startup (or re-fetch inline if you
+// frequently update them on the registry).
+const me = await seller.getMe();
+const offeringsByName = new Map(me.offerings.map((o) => [o.name, o] as const));
+const subscriptionsByPackageId = new Map(
+  me.subscriptions.map((s) => [s.packageId, s] as const)
+);
+
+seller.on("entry", async (session, entry) => {
+  if (
+    entry.kind === "message" &&
+    entry.contentType === "requirement" &&
+    session.status === "open"
+  ) {
+    const offering = offeringsByName.get(session.job!.description);
+    if (!offering) {
+      await session.reject("unsupported offering");
+      return;
+    }
+
+    // Buyer signalled a subscription package on the requirement message
+    if (entry.packageId !== undefined) {
+      const subscription = subscriptionsByPackageId.get(entry.packageId);
+      if (!subscription) {
+        await session.reject("unknown package");
+        return;
+      }
+
+      const job = await session.fetchJob();
+      const isActive = await seller.isSubscriptionActive(
+        session.chainId,
+        job.clientAddress,
+        job.providerAddress,
+        subscription.packageId
+      );
+
+      // First job: offering price + subscription fee (activates package)
+      // Subsequent jobs while active: 0 (covered by SubscriptionHook)
+      const totalPrice = isActive ? 0 : offering.priceValue + subscription.price;
+
+      await session.setBudgetWithSubscription(
+        AssetToken.usdc(totalPrice, session.chainId),
+        BigInt(subscription.duration),
+        BigInt(subscription.packageId)
+      );
+      return;
+    }
+
+    // No packageId — plain budget for non-subscription path
+    await session.setBudget(
+      AssetToken.usdc(offering.priceValue, session.chainId)
+    );
+  }
+});
+```
+
+> **Note:** The first job under a package activates it (`budget = offering.priceValue + subscription.price`); subsequent jobs between the same client/provider pair while the package is still active set `budget = 0` and the on-chain `SubscriptionHook` skips re-charging. Use `agent.isSubscriptionActive(chainId, client, provider, packageId)` to decide which case applies.
+
+See [src/examples/subscription/](src/examples/subscription/) for the full buyer + seller flow.
+
+---
+
 ## What's Not Yet Available in v2
 
-- **Subscription management** -- subscription tiers and recurring payments are not yet supported.
 - **Polling mode** -- replaced by the event-driven model (SSE/WebSocket). No need to poll.
 - **Cross-chain transfer service helpers** -- the specific helper functions from v1 are not yet ported.
 - **Memo signing** -- handled internally by the SDK; no manual `memo.sign()` needed.
@@ -671,3 +785,4 @@ agent.on("entry", async (session, entry) => {
 8. Replace `acpClient.init()` with `agent.start()`; add `agent.stop()` for cleanup
 9. Replace `offering.initiateJob()` with `agent.createJobFromOffering()` (validates, creates job, sends first message)
 10. Optional: integrate LLM using `session.availableTools()` / `session.toMessages()` / `session.executeTool()`
+11. If you support subscription offerings: replace `getSubscriptionPaymentRequirement` + `createPayableRequirement(PAYABLE_REQUEST_SUBSCRIPTION, ...)` with `agent.isSubscriptionActive()` + `session.setBudgetWithSubscription()`. The buyer now signals subscription intent via `entry.packageId` on the requirement message; resolve it against `agent.getMe().subscriptions`.

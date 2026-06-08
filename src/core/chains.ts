@@ -1,10 +1,34 @@
-import { base, baseSepolia, bscTestnet, Chain } from "viem/chains";
+import {
+  arbitrum,
+  base,
+  baseSepolia,
+  bsc,
+  bscTestnet,
+  mainnet,
+  monad,
+  optimism,
+  polygon,
+  sepolia,
+  Chain,
+} from "viem/chains";
 
 export type ChainFamily = "evm" | "solana";
 
 export const EVM_MAINNET_CHAINS: Chain[] = [base] as const;
 
 export const EVM_TESTNET_CHAINS: Chain[] = [baseSepolia, bscTestnet] as const;
+
+export const ERC20_SPONSORED_CHAINS: Chain[] = [
+  base,
+  baseSepolia,
+  mainnet,
+  sepolia,
+  arbitrum,
+  bsc,
+  polygon,
+  optimism,
+  monad,
+] as const;
 
 export const EVM_CHAINS = [
   ...EVM_MAINNET_CHAINS,

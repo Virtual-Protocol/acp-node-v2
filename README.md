@@ -20,7 +20,6 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
   - [Agent Discovery](#agent-discovery)
   - [LLM Integration](#llm-integration)
   - [Provider Adapters](#provider-adapters)
-  - [Transport Options](#transport-options)
   - [Fund Transfer Jobs](#fund-transfer-jobs)
   - [Examples](#examples)
   - [Migrating from v1](#migrating-from-v1)
@@ -36,7 +35,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 - **Event-Driven Architecture** -- Single `agent.on("entry", handler)` for all job events and messages.
 - **LLM-Native** -- `session.availableTools()`, `session.toMessages()`, and `session.executeTool()` for plug-and-play LLM agent loops.
 - **Multi-Chain** -- One agent, multiple chains. Specify chain per job with `agent.createJob(chainId, ...)`.
-- **Pluggable Transports** -- SSE (default) or WebSocket via `SocketTransport`.
+- **SSE event stream** -- low-overhead push transport for live job entries.
 - **EVM + Solana** -- Provider adapters for Alchemy smart accounts, Privy wallets, and Solana.
 - **Role-Based Tools** -- `JobSession` automatically gates available actions by your role (client/provider/evaluator) and job status.
 
@@ -44,7 +43,7 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
 
 Register your agent with the [Service Registry](https://app.virtuals.io/acp/new) before interacting with other agents. You can find your `walletId` and add a signer under the **Signers** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io/acp/agents/). Click **+ Add Signer** to generate a signer private key, then use **Copy Key** to retrieve it.
 
-Your `builderCode` (e.g. `bc-...`) can be found under the **Settings** tab on your agent's page. It is optional but recommended for tracking transactions associated with your agent.
+Your `builderCode` (e.g. `bc-...`) is a [Base builder code](https://docs.base.org/apps/builder-codes/builder-codes); transactions made through this SDK are attributed to it on [base.dev](https://base.dev). You can find it under the **Settings** tab on your agent's page on [app.virtuals.io](https://app.virtuals.io/acp/agents/). Optional but recommended.
 
 ## Installation
 
@@ -63,10 +62,9 @@ import {
   AcpAgent,
   PrivyAlchemyEvmProviderAdapter,
   AssetToken,
-  AgentSort,
 } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function main() {
   const buyer = await AcpAgent.create({
@@ -74,7 +72,7 @@ async function main() {
       walletAddress: "0xBuyerWalletAddress",
       walletId: "wallet-id",
       signerPrivateKey: "signer-private-key",
-      chains: [baseSepolia],
+      chains: [base],
       builderCode: "bc-...", // optional
     }),
   });
@@ -104,7 +102,7 @@ async function main() {
 
   // Create job by offering name (resolves offering, validates requirement, creates job, sends first message)
   const jobId = await buyer.createJobByOfferingName(
-    baseSepolia.id,
+    base.id,
     "Meme Generation",
     "0xProviderWalletAddress",
     { key: "I want a funny cat meme" },
@@ -126,7 +124,7 @@ import {
   AssetToken,
 } from "@virtuals-protocol/acp-node-v2";
 import type { JobSession, JobRoomEntry } from "@virtuals-protocol/acp-node-v2";
-import { baseSepolia } from "@account-kit/infra";
+import { base } from "@account-kit/infra";
 
 async function main() {
   const seller = await AcpAgent.create({
@@ -134,7 +132,7 @@ async function main() {
       walletAddress: "0xSellerWalletAddress",
       walletId: "wallet-id",
       signerPrivateKey: "signer-private-key",
-      chains: [baseSepolia],
+      chains: [base],
       builderCode: "bc-...", // optional
     }),
   });
@@ -162,8 +160,9 @@ async function main() {
       entry.contentType === "requirement" &&
       session.status === "open"
     ) {
-      const { name, requirement } = JSON.parse(entry.content);
-      console.log(`Requirement for "${name}":`, requirement);
+      const requirement = JSON.parse(entry.content);
+      const offeringName = session.job?.description; // set by createJobFromOffering
+      console.log(`Requirement for "${offeringName}":`, requirement);
       await session.setBudget(AssetToken.usdc(0.1, session.chainId));
     }
   });
@@ -185,7 +184,6 @@ The main entry point. Creates an agent that listens for job events and manages s
 ```typescript
 const agent = await AcpAgent.create({
   provider: providerAdapter, // required -- EVM or Solana provider
-  transport: new SocketTransport(), // optional -- defaults to SseTransport
 });
 
 agent.on("entry", async (session, entry) => {
@@ -272,10 +270,10 @@ Token abstraction that handles decimals and chain-specific addresses.
 
 ```typescript
 // USDC -- auto-resolves address and decimals per chain
-AssetToken.usdc(0.1, baseSepolia.id);
+AssetToken.usdc(0.1, base.id);
 
 // From raw on-chain amount
-AssetToken.usdcFromRaw(100000n, baseSepolia.id);
+AssetToken.usdcFromRaw(100000n, base.id);
 
 // Custom token
 AssetToken.create("0xTokenAddress", "SYMBOL", 18, 1.5);
@@ -300,7 +298,7 @@ const offering = agents[0].offerings[0];
 
 // Create job by offering name (simplest approach)
 const jobId = await agent.createJobByOfferingName(
-  baseSepolia.id,
+  base.id,
   offering.name,
   agents[0].walletAddress,
   { ticker: "PEPE", amount: 100 }, // requirement data validated against offering schema
@@ -314,9 +312,9 @@ const provider = await agent.getAgentByWalletAddress("0xProviderAddress");
 `createJobByOfferingName` resolves the offering by name from the provider, then:
 
 1. **Validates** requirement data against the offering's JSON schema (if `requirements` is an object)
-2. **Creates the job** on-chain -- uses `createFundTransferJob` when `offering.requiredFunds` is true, otherwise `createJob`
+2. **Creates the job** on-chain -- uses `createFundTransferJob` when `offering.requiredFunds` is true, otherwise `createJob`. The `description` field is set to `offering.name`, which the seller can read back via `session.job.description` to dispatch on the offering.
 3. **Sets expiration** from `offering.slaMinutes` (`now + slaMinutes`)
-4. **Sends the first message** with `{ name, requirement }` using contentType `"requirement"`
+4. **Sends the first message** with the requirement payload, using contentType `"requirement"`
 
 If you already have the full offering object, you can use `createJobFromOffering` directly instead.
 
@@ -377,7 +375,7 @@ agent.on("entry", async (session, entry) => {
 | Client    | `budget_set` | `sendMessage`, `fund`, `wait`      |
 | Evaluator | `submitted`  | `complete`, `reject`               |
 
-See [`src/examples/buyer-llm.ts`](./src/examples/buyer-llm.ts) and [`src/examples/seller-llm.ts`](./src/examples/seller-llm.ts) for complete LLM examples with Claude.
+See [`src/examples/llm/`](./src/examples/llm/) for complete LLM examples with Claude.
 
 ## Provider Adapters
 
@@ -391,7 +389,7 @@ See [`src/examples/buyer-llm.ts`](./src/examples/buyer-llm.ts) and [`src/example
 const provider = await PrivyAlchemyEvmProviderAdapter.create({
   walletAddress: "0x...",
   walletId: "your-privy-wallet-id",
-  chains: [baseSepolia, bscTestnet],
+  chains: [base],
   signerPrivateKey: "your-privy-signer-private-key",
 });
 ```
@@ -405,27 +403,13 @@ All EVM provider adapters implement the `IEvmProviderAdapter` interface, which i
 - `readContract(chainId, params)` — Read contract state
 - `getLogs(chainId, params)` — Query event logs
 
-## Transport Options
-
-```typescript
-// SSE (default -- no argument needed)
-const agent = await AcpAgent.create({ provider });
-
-// WebSocket
-import { SocketTransport } from "@virtuals-protocol/acp-node-v2";
-const agent = await AcpAgent.create({
-  provider,
-  transport: new SocketTransport(),
-});
-```
-
 ## Fund Transfer Jobs
 
 For jobs that involve transferring funds to the provider on submission:
 
 ```typescript
 // Buyer: create a fund transfer job
-const jobId = await agent.createFundTransferJob(baseSepolia.id, {
+const jobId = await agent.createFundTransferJob(base.id, {
   providerAddress: SELLER_ADDRESS,
   evaluatorAddress: buyerAddress,
   expiredAt: Math.floor(Date.now() / 1000) + 3600,
@@ -442,16 +426,38 @@ await session.setBudgetWithFundRequest(
 
 ## Examples
 
-All examples are in [`src/examples/`](./src/examples/):
+Runnable buyer/seller pairs are organized by use case under [`src/examples/`](./src/examples/):
 
-| Example                                         | Description                                   |
-| ----------------------------------------------- | --------------------------------------------- |
-| [buyer.ts](./src/examples/buyer.ts)             | Basic buyer: create job, fund, complete       |
-| [seller.ts](./src/examples/seller.ts)           | Basic seller: set budget, deliver             |
-| [buyer-fund.ts](./src/examples/buyer-fund.ts)   | Buyer with fund transfer job (Privy provider) |
-| [seller-fund.ts](./src/examples/seller-fund.ts) | Seller with fund request on budget            |
-| [buyer-llm.ts](./src/examples/buyer-llm.ts)     | LLM-driven buyer using Claude                 |
-| [seller-llm.ts](./src/examples/seller-llm.ts)   | LLM-driven seller using Claude                |
+| Folder                                                                          | Best for                                                                                                                                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`basic/`](./src/examples/basic/)                                               | Default flow — manual control, buyer is its own evaluator. Start here.                                                                                         |
+| [`fund-transfer/`](./src/examples/fund-transfer/)                               | Jobs that forward USDC on submission: buyer uses `createJobFromOffering` when `requiredFunds`; seller uses `setBudgetWithFundRequest`.                         |
+| [`subscription/`](./src/examples/subscription/)                                 | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`.                 |
+| [`subscription-fund-transfer/`](./src/examples/subscription-fund-transfer/)     | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`).                                        |
+| [`llm/`](./src/examples/llm/)                                                   | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`.                                        |
+
+Each folder has its own README with the lifecycle, expected log output, and any
+variant-specific gotchas. The shared env setup, `tsx` invocation, and
+troubleshooting steps live in [`src/examples/README.md`](./src/examples/README.md).
+
+Quick start:
+
+```bash
+cp .env.example .env
+# fill in BUYER_* and SELLER_* vars
+
+# Terminal 1
+npx tsx src/examples/basic/seller.ts
+
+# Terminal 2 (after seller logs "ready, listening for jobs")
+npx tsx src/examples/basic/buyer.ts
+```
+
+The buyer and seller **must use different wallets**, and the seller's wallet
+must be registered as a provider with at least one offering on the
+[Service Registry](https://app.virtuals.io/acp/new) so the buyer's
+`browseAgents()` can find it. See [Prerequisites](#prerequisites) for
+registry setup.
 
 ## Migrating from v1
 

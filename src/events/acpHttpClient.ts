@@ -1,5 +1,7 @@
-import type { TransportContext } from "./types";
-import { ACP_SERVER_URL } from "../core/constants";
+import type { Address } from "viem";
+import type { TransportContext } from "./types.js";
+import { ACP_SERVER_URL, getChainFamily } from "../core/constants.js";
+import { buildAgentAuthTypedData } from "../core/agentAuth.js";
 
 export type AcpHttpClientOptions = {
   serverUrl?: string;
@@ -31,30 +33,44 @@ export class AcpHttpClient {
   protected async authenticate(): Promise<string> {
     if (!this.ctx) throw new Error("Transport context not set");
 
-    const chainId = this.ctx.providerSupportedChainIds[0]!;
-    const walletAddress =
-      Object.values(this.ctx.agentAddresses)[0] ?? "";
+    const chainId = this.ctx.providerSupportedChainIds[0];
+    if (chainId == null) {
+      throw new Error("No provider-supported chain available for auth");
+    }
 
-    const message = `acp-auth:${Date.now()}`;
-    const signature = await this.ctx.signMessage(chainId, message);
+    const walletAddress =
+      this.ctx.agentAddresses[getChainFamily(chainId)] ??
+      Object.values(this.ctx.agentAddresses)[0] ??
+      "";
+
+    let authBody: Record<string, unknown>;
+    if (getChainFamily(chainId) === "solana") {
+      const message = `acp-auth:${Date.now()}`;
+      const signature = await this.ctx.signMessage(chainId, message);
+      authBody = { walletAddress, signature, message, chainId };
+    } else {
+      const issuedAt = Date.now();
+      const typedData = buildAgentAuthTypedData({
+        wallet: walletAddress as Address,
+        chainId,
+        issuedAt,
+      });
+      const signature = await this.ctx.signTypedData(chainId, typedData);
+      authBody = { walletAddress, signature, issuedAt, chainId };
+    }
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        walletAddress,
-        signature,
-        message,
-        chainId,
-      }),
+      body: JSON.stringify(authBody),
     });
 
     if (!res.ok) {
       throw new Error(`Agent auth failed: ${res.status} ${res.statusText}`);
     }
 
-    const body = (await res.json()) as { data: { token: string } };
-    return body.data.token;
+    const responseBody = (await res.json()) as { data: { token: string } };
+    return responseBody.data.token;
   }
 
   /** Returns true if the token expiry is within 60 s (or unparseable). */

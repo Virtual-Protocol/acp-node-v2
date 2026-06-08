@@ -1,7 +1,7 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
 import { AccountRole, type Rpc, type SolanaRpcApi, type KeyPairSigner, type Address as SolanaAddress } from "@solana/kit";
 
-import type { NetworkContext, SolanaCluster } from "../core/chains";
+import type { NetworkContext, SolanaCluster } from "../core/chains.js";
 
 // A Solana signer that can partially sign transactions and messages.
 // KeyPairSigner (local keys) satisfies this, as do remote signers (e.g. Privy).

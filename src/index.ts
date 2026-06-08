@@ -1,36 +1,39 @@
 // Primary API
-export * from "./acpAgent";
-export * from "./acpJob";
-export * from "./jobSession";
+export * from "./acpAgent.js";
+export * from "./acpJob.js";
+export * from "./jobSession.js";
 
 // Client layer
-export * from "./clientFactory";
-export * from "./clients/baseAcpClient";
-export * from "./clients/evmAcpClient";
-export * from "./clients/solanaAcpClient";
+export * from "./clientFactory.js";
+export * from "./clients/baseAcpClient.js";
+export * from "./clients/evmAcpClient.js";
+export * from "./clients/solanaAcpClient.js";
 
 // Core types
-export * from "./core/acpAbi";
-export * from "./core/chains";
-export * from "./core/constants";
-export * from "./core/assetToken";
+export * from "./core/acpAbi.js";
+export * from "./core/chains.js";
+export * from "./core/constants.js";
+export * from "./core/assetToken.js";
+export * from "./core/approvalGate.js";
 
 // Provider interfaces & adapters
-export * from "./providers/types";
-export * from "./providers/evm/viemProviderAdapter";
-export * from "./providers/evm/privyAlchemyEvmProviderAdapter";
-export * from "./providers/solana/solanaProviderAdapter";
-export * from "./providers/solana/keypairSolanaProviderAdapter";
-export * from "./providers/solana/privySolanaProviderAdapter";
+export * from "./providers/types.js";
+export * from "./providers/evm/viemProviderAdapter.js";
+export * from "./providers/evm/privyAlchemyEvmProviderAdapter.js";
+export * from "./providers/solana/solanaProviderAdapter.js";
+export * from "./providers/solana/keypairSolanaProviderAdapter.js";
+export * from "./providers/solana/privySolanaProviderAdapter.js";
 
 // Solana constants
-export * from "./core/solana/constants";
+export * from "./core/solana/constants.js";
 
 // Transport & API
-export { AcpHttpClient } from "./events/acpHttpClient";
-export { AcpApiClient } from "./events/acpApiClient";
-export { SocketTransport } from "./events/socketTransport";
-export { SseTransport } from "./events/sseTransport";
+export { AcpHttpClient } from "./events/acpHttpClient.js";
+export { AcpApiClient } from "./events/acpApiClient.js";
+export { SseTransport, STREAMS } from "./events/sseTransport.js";
+
+// Public enums
+export { AcpJobStatus } from "./events/types.js";
 
 // Event / room types (public)
 export type {
@@ -61,7 +64,8 @@ export type {
   AcpAgentSubscription,
   BrowseAgentParams,
   FundIntent,
-} from "./events/types";
+  SupportedStreams,
+} from "./events/types.js";
 
 // Utilities
-export * from "./utils/events";
+export * from "./utils/events.js";

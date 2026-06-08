@@ -1,6 +1,6 @@
 import { Address, parseUnits } from "viem";
-import type { AcpClient } from "../clientFactory";
-import { USDC_ADDRESSES, USDC_DECIMALS, USDC_SYMBOL, getAddressForChain } from "./constants";
+import type { AcpClient } from "../clientFactory.js";
+import { USDC_ADDRESSES, USDC_DECIMALS, USDC_SYMBOL, getAddressForChain } from "./constants.js";
 
 export class AssetToken {
   readonly address: Address;

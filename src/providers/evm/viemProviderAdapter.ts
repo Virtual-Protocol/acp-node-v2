@@ -1,11 +1,11 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
 
-import { createEvmNetworkContext } from "../../core/chains";
+import { createEvmNetworkContext } from "../../core/chains.js";
 import type {
   GetLogsParams,
   IEvmProviderAdapter,
   ReadContractParams,
-} from "../types";
+} from "../types.js";
 
 export class ViemProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string;

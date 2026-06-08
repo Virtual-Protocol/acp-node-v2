@@ -1,10 +1,26 @@
-import type { Address } from "viem";
-import { AssetToken } from "./core/assetToken";
-import type { AcpClient } from "./clientFactory";
-import type { OnChainJob } from "./core/operations";
-import type { AcpJobStatus, OffChainIntent, OffChainJob } from "./events/types";
+import { zeroAddress, type Address } from "viem";
+import { AssetToken } from "./core/assetToken.js";
+import type { AcpClient } from "./clientFactory.js";
+import type { OnChainJob } from "./core/operations.js";
+import {
+  AcpJobStatus,
+  type OffChainIntent,
+  type OffChainJob,
+  type OffChainSubscription,
+} from "./events/types.js";
+import { JobStatus } from "./clients/baseAcpClient.js";
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+function statusFromOnChain(n: number): AcpJobStatus {
+  const name = JobStatus[n] as keyof typeof AcpJobStatus | undefined;
+  if (!name) throw new Error(`Unknown on-chain job status: ${n}`);
+  return AcpJobStatus[name];
+}
+
+function statusToOnChain(s: AcpJobStatus): number {
+  const code = JobStatus[s as unknown as keyof typeof JobStatus];
+  if (code == null) throw new Error(`Unknown job status: ${s}`);
+  return code;
+}
 
 export class AcpIntent {
   readonly intentId: string;
@@ -54,12 +70,16 @@ export class AcpJob {
   readonly hookAddress: string;
   readonly intents: AcpIntent[];
   readonly deliverable: string | null;
+  readonly hookConfigs: Record<string, string[]> | null;
+  readonly clientSubscription: OffChainSubscription | null;
 
   constructor(
     chainId: number,
     data: OnChainJob,
     intents: AcpIntent[] = [],
-    deliverable: string | null = null
+    deliverable: string | null = null,
+    hookConfigs: Record<string, string[]> | null = null,
+    clientSubscription: OffChainSubscription | null = null
   ) {
     this.chainId = chainId;
     this.id = data.id;
@@ -69,10 +89,12 @@ export class AcpJob {
     this.description = data.description;
     this.budget = AssetToken.usdcFromRaw(data.budget, chainId);
     this.expiredAt = data.expiredAt;
-    this.status = data.status;
+    this.status = statusFromOnChain(data.status);
     this.hookAddress = data.hook;
     this.intents = intents;
     this.deliverable = deliverable;
+    this.hookConfigs = hookConfigs;
+    this.clientSubscription = clientSubscription;
   }
 
   getFundRequestIntent(): AcpIntent | null {
@@ -101,11 +123,13 @@ export class AcpJob {
         expiredAt: BigInt(
           Math.floor(new Date(data.expiredAt).getTime() / 1000)
         ),
-        status: data.jobStatus,
-        hook: data.hookAddress ?? ZERO_ADDRESS,
+        status: statusToOnChain(data.jobStatus),
+        hook: data.hookAddress ?? zeroAddress,
       },
       intents,
-      data.deliverable ?? null
+      data.deliverable ?? null,
+      data.hookConfigs ?? null,
+      data.clientSubscription ?? null
     );
   }
 }

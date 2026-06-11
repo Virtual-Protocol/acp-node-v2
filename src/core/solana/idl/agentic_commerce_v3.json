@@ -1,5 +1,5 @@
 {
-  "address": "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi",
+  "address": "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
   "metadata": {
     "name": "agentic_commerce_v3",
     "version": "0.1.0",
@@ -123,6 +123,54 @@
                 "path": "hook"
               }
             ]
+          }
+        },
+        {
+          "name": "hook_program_data",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "arg",
+                "path": "hook"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
           }
         },
         {
@@ -421,10 +469,6 @@
           "optional": true
         },
         {
-          "name": "hook_program",
-          "optional": true
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
@@ -523,8 +567,17 @@
         {
           "name": "hook_delegate",
           "docs": [
-            "Required when hook is present and budget > 0. The ACP program approves this",
-            "PDA as delegate on client_token_account for budget_amount (F-25 fix)."
+            "or by a whitelisted sub-hook program (multi-hook router). Required when hook is",
+            "present and budget > 0. The ACP program approves this PDA as delegate on",
+            "client_token_account for budget_amount (F-25 fix)."
+          ],
+          "optional": true
+        },
+        {
+          "name": "delegate_whitelist",
+          "docs": [
+            "using MultiHookRouter -- the delegate is owned by a sub-hook, not the router.",
+            "Validated as [\"hook_whitelist\", delegate_owner] inside approve_hook_delegate."
           ],
           "optional": true
         }
@@ -590,38 +643,38 @@
               {
                 "kind": "const",
                 "value": [
-                  166,
-                  40,
-                  76,
-                  242,
-                  119,
-                  58,
-                  225,
-                  177,
-                  173,
-                  61,
-                  24,
+                  204,
+                  63,
                   149,
-                  243,
-                  103,
-                  21,
-                  247,
-                  31,
-                  173,
+                  163,
+                  99,
+                  219,
                   73,
-                  25,
-                  126,
-                  236,
-                  194,
-                  144,
-                  189,
-                  19,
-                  229,
-                  243,
-                  158,
-                  126,
-                  198,
-                  217
+                  112,
+                  44,
+                  106,
+                  231,
+                  109,
+                  58,
+                  223,
+                  98,
+                  48,
+                  178,
+                  233,
+                  196,
+                  241,
+                  209,
+                  188,
+                  37,
+                  87,
+                  215,
+                  207,
+                  72,
+                  225,
+                  103,
+                  220,
+                  13,
+                  155
                 ]
               }
             ],
@@ -1132,7 +1185,15 @@
     {
       "name": "submit",
       "docs": [
-        "Records the provider's deliverable. Auto-completes if no evaluator is set."
+        "Records the provider's deliverable. Auto-completes if no evaluator is set.",
+        "",
+        "F-66: `complete_opt_params` is consumed only on the auto-complete branch",
+        "(no evaluator) so the after-Complete and (new) before-Complete hooks",
+        "can be given their own opt_params + a distinct slice of",
+        "`remaining_accounts`. Empty `complete_opt_params` preserves legacy",
+        "behaviour (reuse `opt_params` + full `remaining_accounts` for both",
+        "actions). Non-empty `complete_opt_params` enables per-action mode and",
+        "is parsed as `[u16 LE submit_account_count][bytes complete opt_params]`."
       ],
       "discriminator": [
         88,
@@ -1223,8 +1284,9 @@
         {
           "name": "hook_delegate",
           "docs": [
-            "Required when hook is present and budget > 0. The ACP program approves this",
-            "PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix)."
+            "or by a whitelisted sub-hook program (multi-hook router). Required when hook is",
+            "present and budget > 0. The ACP program approves this PDA as delegate on",
+            "provider_hook_token_account for budget_amount (F-25 fix)."
           ],
           "optional": true
         },
@@ -1236,6 +1298,13 @@
             "The ACP approves hook_delegate on this account for budget_amount."
           ],
           "writable": true,
+          "optional": true
+        },
+        {
+          "name": "delegate_whitelist",
+          "docs": [
+            "using MultiHookRouter -- the delegate is owned by a sub-hook, not the router."
+          ],
           "optional": true
         }
       ],
@@ -1251,6 +1320,10 @@
         },
         {
           "name": "opt_params",
+          "type": "bytes"
+        },
+        {
+          "name": "complete_opt_params",
           "type": "bytes"
         }
       ]
@@ -1677,6 +1750,21 @@
       "code": 6033,
       "name": "ArithmeticOverflow",
       "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6034,
+      "name": "HookProgramIsUpgradeable",
+      "msg": "Hook program must be immutable (upgrade authority must be None)"
+    },
+    {
+      "code": 6035,
+      "name": "MissingHookProgram",
+      "msg": "Missing hook program account: job declares a hook but hook_program was not supplied"
+    },
+    {
+      "code": 6036,
+      "name": "InvalidAutoCompleteParams",
+      "msg": "Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len()"
     }
   ],
   "types": [

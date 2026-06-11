@@ -6,10 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./acceptAuthority";
-export * from "./afterAction";
-export * from "./beforeAction";
-export * from "./claimEscrowRefund";
-export * from "./closeIntent";
-export * from "./initialize";
-export * from "./nominateAuthority";
+export * from "./acceptAuthority.js";
+export * from "./afterAction.js";
+export * from "./beforeAction.js";
+export * from "./claimEscrowRefund.js";
+export * from "./closeIntent.js";
+export * from "./initialize.js";
+export * from "./nominateAuthority.js";

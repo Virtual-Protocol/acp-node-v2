@@ -23,7 +23,7 @@ export async function findHookWhitelistPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi" as Address<"CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi">,
+    programAddress = "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp" as Address<"EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

@@ -31,9 +31,9 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const NOMINATE_AUTHORITY_DISCRIMINATOR = new Uint8Array([
   148, 182, 144, 91, 186, 12, 118, 18,

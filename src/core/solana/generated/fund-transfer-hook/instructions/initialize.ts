@@ -33,9 +33,9 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findHookStatePda } from "../pdas";
-import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findHookMetadataPda, findHookStatePda } from "../pdas/index.js";
+import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const INITIALIZE_DISCRIMINATOR = new Uint8Array([
   175, 175, 109, 31, 13, 152, 155, 237,
@@ -49,6 +49,7 @@ export type InitializeInstruction<
   TProgram extends string = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountHookState extends string | AccountMeta<string> = string,
+  TAccountHookMetadata extends string | AccountMeta<string> = string,
   TAccountProgramData extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
@@ -64,6 +65,9 @@ export type InitializeInstruction<
       TAccountHookState extends string
         ? WritableAccount<TAccountHookState>
         : TAccountHookState,
+      TAccountHookMetadata extends string
+        ? WritableAccount<TAccountHookMetadata>
+        : TAccountHookMetadata,
       TAccountProgramData extends string
         ? ReadonlyAccount<TAccountProgramData>
         : TAccountProgramData,
@@ -111,11 +115,14 @@ export function getInitializeInstructionDataCodec(): FixedSizeCodec<
 export type InitializeAsyncInput<
   TAccountAuthority extends string = string,
   TAccountHookState extends string = string,
+  TAccountHookMetadata extends string = string,
   TAccountProgramData extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   hookState?: Address<TAccountHookState>;
+  /** Self-declared metadata read by multi-hook-router for completeness checks. */
+  hookMetadata?: Address<TAccountHookMetadata>;
   programData?: Address<TAccountProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   acpProgram: InitializeInstructionDataArgs["acpProgram"];
@@ -124,6 +131,7 @@ export type InitializeAsyncInput<
 export async function getInitializeInstructionAsync<
   TAccountAuthority extends string,
   TAccountHookState extends string,
+  TAccountHookMetadata extends string,
   TAccountProgramData extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
@@ -131,6 +139,7 @@ export async function getInitializeInstructionAsync<
   input: InitializeAsyncInput<
     TAccountAuthority,
     TAccountHookState,
+    TAccountHookMetadata,
     TAccountProgramData,
     TAccountSystemProgram
   >,
@@ -140,6 +149,7 @@ export async function getInitializeInstructionAsync<
     TProgramAddress,
     TAccountAuthority,
     TAccountHookState,
+    TAccountHookMetadata,
     TAccountProgramData,
     TAccountSystemProgram
   >
@@ -152,6 +162,7 @@ export async function getInitializeInstructionAsync<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
     hookState: { value: input.hookState ?? null, isWritable: true },
+    hookMetadata: { value: input.hookMetadata ?? null, isWritable: true },
     programData: { value: input.programData ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -167,6 +178,9 @@ export async function getInitializeInstructionAsync<
   if (!accounts.hookState.value) {
     accounts.hookState.value = await findHookStatePda();
   }
+  if (!accounts.hookMetadata.value) {
+    accounts.hookMetadata.value = await findHookMetadataPda();
+  }
   if (!accounts.programData.value) {
     accounts.programData.value = await getProgramDerivedAddress({
       programAddress:
@@ -174,9 +188,9 @@ export async function getInitializeInstructionAsync<
       seeds: [
         getBytesEncoder().encode(
           new Uint8Array([
-            141, 8, 214, 209, 146, 66, 237, 8, 171, 148, 162, 152, 142, 167,
-            192, 178, 76, 159, 165, 201, 28, 97, 7, 39, 156, 243, 168, 47, 21,
-            82, 39, 16,
+            93, 144, 158, 139, 132, 150, 174, 88, 0, 246, 229, 102, 47, 253,
+            176, 138, 100, 251, 8, 215, 89, 98, 14, 105, 223, 127, 162, 247, 57,
+            124, 169, 202,
           ]),
         ),
       ],
@@ -192,6 +206,7 @@ export async function getInitializeInstructionAsync<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.hookState),
+      getAccountMeta(accounts.hookMetadata),
       getAccountMeta(accounts.programData),
       getAccountMeta(accounts.systemProgram),
     ],
@@ -203,6 +218,7 @@ export async function getInitializeInstructionAsync<
     TProgramAddress,
     TAccountAuthority,
     TAccountHookState,
+    TAccountHookMetadata,
     TAccountProgramData,
     TAccountSystemProgram
   >);
@@ -211,11 +227,14 @@ export async function getInitializeInstructionAsync<
 export type InitializeInput<
   TAccountAuthority extends string = string,
   TAccountHookState extends string = string,
+  TAccountHookMetadata extends string = string,
   TAccountProgramData extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   hookState: Address<TAccountHookState>;
+  /** Self-declared metadata read by multi-hook-router for completeness checks. */
+  hookMetadata: Address<TAccountHookMetadata>;
   programData: Address<TAccountProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   acpProgram: InitializeInstructionDataArgs["acpProgram"];
@@ -224,6 +243,7 @@ export type InitializeInput<
 export function getInitializeInstruction<
   TAccountAuthority extends string,
   TAccountHookState extends string,
+  TAccountHookMetadata extends string,
   TAccountProgramData extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
@@ -231,6 +251,7 @@ export function getInitializeInstruction<
   input: InitializeInput<
     TAccountAuthority,
     TAccountHookState,
+    TAccountHookMetadata,
     TAccountProgramData,
     TAccountSystemProgram
   >,
@@ -239,6 +260,7 @@ export function getInitializeInstruction<
   TProgramAddress,
   TAccountAuthority,
   TAccountHookState,
+  TAccountHookMetadata,
   TAccountProgramData,
   TAccountSystemProgram
 > {
@@ -250,6 +272,7 @@ export function getInitializeInstruction<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
     hookState: { value: input.hookState ?? null, isWritable: true },
+    hookMetadata: { value: input.hookMetadata ?? null, isWritable: true },
     programData: { value: input.programData ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -272,6 +295,7 @@ export function getInitializeInstruction<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.hookState),
+      getAccountMeta(accounts.hookMetadata),
       getAccountMeta(accounts.programData),
       getAccountMeta(accounts.systemProgram),
     ],
@@ -283,6 +307,7 @@ export function getInitializeInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountHookState,
+    TAccountHookMetadata,
     TAccountProgramData,
     TAccountSystemProgram
   >);
@@ -296,8 +321,10 @@ export type ParsedInitializeInstruction<
   accounts: {
     authority: TAccountMetas[0];
     hookState: TAccountMetas[1];
-    programData: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
+    /** Self-declared metadata read by multi-hook-router for completeness checks. */
+    hookMetadata: TAccountMetas[2];
+    programData: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
   data: InitializeInstructionData;
 };
@@ -310,7 +337,7 @@ export function parseInitializeInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+  if (instruction.accounts.length < 5) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -325,6 +352,7 @@ export function parseInitializeInstruction<
     accounts: {
       authority: getNextAccount(),
       hookState: getNextAccount(),
+      hookMetadata: getNextAccount(),
       programData: getNextAccount(),
       systemProgram: getNextAccount(),
     },

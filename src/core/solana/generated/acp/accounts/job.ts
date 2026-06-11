@@ -55,7 +55,7 @@ import {
   getJobStateEncoder,
   type JobState,
   type JobStateArgs,
-} from "../types";
+} from "../types/index.js";
 
 export const JOB_DISCRIMINATOR = new Uint8Array([
   75, 124, 80, 203, 161, 180, 202, 80,

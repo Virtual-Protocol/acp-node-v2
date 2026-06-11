@@ -31,9 +31,9 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findHookStatePda } from "../pdas";
-import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findHookStatePda } from "../pdas/index.js";
+import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const NOMINATE_AUTHORITY_DISCRIMINATOR = new Uint8Array([
   148, 182, 144, 91, 186, 12, 118, 18,

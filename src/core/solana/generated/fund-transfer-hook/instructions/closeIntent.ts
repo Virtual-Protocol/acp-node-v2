@@ -32,13 +32,13 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findIntentPda } from "../pdas";
-import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs";
+import { findIntentPda } from "../pdas/index.js";
+import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
   getAccountMetaFactory,
   type ResolvedAccount,
-} from "../shared";
+} from "../shared/index.js";
 
 export const CLOSE_INTENT_DISCRIMINATOR = new Uint8Array([
   112, 245, 154, 249, 57, 126, 54, 122,
@@ -54,6 +54,7 @@ export type CloseIntentInstruction<
   TProgram extends string = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
   TAccountActor extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
+  TAccountFundRequestMap extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -68,6 +69,9 @@ export type CloseIntentInstruction<
       TAccountIntent extends string
         ? WritableAccount<TAccountIntent>
         : TAccountIntent,
+      TAccountFundRequestMap extends string
+        ? ReadonlyAccount<TAccountFundRequestMap>
+        : TAccountFundRequestMap,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -112,6 +116,7 @@ export function getCloseIntentInstructionDataCodec(): FixedSizeCodec<
 export type CloseIntentAsyncInput<
   TAccountActor extends string = string,
   TAccountIntent extends string = string,
+  TAccountFundRequestMap extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   /**
@@ -119,8 +124,22 @@ export type CloseIntentAsyncInput<
    * Receives the reclaimed rent lamports.
    */
   actor: TransactionSigner<TAccountActor>;
-  /** The intent PDA to close. Must be unsigned and non-escrow (M-09). */
+  /** The intent PDA to close. Must be unsigned and non-escrow (F-35). */
   intent?: Address<TAccountIntent>;
+  /**
+   * F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.
+   * **Required** -- the constraint `!intent.is_escrow` above narrows this
+   * instruction to fund-request intents, all of which are created in
+   * `post_set_budget` alongside an entry in this map. The handler checks
+   * that the intent being closed is NOT the one currently referenced by
+   * the map -- closing the active intent would break the subsequent `fund`
+   * call by leaving a dangling pointer. PDA seeds are bound to
+   * `intent.job_id` so the caller cannot substitute a different job's
+   * map to bypass the guard. Making this Required (not Optional) closes
+   * the bypass where a malicious provider could simply omit the account
+   * to skip the check.
+   */
+  fundRequestMap: Address<TAccountFundRequestMap>;
   systemProgram?: Address<TAccountSystemProgram>;
   intentId: CloseIntentInstructionDataArgs["intentId"];
 };
@@ -128,12 +147,14 @@ export type CloseIntentAsyncInput<
 export async function getCloseIntentInstructionAsync<
   TAccountActor extends string,
   TAccountIntent extends string,
+  TAccountFundRequestMap extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
   input: CloseIntentAsyncInput<
     TAccountActor,
     TAccountIntent,
+    TAccountFundRequestMap,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -142,6 +163,7 @@ export async function getCloseIntentInstructionAsync<
     TProgramAddress,
     TAccountActor,
     TAccountIntent,
+    TAccountFundRequestMap,
     TAccountSystemProgram
   >
 > {
@@ -153,6 +175,7 @@ export async function getCloseIntentInstructionAsync<
   const originalAccounts = {
     actor: { value: input.actor ?? null, isWritable: true },
     intent: { value: input.intent ?? null, isWritable: true },
+    fundRequestMap: { value: input.fundRequestMap ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -179,6 +202,7 @@ export async function getCloseIntentInstructionAsync<
     accounts: [
       getAccountMeta(accounts.actor),
       getAccountMeta(accounts.intent),
+      getAccountMeta(accounts.fundRequestMap),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getCloseIntentInstructionDataEncoder().encode(
@@ -189,6 +213,7 @@ export async function getCloseIntentInstructionAsync<
     TProgramAddress,
     TAccountActor,
     TAccountIntent,
+    TAccountFundRequestMap,
     TAccountSystemProgram
   >);
 }
@@ -196,6 +221,7 @@ export async function getCloseIntentInstructionAsync<
 export type CloseIntentInput<
   TAccountActor extends string = string,
   TAccountIntent extends string = string,
+  TAccountFundRequestMap extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   /**
@@ -203,8 +229,22 @@ export type CloseIntentInput<
    * Receives the reclaimed rent lamports.
    */
   actor: TransactionSigner<TAccountActor>;
-  /** The intent PDA to close. Must be unsigned and non-escrow (M-09). */
+  /** The intent PDA to close. Must be unsigned and non-escrow (F-35). */
   intent: Address<TAccountIntent>;
+  /**
+   * F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.
+   * **Required** -- the constraint `!intent.is_escrow` above narrows this
+   * instruction to fund-request intents, all of which are created in
+   * `post_set_budget` alongside an entry in this map. The handler checks
+   * that the intent being closed is NOT the one currently referenced by
+   * the map -- closing the active intent would break the subsequent `fund`
+   * call by leaving a dangling pointer. PDA seeds are bound to
+   * `intent.job_id` so the caller cannot substitute a different job's
+   * map to bypass the guard. Making this Required (not Optional) closes
+   * the bypass where a malicious provider could simply omit the account
+   * to skip the check.
+   */
+  fundRequestMap: Address<TAccountFundRequestMap>;
   systemProgram?: Address<TAccountSystemProgram>;
   intentId: CloseIntentInstructionDataArgs["intentId"];
 };
@@ -212,15 +252,22 @@ export type CloseIntentInput<
 export function getCloseIntentInstruction<
   TAccountActor extends string,
   TAccountIntent extends string,
+  TAccountFundRequestMap extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
-  input: CloseIntentInput<TAccountActor, TAccountIntent, TAccountSystemProgram>,
+  input: CloseIntentInput<
+    TAccountActor,
+    TAccountIntent,
+    TAccountFundRequestMap,
+    TAccountSystemProgram
+  >,
   config?: { programAddress?: TProgramAddress },
 ): CloseIntentInstruction<
   TProgramAddress,
   TAccountActor,
   TAccountIntent,
+  TAccountFundRequestMap,
   TAccountSystemProgram
 > {
   // Program address.
@@ -231,6 +278,7 @@ export function getCloseIntentInstruction<
   const originalAccounts = {
     actor: { value: input.actor ?? null, isWritable: true },
     intent: { value: input.intent ?? null, isWritable: true },
+    fundRequestMap: { value: input.fundRequestMap ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -252,6 +300,7 @@ export function getCloseIntentInstruction<
     accounts: [
       getAccountMeta(accounts.actor),
       getAccountMeta(accounts.intent),
+      getAccountMeta(accounts.fundRequestMap),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getCloseIntentInstructionDataEncoder().encode(
@@ -262,6 +311,7 @@ export function getCloseIntentInstruction<
     TProgramAddress,
     TAccountActor,
     TAccountIntent,
+    TAccountFundRequestMap,
     TAccountSystemProgram
   >);
 }
@@ -277,9 +327,23 @@ export type ParsedCloseIntentInstruction<
      * Receives the reclaimed rent lamports.
      */
     actor: TAccountMetas[0];
-    /** The intent PDA to close. Must be unsigned and non-escrow (M-09). */
+    /** The intent PDA to close. Must be unsigned and non-escrow (F-35). */
     intent: TAccountMetas[1];
-    systemProgram: TAccountMetas[2];
+    /**
+     * F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.
+     * **Required** -- the constraint `!intent.is_escrow` above narrows this
+     * instruction to fund-request intents, all of which are created in
+     * `post_set_budget` alongside an entry in this map. The handler checks
+     * that the intent being closed is NOT the one currently referenced by
+     * the map -- closing the active intent would break the subsequent `fund`
+     * call by leaving a dangling pointer. PDA seeds are bound to
+     * `intent.job_id` so the caller cannot substitute a different job's
+     * map to bypass the guard. Making this Required (not Optional) closes
+     * the bypass where a malicious provider could simply omit the account
+     * to skip the check.
+     */
+    fundRequestMap: TAccountMetas[2];
+    systemProgram: TAccountMetas[3];
   };
   data: CloseIntentInstructionData;
 };
@@ -292,7 +356,7 @@ export function parseCloseIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCloseIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 4) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -307,6 +371,7 @@ export function parseCloseIntentInstruction<
     accounts: {
       actor: getNextAccount(),
       intent: getNextAccount(),
+      fundRequestMap: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getCloseIntentInstructionDataDecoder().decode(instruction.data),

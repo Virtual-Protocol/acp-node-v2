@@ -32,13 +32,13 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda, findHookWhitelistPda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
+import { findAcpStatePda, findHookWhitelistPda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
   getAccountMetaFactory,
   type ResolvedAccount,
-} from "../shared";
+} from "../shared/index.js";
 
 export const REMOVE_HOOK_WHITELIST_DISCRIMINATOR = new Uint8Array([
   110, 220, 154, 1, 141, 191, 150, 74,

@@ -44,9 +44,9 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const CREATE_JOB_DISCRIMINATOR = new Uint8Array([
   178, 130, 217, 110, 100, 27, 82, 119,
@@ -62,7 +62,6 @@ export type CreateJobInstruction<
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
-  TAccountHookProgram extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -81,9 +80,6 @@ export type CreateJobInstruction<
       TAccountHookWhitelist extends string
         ? ReadonlyAccount<TAccountHookWhitelist>
         : TAccountHookWhitelist,
-      TAccountHookProgram extends string
-        ? ReadonlyAccount<TAccountHookProgram>
-        : TAccountHookProgram,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -148,7 +144,6 @@ export type CreateJobAsyncInput<
   TAccountAcpState extends string = string,
   TAccountJob extends string = string,
   TAccountHookWhitelist extends string = string,
-  TAccountHookProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   client: TransactionSigner<TAccountClient>;
@@ -156,7 +151,6 @@ export type CreateJobAsyncInput<
   job: Address<TAccountJob>;
   /** Optional: must be provided if hook_address is Some */
   hookWhitelist?: Address<TAccountHookWhitelist>;
-  hookProgram?: Address<TAccountHookProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   provider: CreateJobInstructionDataArgs["provider"];
   evaluator: CreateJobInstructionDataArgs["evaluator"];
@@ -170,7 +164,6 @@ export async function getCreateJobInstructionAsync<
   TAccountAcpState extends string,
   TAccountJob extends string,
   TAccountHookWhitelist extends string,
-  TAccountHookProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -179,7 +172,6 @@ export async function getCreateJobInstructionAsync<
     TAccountAcpState,
     TAccountJob,
     TAccountHookWhitelist,
-    TAccountHookProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -190,7 +182,6 @@ export async function getCreateJobInstructionAsync<
     TAccountAcpState,
     TAccountJob,
     TAccountHookWhitelist,
-    TAccountHookProgram,
     TAccountSystemProgram
   >
 > {
@@ -204,7 +195,6 @@ export async function getCreateJobInstructionAsync<
     acpState: { value: input.acpState ?? null, isWritable: true },
     job: { value: input.job ?? null, isWritable: true },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
-    hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -231,7 +221,6 @@ export async function getCreateJobInstructionAsync<
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.job),
       getAccountMeta(accounts.hookWhitelist),
-      getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getCreateJobInstructionDataEncoder().encode(
@@ -244,7 +233,6 @@ export async function getCreateJobInstructionAsync<
     TAccountAcpState,
     TAccountJob,
     TAccountHookWhitelist,
-    TAccountHookProgram,
     TAccountSystemProgram
   >);
 }
@@ -254,7 +242,6 @@ export type CreateJobInput<
   TAccountAcpState extends string = string,
   TAccountJob extends string = string,
   TAccountHookWhitelist extends string = string,
-  TAccountHookProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   client: TransactionSigner<TAccountClient>;
@@ -262,7 +249,6 @@ export type CreateJobInput<
   job: Address<TAccountJob>;
   /** Optional: must be provided if hook_address is Some */
   hookWhitelist?: Address<TAccountHookWhitelist>;
-  hookProgram?: Address<TAccountHookProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   provider: CreateJobInstructionDataArgs["provider"];
   evaluator: CreateJobInstructionDataArgs["evaluator"];
@@ -276,7 +262,6 @@ export function getCreateJobInstruction<
   TAccountAcpState extends string,
   TAccountJob extends string,
   TAccountHookWhitelist extends string,
-  TAccountHookProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -285,7 +270,6 @@ export function getCreateJobInstruction<
     TAccountAcpState,
     TAccountJob,
     TAccountHookWhitelist,
-    TAccountHookProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -295,7 +279,6 @@ export function getCreateJobInstruction<
   TAccountAcpState,
   TAccountJob,
   TAccountHookWhitelist,
-  TAccountHookProgram,
   TAccountSystemProgram
 > {
   // Program address.
@@ -308,7 +291,6 @@ export function getCreateJobInstruction<
     acpState: { value: input.acpState ?? null, isWritable: true },
     job: { value: input.job ?? null, isWritable: true },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
-    hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -332,7 +314,6 @@ export function getCreateJobInstruction<
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.job),
       getAccountMeta(accounts.hookWhitelist),
-      getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getCreateJobInstructionDataEncoder().encode(
@@ -345,7 +326,6 @@ export function getCreateJobInstruction<
     TAccountAcpState,
     TAccountJob,
     TAccountHookWhitelist,
-    TAccountHookProgram,
     TAccountSystemProgram
   >);
 }
@@ -361,8 +341,7 @@ export type ParsedCreateJobInstruction<
     job: TAccountMetas[2];
     /** Optional: must be provided if hook_address is Some */
     hookWhitelist?: TAccountMetas[3] | undefined;
-    hookProgram?: TAccountMetas[4] | undefined;
-    systemProgram: TAccountMetas[5];
+    systemProgram: TAccountMetas[4];
   };
   data: CreateJobInstructionData;
 };
@@ -375,7 +354,7 @@ export function parseCreateJobInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateJobInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 5) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -398,7 +377,6 @@ export function parseCreateJobInstruction<
       acpState: getNextAccount(),
       job: getNextAccount(),
       hookWhitelist: getNextOptionalAccount(),
-      hookProgram: getNextOptionalAccount(),
       systemProgram: getNextAccount(),
     },
     data: getCreateJobInstructionDataDecoder().decode(instruction.data),

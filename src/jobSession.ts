@@ -15,7 +15,7 @@ import {
   MULTI_HOOK_ROUTER_ADDRESSES,
   SUBSCRIPTION_HOOK_ADDRESSES,
 } from "./core/constants.js";
-import { Address, type Hex } from "viem";
+import { type Hex } from "viem";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -408,7 +408,7 @@ export class JobSession {
   async setBudgetWithFundRequest(
     amount: AssetToken,
     transferAmount: AssetToken,
-    destination: Address
+    destination: string
   ): Promise<void> {
     const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
@@ -471,7 +471,7 @@ export class JobSession {
     duration: bigint,
     packageId: bigint,
     transferAmount: AssetToken,
-    destination: Address
+    destination: string
   ): Promise<void> {
     const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
@@ -527,7 +527,7 @@ export class JobSession {
         | { duration: bigint; packageId: bigint }
         | undefined;
       let transferAmount: AssetToken | undefined;
-      let destination: Address | undefined;
+      let destination: string | undefined;
 
       if (hasSub) {
         subscriptionTerms = await this.agent.getProposedSubscriptionTerms(
@@ -549,7 +549,7 @@ export class JobSession {
         );
         if (!resolved) throw new Error("Could not resolve intent amount");
         transferAmount = resolved;
-        destination = intent.recipientAddress as Address;
+        destination = intent.recipientAddress;
       }
 
       await this.agent.internalFundViaRouter(this.chainId, {
@@ -590,7 +590,7 @@ export class JobSession {
         jobId,
         amount: effectiveAmount,
         transferAmount,
-        destination: intent.recipientAddress as Address,
+        destination: intent.recipientAddress,
         clientAddress: this._job.clientAddress,
       });
       return;

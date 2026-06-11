@@ -47,10 +47,10 @@ import {
   type ParsedSetPlatformFeeInstruction,
   type ParsedSetProviderInstruction,
   type ParsedSubmitInstruction,
-} from "../instructions";
+} from "../instructions/index.js";
 
 export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS =
-  "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi" as Address<"CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi">;
+  "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp" as Address<"EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp">;
 
 export enum AgenticCommerceV3Account {
   AcpState,
@@ -293,7 +293,7 @@ export function identifyAgenticCommerceV3Instruction(
 }
 
 export type ParsedAgenticCommerceV3Instruction<
-  TProgram extends string = "CBcKZ1iHGaPti2RZ1jfVn1YrYtATueGtHtgRJeTFCshi",
+  TProgram extends string = "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
 > =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;

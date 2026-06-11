@@ -35,9 +35,9 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const INITIALIZE_DISCRIMINATOR = new Uint8Array([
   175, 175, 109, 31, 13, 152, 155, 237,
@@ -203,9 +203,9 @@ export async function getInitializeInstructionAsync<
       seeds: [
         getBytesEncoder().encode(
           new Uint8Array([
-            166, 40, 76, 242, 119, 58, 225, 177, 173, 61, 24, 149, 243, 103, 21,
-            247, 31, 173, 73, 25, 126, 236, 194, 144, 189, 19, 229, 243, 158,
-            126, 198, 217,
+            204, 63, 149, 163, 99, 219, 73, 112, 44, 106, 231, 109, 58, 223, 98,
+            48, 178, 233, 196, 241, 209, 188, 37, 87, 215, 207, 72, 225, 103,
+            220, 13, 155,
           ]),
         ),
       ],

@@ -36,13 +36,13 @@ import {
   findEscrowAuthorityPda,
   findHookStatePda,
   findProviderEscrowIntentIdPda,
-} from "../pdas";
-import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs";
+} from "../pdas/index.js";
+import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
   getAccountMetaFactory,
   type ResolvedAccount,
-} from "../shared";
+} from "../shared/index.js";
 
 export const CLAIM_ESCROW_REFUND_DISCRIMINATOR = new Uint8Array([
   180, 244, 255, 206, 147, 149, 56, 223,

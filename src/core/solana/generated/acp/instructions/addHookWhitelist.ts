@@ -14,6 +14,7 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   transformEncoder,
@@ -32,13 +33,13 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda, findHookWhitelistPda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
+import { findAcpStatePda, findHookWhitelistPda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
   getAccountMetaFactory,
   type ResolvedAccount,
-} from "../shared";
+} from "../shared/index.js";
 
 export const ADD_HOOK_WHITELIST_DISCRIMINATOR = new Uint8Array([
   155, 81, 232, 227, 41, 160, 231, 189,
@@ -55,6 +56,7 @@ export type AddHookWhitelistInstruction<
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
+  TAccountHookProgramData extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -72,6 +74,9 @@ export type AddHookWhitelistInstruction<
       TAccountHookWhitelist extends string
         ? WritableAccount<TAccountHookWhitelist>
         : TAccountHookWhitelist,
+      TAccountHookProgramData extends string
+        ? ReadonlyAccount<TAccountHookProgramData>
+        : TAccountHookProgramData,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -117,11 +122,13 @@ export type AddHookWhitelistAsyncInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
   TAccountHookWhitelist extends string = string,
+  TAccountHookProgramData extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   acpState?: Address<TAccountAcpState>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
+  hookProgramData?: Address<TAccountHookProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   hook: AddHookWhitelistInstructionDataArgs["hook"];
 };
@@ -130,6 +137,7 @@ export async function getAddHookWhitelistInstructionAsync<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountHookWhitelist extends string,
+  TAccountHookProgramData extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -137,6 +145,7 @@ export async function getAddHookWhitelistInstructionAsync<
     TAccountAuthority,
     TAccountAcpState,
     TAccountHookWhitelist,
+    TAccountHookProgramData,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -146,6 +155,7 @@ export async function getAddHookWhitelistInstructionAsync<
     TAccountAuthority,
     TAccountAcpState,
     TAccountHookWhitelist,
+    TAccountHookProgramData,
     TAccountSystemProgram
   >
 > {
@@ -158,6 +168,10 @@ export async function getAddHookWhitelistInstructionAsync<
     authority: { value: input.authority ?? null, isWritable: true },
     acpState: { value: input.acpState ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: true },
+    hookProgramData: {
+      value: input.hookProgramData ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -177,6 +191,13 @@ export async function getAddHookWhitelistInstructionAsync<
       hook: expectSome(args.hook),
     });
   }
+  if (!accounts.hookProgramData.value) {
+    accounts.hookProgramData.value = await getProgramDerivedAddress({
+      programAddress:
+        "BPFLoaderUpgradeab1e11111111111111111111111" as Address<"BPFLoaderUpgradeab1e11111111111111111111111">,
+      seeds: [getAddressEncoder().encode(expectSome(args.hook))],
+    });
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
@@ -188,6 +209,7 @@ export async function getAddHookWhitelistInstructionAsync<
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.hookWhitelist),
+      getAccountMeta(accounts.hookProgramData),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getAddHookWhitelistInstructionDataEncoder().encode(
@@ -199,6 +221,7 @@ export async function getAddHookWhitelistInstructionAsync<
     TAccountAuthority,
     TAccountAcpState,
     TAccountHookWhitelist,
+    TAccountHookProgramData,
     TAccountSystemProgram
   >);
 }
@@ -207,11 +230,13 @@ export type AddHookWhitelistInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
   TAccountHookWhitelist extends string = string,
+  TAccountHookProgramData extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   acpState: Address<TAccountAcpState>;
   hookWhitelist: Address<TAccountHookWhitelist>;
+  hookProgramData: Address<TAccountHookProgramData>;
   systemProgram?: Address<TAccountSystemProgram>;
   hook: AddHookWhitelistInstructionDataArgs["hook"];
 };
@@ -220,6 +245,7 @@ export function getAddHookWhitelistInstruction<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountHookWhitelist extends string,
+  TAccountHookProgramData extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -227,6 +253,7 @@ export function getAddHookWhitelistInstruction<
     TAccountAuthority,
     TAccountAcpState,
     TAccountHookWhitelist,
+    TAccountHookProgramData,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -235,6 +262,7 @@ export function getAddHookWhitelistInstruction<
   TAccountAuthority,
   TAccountAcpState,
   TAccountHookWhitelist,
+  TAccountHookProgramData,
   TAccountSystemProgram
 > {
   // Program address.
@@ -246,6 +274,10 @@ export function getAddHookWhitelistInstruction<
     authority: { value: input.authority ?? null, isWritable: true },
     acpState: { value: input.acpState ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: true },
+    hookProgramData: {
+      value: input.hookProgramData ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -268,6 +300,7 @@ export function getAddHookWhitelistInstruction<
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.hookWhitelist),
+      getAccountMeta(accounts.hookProgramData),
       getAccountMeta(accounts.systemProgram),
     ],
     data: getAddHookWhitelistInstructionDataEncoder().encode(
@@ -279,6 +312,7 @@ export function getAddHookWhitelistInstruction<
     TAccountAuthority,
     TAccountAcpState,
     TAccountHookWhitelist,
+    TAccountHookProgramData,
     TAccountSystemProgram
   >);
 }
@@ -292,7 +326,8 @@ export type ParsedAddHookWhitelistInstruction<
     authority: TAccountMetas[0];
     acpState: TAccountMetas[1];
     hookWhitelist: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
+    hookProgramData: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
   data: AddHookWhitelistInstructionData;
 };
@@ -305,7 +340,7 @@ export function parseAddHookWhitelistInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAddHookWhitelistInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+  if (instruction.accounts.length < 5) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -321,6 +356,7 @@ export function parseAddHookWhitelistInstruction<
       authority: getNextAccount(),
       acpState: getNextAccount(),
       hookWhitelist: getNextAccount(),
+      hookProgramData: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getAddHookWhitelistInstructionDataDecoder().decode(instruction.data),

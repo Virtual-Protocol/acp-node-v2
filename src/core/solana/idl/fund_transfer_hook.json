@@ -1,5 +1,5 @@
 {
-  "address": "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
+  "address": "7JEpSaXyxztc9n3ZxyqB58wm8Ar4q2ULxXQZup2uZ4D7",
   "metadata": {
     "name": "fund_transfer_hook",
     "version": "0.1.0",
@@ -354,7 +354,7 @@
         {
           "name": "intent",
           "docs": [
-            "The intent PDA to close. Must be unsigned and non-escrow (M-09)."
+            "The intent PDA to close. Must be unsigned and non-escrow (F-35)."
           ],
           "writable": true,
           "pda": {
@@ -373,6 +373,58 @@
               {
                 "kind": "arg",
                 "path": "intent_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fund_request_map",
+          "docs": [
+            "F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.",
+            "**Required** -- the constraint `!intent.is_escrow` above narrows this",
+            "instruction to fund-request intents, all of which are created in",
+            "`post_set_budget` alongside an entry in this map. The handler checks",
+            "that the intent being closed is NOT the one currently referenced by",
+            "the map -- closing the active intent would break the subsequent `fund`",
+            "call by leaving a dangling pointer. PDA seeds are bound to",
+            "`intent.job_id` so the caller cannot substitute a different job's",
+            "map to bypass the guard. Making this Required (not Optional) closes",
+            "the bypass where a malicious provider could simply omit the account",
+            "to skip the check."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  95,
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116,
+                  95,
+                  105,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent.job_id",
+                "account": "Intent"
               }
             ]
           }
@@ -434,44 +486,73 @@
           }
         },
         {
+          "name": "hook_metadata",
+          "docs": [
+            "Self-declared metadata read by multi-hook-router for completeness checks."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "program_data",
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  141,
-                  8,
-                  214,
-                  209,
-                  146,
-                  66,
-                  237,
-                  8,
-                  171,
-                  148,
-                  162,
-                  152,
-                  142,
-                  167,
-                  192,
-                  178,
-                  76,
-                  159,
-                  165,
-                  201,
-                  28,
-                  97,
-                  7,
-                  39,
-                  156,
-                  243,
-                  168,
+                  93,
+                  144,
+                  158,
+                  139,
+                  132,
+                  150,
+                  174,
+                  88,
+                  0,
+                  246,
+                  229,
+                  102,
                   47,
-                  21,
-                  82,
-                  39,
-                  16
+                  253,
+                  176,
+                  138,
+                  100,
+                  251,
+                  8,
+                  215,
+                  89,
+                  98,
+                  14,
+                  105,
+                  223,
+                  127,
+                  162,
+                  247,
+                  57,
+                  124,
+                  169,
+                  202
                 ]
               }
             ],
@@ -580,6 +661,32 @@
   ],
   "accounts": [
     {
+      "name": "FundRequestIntentId",
+      "discriminator": [
+        115,
+        10,
+        133,
+        59,
+        77,
+        84,
+        106,
+        104
+      ]
+    },
+    {
+      "name": "HookMetadata",
+      "discriminator": [
+        119,
+        227,
+        48,
+        236,
+        101,
+        194,
+        218,
+        85
+      ]
+    },
+    {
       "name": "HookState",
       "discriminator": [
         10,
@@ -619,7 +726,134 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "IntentClosed",
+      "discriminator": [
+        127,
+        229,
+        67,
+        202,
+        91,
+        56,
+        164,
+        0
+      ]
+    },
+    {
+      "name": "IntentSigned",
+      "discriminator": [
+        162,
+        221,
+        142,
+        204,
+        198,
+        234,
+        97,
+        188
+      ]
+    },
+    {
+      "name": "NewIntent",
+      "discriminator": [
+        101,
+        118,
+        73,
+        187,
+        15,
+        74,
+        57,
+        97
+      ]
+    },
+    {
+      "name": "PayableFundsEscrowed",
+      "discriminator": [
+        71,
+        24,
+        78,
+        26,
+        156,
+        102,
+        16,
+        91
+      ]
+    },
+    {
+      "name": "PayableFundsRefunded",
+      "discriminator": [
+        128,
+        69,
+        197,
+        251,
+        154,
+        144,
+        198,
+        57
+      ]
+    },
+    {
+      "name": "PayableTransferExecuted",
+      "discriminator": [
+        164,
+        216,
+        121,
+        127,
+        187,
+        55,
+        131,
+        55
+      ]
+    }
+  ],
   "types": [
+    {
+      "name": "FundRequestIntentId",
+      "docs": [
+        "Maps a job to a fund request intent ID.",
+        "Seeds: [\"fund_request_intent_id\", job_id]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HookMetadata",
+      "docs": [
+        "Hook self-declaration of which selectors this hook implements. Read by",
+        "multi-hook-router's `_validate_selector_completeness` (mirrors EVM",
+        "`IACPHookMetadata.requiredSelectors()`). PDA seeded by `[b\"hook_metadata\"]`.",
+        "",
+        "Bitmask layout: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "required_selectors",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "HookState",
       "docs": [
@@ -709,6 +943,150 @@
               "in auto_sign_escrow on every completion/rejection."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentSigned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_approved",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NewIntent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PayableFundsEscrowed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PayableFundsRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "sender",
+            "type": "pubkey"
+          },
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PayableTransferExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "intent_id",
+            "type": "u64"
+          },
+          {
+            "name": "from",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           }
         ]
       }

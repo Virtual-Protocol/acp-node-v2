@@ -36,8 +36,8 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const FUND_DISCRIMINATOR = new Uint8Array([
   218, 188, 111, 221, 152, 113, 174, 7,
@@ -62,6 +62,7 @@ export type FundInstruction<
   TAccountHookProgram extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
   TAccountHookDelegate extends string | AccountMeta<string> = string,
+  TAccountDelegateWhitelist extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -99,6 +100,9 @@ export type FundInstruction<
       TAccountHookDelegate extends string
         ? ReadonlyAccount<TAccountHookDelegate>
         : TAccountHookDelegate,
+      TAccountDelegateWhitelist extends string
+        ? ReadonlyAccount<TAccountDelegateWhitelist>
+        : TAccountDelegateWhitelist,
       ...TRemainingAccounts,
     ]
   >;
@@ -155,6 +159,7 @@ export type FundInput<
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
   TAccountHookDelegate extends string = string,
+  TAccountDelegateWhitelist extends string = string,
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
@@ -169,10 +174,16 @@ export type FundInput<
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
   /**
-   * Required when hook is present and budget > 0. The ACP program approves this
-   * PDA as delegate on client_token_account for budget_amount (F-25 fix).
+   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
+   * present and budget > 0. The ACP program approves this PDA as delegate on
+   * client_token_account for budget_amount (F-25 fix).
    */
   hookDelegate?: Address<TAccountHookDelegate>;
+  /**
+   * using MultiHookRouter -- the delegate is owned by a sub-hook, not the router.
+   * Validated as ["hook_whitelist", delegate_owner] inside approve_hook_delegate.
+   */
+  delegateWhitelist?: Address<TAccountDelegateWhitelist>;
   expectedBudget: FundInstructionDataArgs["expectedBudget"];
   optParams: FundInstructionDataArgs["optParams"];
 };
@@ -189,6 +200,7 @@ export function getFundInstruction<
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
   TAccountHookDelegate extends string,
+  TAccountDelegateWhitelist extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: FundInput<
@@ -202,7 +214,8 @@ export function getFundInstruction<
     TAccountSystemProgram,
     TAccountHookProgram,
     TAccountHookWhitelist,
-    TAccountHookDelegate
+    TAccountHookDelegate,
+    TAccountDelegateWhitelist
   >,
   config?: { programAddress?: TProgramAddress },
 ): FundInstruction<
@@ -217,7 +230,8 @@ export function getFundInstruction<
   TAccountSystemProgram,
   TAccountHookProgram,
   TAccountHookWhitelist,
-  TAccountHookDelegate
+  TAccountHookDelegate,
+  TAccountDelegateWhitelist
 > {
   // Program address.
   const programAddress =
@@ -239,6 +253,10 @@ export function getFundInstruction<
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
     hookDelegate: { value: input.hookDelegate ?? null, isWritable: false },
+    delegateWhitelist: {
+      value: input.delegateWhitelist ?? null,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -272,6 +290,7 @@ export function getFundInstruction<
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
       getAccountMeta(accounts.hookDelegate),
+      getAccountMeta(accounts.delegateWhitelist),
     ],
     data: getFundInstructionDataEncoder().encode(
       args as FundInstructionDataArgs,
@@ -289,7 +308,8 @@ export function getFundInstruction<
     TAccountSystemProgram,
     TAccountHookProgram,
     TAccountHookWhitelist,
-    TAccountHookDelegate
+    TAccountHookDelegate,
+    TAccountDelegateWhitelist
   >);
 }
 
@@ -312,10 +332,16 @@ export type ParsedFundInstruction<
     hookProgram?: TAccountMetas[8] | undefined;
     hookWhitelist?: TAccountMetas[9] | undefined;
     /**
-     * Required when hook is present and budget > 0. The ACP program approves this
-     * PDA as delegate on client_token_account for budget_amount (F-25 fix).
+     * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
+     * present and budget > 0. The ACP program approves this PDA as delegate on
+     * client_token_account for budget_amount (F-25 fix).
      */
     hookDelegate?: TAccountMetas[10] | undefined;
+    /**
+     * using MultiHookRouter -- the delegate is owned by a sub-hook, not the router.
+     * Validated as ["hook_whitelist", delegate_owner] inside approve_hook_delegate.
+     */
+    delegateWhitelist?: TAccountMetas[11] | undefined;
   };
   data: FundInstructionData;
 };
@@ -328,7 +354,7 @@ export function parseFundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -358,6 +384,7 @@ export function parseFundInstruction<
       hookProgram: getNextOptionalAccount(),
       hookWhitelist: getNextOptionalAccount(),
       hookDelegate: getNextOptionalAccount(),
+      delegateWhitelist: getNextOptionalAccount(),
     },
     data: getFundInstructionDataDecoder().decode(instruction.data),
   };

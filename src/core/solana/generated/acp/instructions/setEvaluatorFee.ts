@@ -31,9 +31,9 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const SET_EVALUATOR_FEE_DISCRIMINATOR = new Uint8Array([
   81, 212, 20, 60, 184, 238, 205, 132,

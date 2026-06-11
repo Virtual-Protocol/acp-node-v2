@@ -30,9 +30,9 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const CLAIM_REFUND_DISCRIMINATOR = new Uint8Array([
   15, 16, 30, 161, 255, 228, 97, 60,

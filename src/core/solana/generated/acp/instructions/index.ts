@@ -6,18 +6,18 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./acceptAuthority";
-export * from "./addHookWhitelist";
-export * from "./claimRefund";
-export * from "./complete";
-export * from "./createJob";
-export * from "./fund";
-export * from "./initialize";
-export * from "./nominateAuthority";
-export * from "./reject";
-export * from "./removeHookWhitelist";
-export * from "./setBudget";
-export * from "./setEvaluatorFee";
-export * from "./setPlatformFee";
-export * from "./setProvider";
-export * from "./submit";
+export * from "./acceptAuthority.js";
+export * from "./addHookWhitelist.js";
+export * from "./claimRefund.js";
+export * from "./complete.js";
+export * from "./createJob.js";
+export * from "./fund.js";
+export * from "./initialize.js";
+export * from "./nominateAuthority.js";
+export * from "./reject.js";
+export * from "./removeHookWhitelist.js";
+export * from "./setBudget.js";
+export * from "./setEvaluatorFee.js";
+export * from "./setPlatformFee.js";
+export * from "./setProvider.js";
+export * from "./submit.js";

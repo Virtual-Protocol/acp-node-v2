@@ -12,7 +12,7 @@ import {
   type SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM,
   type SolanaError,
 } from "@solana/kit";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 
 /** Unauthorized: Unauthorized */
 export const AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED = 0x1770; // 6000
@@ -82,6 +82,12 @@ export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x178f; // 
 export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x1790; // 6032
 /** ArithmeticOverflow: Arithmetic overflow */
 export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1791; // 6033
+/** HookProgramIsUpgradeable: Hook program must be immutable (upgrade authority must be None) */
+export const AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE = 0x1792; // 6034
+/** MissingHookProgram: Missing hook program account: job declares a hook but hook_program was not supplied */
+export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1793; // 6035
+/** InvalidAutoCompleteParams: Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len() */
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1794; // 6036
 
 export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__AMOUNT_MUST_BE_GREATER_THAN_ZERO
@@ -96,7 +102,9 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT
   | typeof AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH
   | typeof AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED
+  | typeof AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE
   | typeof AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE
+  | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_HOOK_PROGRAM
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB
@@ -105,6 +113,7 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_OWNER
+  | typeof AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM
   | typeof AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT
   | typeof AGENTIC_COMMERCE_V3_ERROR__ONLY_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__ONLY_CLIENT_OR_PROVIDER
@@ -136,7 +145,9 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT]: `Expiry too short`,
     [AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH]: `Combined fees too high`,
     [AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED]: `Hook not whitelisted`,
+    [AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE]: `Hook program must be immutable (upgrade authority must be None)`,
     [AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE]: `Insufficient vault balance`,
+    [AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS]: `Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len()`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION]: `Invalid destination account`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_HOOK_PROGRAM]: `Invalid hook program`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB]: `Invalid job`,
@@ -145,6 +156,7 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY]: `Invalid vault authority`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT]: `Invalid vault mint`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_OWNER]: `Invalid vault owner`,
+    [AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM]: `Missing hook program account: job declares a hook but hook_program was not supplied`,
     [AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT]: `Missing required account for funded job`,
     [AGENTIC_COMMERCE_V3_ERROR__ONLY_CLIENT]: `Only client`,
     [AGENTIC_COMMERCE_V3_ERROR__ONLY_CLIENT_OR_PROVIDER]: `Only client or provider`,

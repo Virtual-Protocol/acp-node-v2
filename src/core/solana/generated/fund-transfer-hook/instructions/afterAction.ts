@@ -34,9 +34,9 @@ import {
   type ReadonlyUint8Array,
   type WritableAccount,
 } from "@solana/kit";
-import { findHookStatePda } from "../pdas";
-import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findHookStatePda } from "../pdas/index.js";
+import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const AFTER_ACTION_DISCRIMINATOR = new Uint8Array([
   100, 247, 61, 195, 161, 140, 250, 73,

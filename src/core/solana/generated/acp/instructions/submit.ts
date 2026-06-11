@@ -34,9 +34,9 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const SUBMIT_DISCRIMINATOR = new Uint8Array([
   88, 166, 102, 181, 162, 127, 170, 48,
@@ -63,6 +63,7 @@ export type SubmitInstruction<
   TAccountHookDelegate extends string | AccountMeta<string> = string,
   TAccountProviderHookTokenAccount extends string | AccountMeta<string> =
     string,
+  TAccountDelegateWhitelist extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -106,6 +107,9 @@ export type SubmitInstruction<
       TAccountProviderHookTokenAccount extends string
         ? WritableAccount<TAccountProviderHookTokenAccount>
         : TAccountProviderHookTokenAccount,
+      TAccountDelegateWhitelist extends string
+        ? ReadonlyAccount<TAccountDelegateWhitelist>
+        : TAccountDelegateWhitelist,
       ...TRemainingAccounts,
     ]
   >;
@@ -114,11 +118,13 @@ export type SubmitInstructionData = {
   discriminator: ReadonlyUint8Array;
   deliverable: ReadonlyUint8Array;
   optParams: ReadonlyUint8Array;
+  completeOptParams: ReadonlyUint8Array;
 };
 
 export type SubmitInstructionDataArgs = {
   deliverable: ReadonlyUint8Array;
   optParams: ReadonlyUint8Array;
+  completeOptParams: ReadonlyUint8Array;
 };
 
 export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionDataArgs> {
@@ -127,6 +133,10 @@ export function getSubmitInstructionDataEncoder(): Encoder<SubmitInstructionData
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["deliverable", fixEncoderSize(getBytesEncoder(), 32)],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
+      [
+        "completeOptParams",
+        addEncoderSizePrefix(getBytesEncoder(), getU32Encoder()),
+      ],
     ]),
     (value) => ({ ...value, discriminator: SUBMIT_DISCRIMINATOR }),
   );
@@ -137,6 +147,10 @@ export function getSubmitInstructionDataDecoder(): Decoder<SubmitInstructionData
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["deliverable", fixDecoderSize(getBytesDecoder(), 32)],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
+    [
+      "completeOptParams",
+      addDecoderSizePrefix(getBytesDecoder(), getU32Decoder()),
+    ],
   ]);
 }
 
@@ -164,6 +178,7 @@ export type SubmitAsyncInput<
   TAccountHookWhitelist extends string = string,
   TAccountHookDelegate extends string = string,
   TAccountProviderHookTokenAccount extends string = string,
+  TAccountDelegateWhitelist extends string = string,
 > = {
   provider: TransactionSigner<TAccountProvider>;
   acpState?: Address<TAccountAcpState>;
@@ -180,8 +195,9 @@ export type SubmitAsyncInput<
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
   /**
-   * Required when hook is present and budget > 0. The ACP program approves this
-   * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
+   * present and budget > 0. The ACP program approves this PDA as delegate on
+   * provider_hook_token_account for budget_amount (F-25 fix).
    */
   hookDelegate?: Address<TAccountHookDelegate>;
   /**
@@ -190,8 +206,11 @@ export type SubmitAsyncInput<
    * The ACP approves hook_delegate on this account for budget_amount.
    */
   providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
+  /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */
+  delegateWhitelist?: Address<TAccountDelegateWhitelist>;
   deliverable: SubmitInstructionDataArgs["deliverable"];
   optParams: SubmitInstructionDataArgs["optParams"];
+  completeOptParams: SubmitInstructionDataArgs["completeOptParams"];
 };
 
 export async function getSubmitInstructionAsync<
@@ -208,6 +227,7 @@ export async function getSubmitInstructionAsync<
   TAccountHookWhitelist extends string,
   TAccountHookDelegate extends string,
   TAccountProviderHookTokenAccount extends string,
+  TAccountDelegateWhitelist extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: SubmitAsyncInput<
@@ -223,7 +243,8 @@ export async function getSubmitInstructionAsync<
     TAccountHookProgram,
     TAccountHookWhitelist,
     TAccountHookDelegate,
-    TAccountProviderHookTokenAccount
+    TAccountProviderHookTokenAccount,
+    TAccountDelegateWhitelist
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -241,7 +262,8 @@ export async function getSubmitInstructionAsync<
     TAccountHookProgram,
     TAccountHookWhitelist,
     TAccountHookDelegate,
-    TAccountProviderHookTokenAccount
+    TAccountProviderHookTokenAccount,
+    TAccountDelegateWhitelist
   >
 > {
   // Program address.
@@ -274,6 +296,10 @@ export async function getSubmitInstructionAsync<
     providerHookTokenAccount: {
       value: input.providerHookTokenAccount ?? null,
       isWritable: true,
+    },
+    delegateWhitelist: {
+      value: input.delegateWhitelist ?? null,
+      isWritable: false,
     },
   };
   const accounts = originalAccounts as Record<
@@ -309,6 +335,7 @@ export async function getSubmitInstructionAsync<
       getAccountMeta(accounts.hookWhitelist),
       getAccountMeta(accounts.hookDelegate),
       getAccountMeta(accounts.providerHookTokenAccount),
+      getAccountMeta(accounts.delegateWhitelist),
     ],
     data: getSubmitInstructionDataEncoder().encode(
       args as SubmitInstructionDataArgs,
@@ -328,7 +355,8 @@ export async function getSubmitInstructionAsync<
     TAccountHookProgram,
     TAccountHookWhitelist,
     TAccountHookDelegate,
-    TAccountProviderHookTokenAccount
+    TAccountProviderHookTokenAccount,
+    TAccountDelegateWhitelist
   >);
 }
 
@@ -346,6 +374,7 @@ export type SubmitInput<
   TAccountHookWhitelist extends string = string,
   TAccountHookDelegate extends string = string,
   TAccountProviderHookTokenAccount extends string = string,
+  TAccountDelegateWhitelist extends string = string,
 > = {
   provider: TransactionSigner<TAccountProvider>;
   acpState: Address<TAccountAcpState>;
@@ -362,8 +391,9 @@ export type SubmitInput<
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
   /**
-   * Required when hook is present and budget > 0. The ACP program approves this
-   * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
+   * present and budget > 0. The ACP program approves this PDA as delegate on
+   * provider_hook_token_account for budget_amount (F-25 fix).
    */
   hookDelegate?: Address<TAccountHookDelegate>;
   /**
@@ -372,8 +402,11 @@ export type SubmitInput<
    * The ACP approves hook_delegate on this account for budget_amount.
    */
   providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
+  /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */
+  delegateWhitelist?: Address<TAccountDelegateWhitelist>;
   deliverable: SubmitInstructionDataArgs["deliverable"];
   optParams: SubmitInstructionDataArgs["optParams"];
+  completeOptParams: SubmitInstructionDataArgs["completeOptParams"];
 };
 
 export function getSubmitInstruction<
@@ -390,6 +423,7 @@ export function getSubmitInstruction<
   TAccountHookWhitelist extends string,
   TAccountHookDelegate extends string,
   TAccountProviderHookTokenAccount extends string,
+  TAccountDelegateWhitelist extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
   input: SubmitInput<
@@ -405,7 +439,8 @@ export function getSubmitInstruction<
     TAccountHookProgram,
     TAccountHookWhitelist,
     TAccountHookDelegate,
-    TAccountProviderHookTokenAccount
+    TAccountProviderHookTokenAccount,
+    TAccountDelegateWhitelist
   >,
   config?: { programAddress?: TProgramAddress },
 ): SubmitInstruction<
@@ -422,7 +457,8 @@ export function getSubmitInstruction<
   TAccountHookProgram,
   TAccountHookWhitelist,
   TAccountHookDelegate,
-  TAccountProviderHookTokenAccount
+  TAccountProviderHookTokenAccount,
+  TAccountDelegateWhitelist
 > {
   // Program address.
   const programAddress =
@@ -455,6 +491,10 @@ export function getSubmitInstruction<
       value: input.providerHookTokenAccount ?? null,
       isWritable: true,
     },
+    delegateWhitelist: {
+      value: input.delegateWhitelist ?? null,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -486,6 +526,7 @@ export function getSubmitInstruction<
       getAccountMeta(accounts.hookWhitelist),
       getAccountMeta(accounts.hookDelegate),
       getAccountMeta(accounts.providerHookTokenAccount),
+      getAccountMeta(accounts.delegateWhitelist),
     ],
     data: getSubmitInstructionDataEncoder().encode(
       args as SubmitInstructionDataArgs,
@@ -505,7 +546,8 @@ export function getSubmitInstruction<
     TAccountHookProgram,
     TAccountHookWhitelist,
     TAccountHookDelegate,
-    TAccountProviderHookTokenAccount
+    TAccountProviderHookTokenAccount,
+    TAccountDelegateWhitelist
   >);
 }
 
@@ -530,8 +572,9 @@ export type ParsedSubmitInstruction<
     hookProgram?: TAccountMetas[9] | undefined;
     hookWhitelist?: TAccountMetas[10] | undefined;
     /**
-     * Required when hook is present and budget > 0. The ACP program approves this
-     * PDA as delegate on provider_hook_token_account for budget_amount (F-25 fix).
+     * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
+     * present and budget > 0. The ACP program approves this PDA as delegate on
+     * provider_hook_token_account for budget_amount (F-25 fix).
      */
     hookDelegate?: TAccountMetas[11] | undefined;
     /**
@@ -540,6 +583,8 @@ export type ParsedSubmitInstruction<
      * The ACP approves hook_delegate on this account for budget_amount.
      */
     providerHookTokenAccount?: TAccountMetas[12] | undefined;
+    /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */
+    delegateWhitelist?: TAccountMetas[13] | undefined;
   };
   data: SubmitInstructionData;
 };
@@ -552,7 +597,7 @@ export function parseSubmitInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSubmitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 13) {
+  if (instruction.accounts.length < 14) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -584,6 +629,7 @@ export function parseSubmitInstruction<
       hookWhitelist: getNextOptionalAccount(),
       hookDelegate: getNextOptionalAccount(),
       providerHookTokenAccount: getNextOptionalAccount(),
+      delegateWhitelist: getNextOptionalAccount(),
     },
     data: getSubmitInstructionDataDecoder().decode(instruction.data),
   };

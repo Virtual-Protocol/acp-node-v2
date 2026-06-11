@@ -33,6 +33,9 @@ import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi.js";
 import {
   buildSubscriptionWithFundsHookConfig,
   encodeFundTransferOptParams,
+  encodeFundTransferSetBudgetOptParams,
+  encodeFundTransferFundOptParams,
+  encodeFundTransferSubmitOptParams,
   encodeRouterOptParams,
   encodeSubscriptionOptParams,
   type MultiHookConfig,
@@ -85,7 +88,7 @@ export type SetBudgetWithFundRequestParams = {
   jobId: bigint;
   amount: AssetToken;
   transferAmount: AssetToken;
-  destination: Address;
+  destination: string;
   clientAddress?: string;
 };
 
@@ -93,7 +96,7 @@ export type FundWithTransferParams = {
   jobId: bigint;
   amount: AssetToken;
   transferAmount: AssetToken;
-  destination: Address;
+  destination: string;
   clientAddress?: string;
   hookAddress?: string;
 };
@@ -126,7 +129,7 @@ export type SetBudgetWithSubscriptionAndFundRequestParams = {
   duration: bigint;
   packageId: bigint;
   transferAmount: AssetToken;
-  destination: Address;
+  destination: string;
 };
 
 export type FundViaRouterParams = {
@@ -135,7 +138,7 @@ export type FundViaRouterParams = {
   hookConfigs: string[];
   subscriptionTerms?: { duration: bigint; packageId: bigint };
   transferAmount?: AssetToken;
-  destination?: Address;
+  destination?: string;
   fundHookAddress?: string;
 };
 
@@ -1002,17 +1005,11 @@ export class AcpAgent {
     chainId: number,
     params: SetBudgetWithFundRequestParams
   ): Promise<string | string[]> {
-    const optParams = encodeAbiParameters(
-      [
-        { type: "address", name: "token" },
-        { type: "uint256", name: "amount" },
-        { type: "address", name: "destination" },
-      ],
-      [
-        params.transferAmount.address as Address,
-        params.transferAmount.rawAmount,
-        params.destination as Address,
-      ]
+    const optParams = encodeFundTransferSetBudgetOptParams(
+      chainId,
+      params.transferAmount.address,
+      params.transferAmount.rawAmount,
+      params.destination
     );
 
     return this.internalSetBudget(chainId, {
@@ -1056,17 +1053,11 @@ export class AcpAgent {
       );
     }
 
-    const optParams: Hex = encodeAbiParameters(
-      [
-        { type: "address", name: "expectedToken" },
-        { type: "uint256", name: "expectedAmount" },
-        { type: "address", name: "expectedRecipient" },
-      ],
-      [
-        params.transferAmount.address,
-        params.transferAmount.rawAmount,
-        params.destination,
-      ]
+    const optParams: Hex = encodeFundTransferFundOptParams(
+      chainId,
+      params.transferAmount.address,
+      params.transferAmount.rawAmount,
+      params.destination
     );
 
     prepared.push(
@@ -1144,7 +1135,7 @@ export class AcpAgent {
     const fundSlice = encodeFundTransferOptParams(
       params.transferAmount.address as Address,
       params.transferAmount.rawAmount,
-      params.destination
+      params.destination as Address
     );
     const optParams = encodeRouterOptParams([subSlice, fundSlice]);
 
@@ -1236,7 +1227,7 @@ export class AcpAgent {
           encodeFundTransferOptParams(
             params.transferAmount.address as Address,
             params.transferAmount.rawAmount,
-            params.destination
+            params.destination as Address
           )
         );
       } else {
@@ -1290,15 +1281,10 @@ export class AcpAgent {
       );
     }
 
-    const optParams: Hex = encodeAbiParameters(
-      [
-        { type: "address", name: "token" },
-        { type: "uint256", name: "amount" },
-      ],
-      [
-        params.transferAmount.address as Address,
-        params.transferAmount.rawAmount,
-      ]
+    const optParams: Hex = encodeFundTransferSubmitOptParams(
+      chainId,
+      params.transferAmount.address,
+      params.transferAmount.rawAmount
     );
 
     prepared.push(

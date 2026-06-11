@@ -36,8 +36,8 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
+import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
 export const SET_BUDGET_DISCRIMINATOR = new Uint8Array([
   148, 121, 226, 12, 183, 120, 26, 227,

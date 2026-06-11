@@ -6,6 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./acpState";
-export * from "./hookWhitelist";
-export * from "./job";
+export * from "./acpState.js";
+export * from "./hookWhitelist.js";
+export * from "./job.js";

@@ -31,12 +31,14 @@ import {
   type ParsedCloseIntentInstruction,
   type ParsedInitializeInstruction,
   type ParsedNominateAuthorityInstruction,
-} from "../instructions";
+} from "../instructions/index.js";
 
 export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
-  "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP" as Address<"AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP">;
+  "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr" as Address<"9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr">;
 
 export enum FundTransferHookAccount {
+  FundRequestIntentId,
+  HookMetadata,
   HookState,
   Intent,
   ProviderEscrowIntentId,
@@ -46,6 +48,28 @@ export function identifyFundTransferHookAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): FundTransferHookAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([115, 10, 133, 59, 77, 84, 106, 104]),
+      ),
+      0,
+    )
+  ) {
+    return FundTransferHookAccount.FundRequestIntentId;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([119, 227, 48, 236, 101, 194, 218, 85]),
+      ),
+      0,
+    )
+  ) {
+    return FundTransferHookAccount.HookMetadata;
+  }
   if (
     containsBytes(
       data,
@@ -181,7 +205,7 @@ export function identifyFundTransferHookInstruction(
 }
 
 export type ParsedFundTransferHookInstruction<
-  TProgram extends string = "AVYJZVBxBrWHSni8zuqXLvhAJk5npbUDUpWkUcCSdvQP",
+  TProgram extends string = "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
 > =
   | ({
       instructionType: FundTransferHookInstruction.AcceptAuthority;

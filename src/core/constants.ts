@@ -1,5 +1,18 @@
 import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
+import type { SolanaCluster } from "./chains.js";
+
+// ---------------------------------------------------------------------------
+// Solana chain ids / clusters
+// ---------------------------------------------------------------------------
+
+export const SOLANA_DEVNET_CHAIN_ID = 500;
+export const SOLANA_MAINNET_CHAIN_ID = 501;
+
+export const SOLANA_CHAIN_ID_CLUSTERS: Record<number, SolanaCluster> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "devnet",
+  [SOLANA_MAINNET_CHAIN_ID]: "mainnet-beta",
+};
 
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
@@ -9,6 +22,8 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [bscTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  [SOLANA_DEVNET_CHAIN_ID]: "EUYp7jidumYn6m7APhGYpVR7P6eqBS81Y4u1d99SNo8s",
+  [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
@@ -50,6 +65,8 @@ export const USDC_DECIMALS: Record<number, number> = {
   [baseSepolia.id]: 6,
   [base.id]: 6,
   [bscTestnet.id]: 18,
+  [SOLANA_DEVNET_CHAIN_ID]: 6,
+  [SOLANA_MAINNET_CHAIN_ID]: 6,
 };
 
 // ---------------------------------------------------------------------------

@@ -534,7 +534,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     const authClient = new ProviderAuthClient({
       serverUrl,
       walletAddress: params.walletAddress,
-      signTypedData: (typedData) => signer.signTypedData(typedData as any),
+      signMessage: (message) => signer.signMessage({ message }),
       chainId: chains[0]!.id,
     });
 

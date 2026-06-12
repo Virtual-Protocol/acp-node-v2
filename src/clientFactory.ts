@@ -1,5 +1,4 @@
 import { EvmAcpClient } from "./clients/evmAcpClient.js";
-import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
 import { ACP_CONTRACT_ADDRESSES } from "./core/constants.js";
 import type {
   IEvmProviderAdapter,
@@ -7,7 +6,7 @@ import type {
   ISolanaProviderAdapter,
 } from "./providers/types.js";
 
-export type AcpClient = EvmAcpClient | SolanaAcpClient;
+export type AcpClient = EvmAcpClient;
 
 export type CreateAcpClientInput = {
   contractAddresses?: Record<number, string>;
@@ -25,10 +24,9 @@ export async function createAcpClient(
   }
 
   if (isSolanaProvider(input.provider)) {
-    return SolanaAcpClient.create({
-      contractAddresses: input.contractAddresses ?? ACP_CONTRACT_ADDRESSES,
-      provider: input.provider,
-    });
+    throw new Error(
+      "Solana ACP client is not available in this build. Use the Solana provider adapter directly for wallet operations (balances, transfers)."
+    );
   }
 
   throw new Error(

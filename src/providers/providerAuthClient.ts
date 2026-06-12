@@ -1,26 +1,30 @@
-import type { Address } from "viem";
 import { ACP_SERVER_URL } from "../core/constants.js";
-import { buildAgentAuthTypedData } from "../core/agentAuth.js";
 
+/**
+ * Auth client for the ACP server's `/auth/agent` endpoint. Both EVM and Solana
+ * authenticate by signing the plain `acp-auth:<timestamp>` challenge message;
+ * the server picks the verification primitive by chain (ECDSA/EIP-7702 for EVM,
+ * Ed25519 for Solana).
+ */
 export interface ProviderAuthClientOptions {
   serverUrl?: string;
   walletAddress: string;
-  signTypedData: (typedData: unknown) => Promise<string>;
   chainId: number;
+  signMessage: (message: string) => Promise<string>;
 }
 
 export class ProviderAuthClient {
   private token = "";
   private readonly serverUrl: string;
   private readonly walletAddress: string;
-  private readonly _signTypedData: (typedData: unknown) => Promise<string>;
   private readonly chainId: number;
+  private readonly _signMessage: (message: string) => Promise<string>;
 
   constructor(opts: ProviderAuthClientOptions) {
     this.serverUrl = (opts.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
     this.walletAddress = opts.walletAddress;
-    this._signTypedData = opts.signTypedData;
     this.chainId = opts.chainId;
+    this._signMessage = opts.signMessage;
   }
 
   async getAuthToken(): Promise<string> {
@@ -31,13 +35,8 @@ export class ProviderAuthClient {
   }
 
   private async authenticate(): Promise<string> {
-    const issuedAt = Date.now();
-    const typedData = buildAgentAuthTypedData({
-      wallet: this.walletAddress,
-      chainId: this.chainId,
-      issuedAt,
-    });
-    const signature = await this._signTypedData(typedData);
+    const message = `acp-auth:${Date.now()}`;
+    const signature = await this._signMessage(message);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
@@ -45,7 +44,7 @@ export class ProviderAuthClient {
       body: JSON.stringify({
         walletAddress: this.walletAddress,
         signature,
-        issuedAt,
+        message,
         chainId: this.chainId,
       }),
     });
@@ -54,8 +53,8 @@ export class ProviderAuthClient {
       throw new Error(`Agent auth failed: ${res.status} ${res.statusText}`);
     }
 
-    const body = (await res.json()) as { data: { token: string } };
-    return body.data.token;
+    const parsed = (await res.json()) as { data: { token: string } };
+    return parsed.data.token;
   }
 
   private isTokenExpiring(): boolean {

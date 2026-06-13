@@ -455,7 +455,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const json = (await res.json()) as any;
     if (json.error) {
       throw new Error(
-        `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`
+        `alchemy_requestFeePayer failed: ${
+          json.error.message ?? JSON.stringify(json.error)
+        }`
       );
     }
     return json.result.serializedTransaction;
@@ -503,11 +505,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       .getLatestBlockhash()
       .send();
 
-    const useSponsorship = this._rpcProxyUrl && this._getAuthToken;
+    // const useSponsorship = this._rpcProxyUrl && this._getAuthToken;
 
-    if (useSponsorship) {
-      return this.sendSponsoredTransaction(instructions, latestBlockhash);
-    }
+    // if (useSponsorship) {
+    //   return this.sendSponsoredTransaction(instructions, latestBlockhash);
+    // }
     return this.sendSelfPayTransaction(instructions, latestBlockhash);
   }
 

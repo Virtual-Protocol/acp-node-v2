@@ -810,38 +810,37 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return status.receipts[0].transactionHash;
   }
 
-  async sendTransaction(chainId: number, call: Call): Promise<Address> {
-    const smartWalletClientErc20 = this.getErc20Client(chainId);
-
-    const prepared = await smartWalletClientErc20.prepareCalls({
-      calls: [this.toSponsoredCall(call)],
+  // Execute one or more calls as a single ERC20-sponsored userOp (the user pays
+  // gas in USDC). prepareCalls accepts an array, so this serves BOTH a non-batch
+  // send (one call) and an atomic EIP-5792 batch (many calls) through the same
+  // path. The gasless smart-wallet client's wallet_prepareCalls 400s on chains
+  // like Base mainnet, so we never use it; a chain without an ERC20-sponsored
+  // client throws (no silent gasless fallback).
+  private async submitSponsoredCalls(
+    chainId: number,
+    calls: Call[]
+  ): Promise<Address> {
+    const client = this.getErc20Client(chainId);
+    const prepared = await client.prepareCalls({
+      calls: calls.map((call) => this.toSponsoredCall(call)),
     });
-
     const signed = await this.signPreparedViaPrivy(chainId, prepared);
+    const { id } = await client.sendPreparedCalls(signed);
+    return this.waitForTransactionHash(client, id);
+  }
 
-    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
-
-    return this.waitForTransactionHash(smartWalletClientErc20, id);
+  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+    // Non-batch: a single ERC20-sponsored call.
+    return this.submitSponsoredCalls(chainId, [call]);
   }
 
   async sendCalls(
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    // Mirror sendTransaction exactly: execute the bundle through the
-    // ERC20-sponsored client (the gasless client's wallet_prepareCalls 400s on
-    // chains like Base mainnet). prepareCalls already accepts multiple calls, so
-    // the bundle stays one atomic userOp. We intentionally do NOT fall back to
-    // the gasless client — single sends are already ERC20-sponsored-only, and a
-    // batch must behave the same (user pays gas in USDC); a chain without an
-    // ERC20-sponsored client throws here, exactly as sendTransaction does.
-    const client = this.getErc20Client(chainId);
-    const prepared = await client.prepareCalls({
-      calls: _calls.map((call) => this.toSponsoredCall(call)),
-    });
-    const signed = await this.signPreparedViaPrivy(chainId, prepared);
-    const { id } = await client.sendPreparedCalls(signed);
-    return this.waitForTransactionHash(client, id);
+    // Batch: an atomic EIP-5792 bundle through the same ERC20-sponsored path a
+    // single send uses (prepareCalls accepts the array → one atomic userOp).
+    return this.submitSponsoredCalls(chainId, _calls);
   }
 
   async getTransactionReceipt(

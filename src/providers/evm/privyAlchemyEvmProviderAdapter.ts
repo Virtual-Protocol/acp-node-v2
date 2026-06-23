@@ -828,22 +828,33 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    // Execute the atomic bundle through the ERC20-sponsored client (the same
-    // prepareCalls + sendPreparedCalls path as sendTransaction), which already
-    // supports multiple calls in one userOp. The gasless smart-wallet client
-    // (getAcpClient) is not provisioned for these chains and rejects
-    // wallet_prepareCalls with a 400, so reuse the proven USDC-sponsored route.
-    const smartWalletClientErc20 = this.getErc20Client(chainId);
+    const calls = _calls.map((call) => this.toSponsoredCall(call));
 
-    const prepared = await smartWalletClientErc20.prepareCalls({
-      calls: _calls.map((call) => this.toSponsoredCall(call)),
+    // Prefer the ERC20-sponsored client where one exists: its prepareCalls +
+    // sendPreparedCalls path works on chains where the gasless smart-wallet
+    // client's wallet_prepareCalls returns 400 (e.g. Base mainnet). prepareCalls
+    // already accepts multiple calls, so the bundle stays one atomic userOp.
+    if (this.erc20Clients.has(chainId)) {
+      const client = this.getErc20Client(chainId);
+      const prepared = await client.prepareCalls({ calls });
+      const signed = await this.signPreparedViaPrivy(chainId, prepared);
+      const { id } = await client.sendPreparedCalls(signed);
+      return this.waitForTransactionHash(client, id);
+    }
+
+    // No ERC20-sponsored client for this chain (e.g. BSC testnet) — fall back to
+    // the gasless ACP client, which still serves those chain ids.
+    const smartWalletClient = this.getAcpClient(chainId);
+    const { id } = await smartWalletClient.sendCalls({
+      calls,
+      capabilities: {
+        nonceOverride: {
+          nonceKey: this.getRandomNonce(),
+        },
+      },
     });
 
-    const signed = await this.signPreparedViaPrivy(chainId, prepared);
-
-    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
-
-    return this.waitForTransactionHash(smartWalletClientErc20, id);
+    return this.waitForTransactionHash(smartWalletClient, id);
   }
 
   async getTransactionReceipt(

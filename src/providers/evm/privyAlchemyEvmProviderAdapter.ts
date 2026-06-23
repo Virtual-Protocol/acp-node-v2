@@ -273,7 +273,6 @@ function createRemoteSigner(params: {
     signTransaction: async (transaction) => {
       const raw = replaceBigInts(transaction, toHex) as Record<string, unknown>;
 
-      // Map viem tx fields to Privy's snake_case format
       const TX_TYPE_MAP: Record<string, number> = {
         legacy: 0,
         eip2930: 1,
@@ -480,11 +479,8 @@ function toPrivyUserOperation(u: PrivyUserOperation) {
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
-  // Gasless ACP client — driven by the per-instance `chains` config.
   private readonly acpClients: Map<number, SmartWalletClient>;
-  // ERC20-sponsored client — fixed supported set (ERC20_SPONSORED_CHAINS).
   private readonly erc20Clients: Map<number, SmartWalletClient>;
-  // Read/EOA client — built for every chain either smart client can touch.
   private readonly walletClients: Map<number, WalletClient>;
   private readonly signer: RemoteSigner;
   private readonly builderCodeSuffix: Hex | undefined;
@@ -559,7 +555,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         account: params.walletAddress,
       });
 
-    // Gasless ACP client — only the chains the caller configured.
     const acpClients = new Map<number, SmartWalletClient>();
     for (const chain of chains) {
       acpClients.set(
@@ -568,7 +563,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       );
     }
 
-    // ERC20-sponsored client — fixed supported set, independent of `chains`.
     const erc20Clients = new Map<number, SmartWalletClient>();
     for (const chain of ERC20_SPONSORED_CHAINS) {
       erc20Clients.set(
@@ -577,7 +571,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       );
     }
 
-    // Read/EOA client — every chain either smart client can operate on.
     const walletClients = new Map<number, WalletClient>();
     for (const chain of [...chains, ...ERC20_SPONSORED_CHAINS]) {
       if (walletClients.has(chain.id)) continue;
@@ -635,7 +628,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return this.getClientOrThrow(
       this.erc20Clients,
       chainId,
-      "ERC20-sponsored sendTransaction not supported"
+      "sendTransaction not supported"
     );
   }
 
@@ -652,7 +645,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   async getSupportedChainIds(): Promise<number[]> {
-    // ACP-supported chains (the gasless smartWalletClient set).
     return Array.from(this.acpClients.keys());
   }
 
@@ -671,10 +663,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return `0x${hex}`;
   }
 
-  // Sign a prepared (v0.7) userOp through the backend's Privy eth_signUserOperation.
-  // Privy decodes the userOp and enforces wallet policy here (vs personal_sign, which
-  // only signs an opaque hash). The authorization signature must be computed over the
-  // exact body the backend forwards to Privy, so the snake_case `user_operation` below
   private async signUserOperation(
     chainId: number,
     contract: Address,
@@ -732,10 +720,6 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return (sig.startsWith("0x") ? sig : `0x${sig}`) as Hex;
   }
 
-  // Handles both a single v070 userOp and the `array` result
-  // returned when the account still needs an EIP-7702 authorization (first tx of an
-  // undelegated account): the authorization is signed via Privy eth_sign7702Authorization,
-  // the userOp via eth_signUserOperation.
   private async signPreparedViaPrivy(
     chainId: number,
     prepared: any
@@ -787,74 +771,61 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     throw new Error(`Unexpected prepareCalls result type: ${prepared.type}`);
   }
 
-  // Map an ACP call to the smart-wallet call shape, applying the builder-code suffix.
-  private toSponsoredCall(call: Call) {
+  async sendTransaction(chainId: number, call: Call): Promise<Address> {
+    const smartWalletClientErc20 = this.getErc20Client(chainId);
     const value = call.value ?? 0n;
-    return {
-      to: call.to,
-      data: this.builderCodeSuffix
-        ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
-        : call.data ?? "0x",
-      ...(value !== 0n ? { value } : {}),
-    };
-  }
 
-  private async waitForTransactionHash(
-    client: SmartWalletClient,
-    id: Hex
-  ): Promise<Address> {
-    const status = await client.waitForCallsStatus({ id });
+    const prepared = await smartWalletClientErc20.prepareCalls({
+      calls: [
+        {
+          to: call.to,
+          data: this.builderCodeSuffix
+            ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
+            : call.data ?? "0x",
+          ...(value !== 0n ? { value } : {}),
+        },
+      ],
+    });
+
+    const signed = await this.signPreparedViaPrivy(chainId, prepared);
+
+    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+    const status = await smartWalletClientErc20.waitForCallsStatus({ id });
+
     if (!status.receipts?.[0]?.transactionHash) {
       throw new Error("Transaction failed");
     }
     return status.receipts[0].transactionHash;
   }
 
-  // Execute one or more calls as a single ERC20-sponsored userOp (the user pays
-  // gas in USDC). prepareCalls accepts an array, so this serves BOTH a non-batch
-  // send (one call) and an atomic EIP-5792 batch (many calls) through the same
-  // path. The gasless smart-wallet client's wallet_prepareCalls 400s on chains
-  // like Base mainnet, so we never use it; a chain without an ERC20-sponsored
-  // client throws (no silent gasless fallback).
-  private async submitSponsoredCalls(
-    chainId: number,
-    calls: Call[]
-  ): Promise<Address> {
-    const client = this.getErc20Client(chainId);
-    const prepared = await client.prepareCalls({
-      calls: calls.map((call) => this.toSponsoredCall(call)),
-    });
-    const signed = await this.signPreparedViaPrivy(chainId, prepared);
-    const { id } = await client.sendPreparedCalls(signed);
-    return this.waitForTransactionHash(client, id);
-  }
-
-  async sendTransaction(chainId: number, call: Call | Call[]): Promise<Address> {
-    // One on-chain transaction, ERC20-sponsored (user pays gas in USDC). Accepts
-    // a single call OR an array — an array becomes one atomic EIP-5792 bundle
-    // (prepareCalls handles both), so callers can batch through this method.
-    return this.submitSponsoredCalls(chainId, Array.isArray(call) ? call : [call]);
-  }
-
   async sendCalls(
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    // Gasless EIP-5792 bundle via the ACP smart-wallet client. Unchanged from the
-    // original — batched platform-fee trades go through the ERC20-sponsored
-    // sendTransaction instead (the gasless endpoint 400s on Base mainnet), but
-    // other callers (agent registration, ERC-8004, legacy bridge) still rely on
-    // this gasless path on their chains.
     const smartWalletClient = this.getAcpClient(chainId);
     const { id } = await smartWalletClient.sendCalls({
-      calls: _calls.map((call) => this.toSponsoredCall(call)),
+      calls: _calls.map((call) => {
+        const value = call.value ?? 0n;
+        return {
+          to: call.to,
+          data: this.builderCodeSuffix
+            ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
+            : call.data ?? "0x",
+          ...(value !== 0n ? { value } : {}),
+        };
+      }),
       capabilities: {
         nonceOverride: {
           nonceKey: this.getRandomNonce(),
         },
       },
     });
-    return this.waitForTransactionHash(smartWalletClient, id);
+    const status = await smartWalletClient.waitForCallsStatus({ id });
+
+    if (!status.receipts?.[0]?.transactionHash) {
+      throw new Error("Transaction failed");
+    }
+    return status.receipts[0].transactionHash;
   }
 
   async getTransactionReceipt(

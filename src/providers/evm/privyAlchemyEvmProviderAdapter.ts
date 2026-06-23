@@ -828,17 +828,22 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    const smartWalletClient = this.getAcpClient(chainId);
-    const { id } = await smartWalletClient.sendCalls({
+    // Execute the atomic bundle through the ERC20-sponsored client (the same
+    // prepareCalls + sendPreparedCalls path as sendTransaction), which already
+    // supports multiple calls in one userOp. The gasless smart-wallet client
+    // (getAcpClient) is not provisioned for these chains and rejects
+    // wallet_prepareCalls with a 400, so reuse the proven USDC-sponsored route.
+    const smartWalletClientErc20 = this.getErc20Client(chainId);
+
+    const prepared = await smartWalletClientErc20.prepareCalls({
       calls: _calls.map((call) => this.toSponsoredCall(call)),
-      capabilities: {
-        nonceOverride: {
-          nonceKey: this.getRandomNonce(),
-        },
-      },
     });
 
-    return this.waitForTransactionHash(smartWalletClient, id);
+    const signed = await this.signPreparedViaPrivy(chainId, prepared);
+
+    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+
+    return this.waitForTransactionHash(smartWalletClientErc20, id);
   }
 
   async getTransactionReceipt(

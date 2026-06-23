@@ -829,18 +829,32 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return this.waitForTransactionHash(client, id);
   }
 
-  async sendTransaction(chainId: number, call: Call): Promise<Address> {
-    // Non-batch: a single ERC20-sponsored call.
-    return this.submitSponsoredCalls(chainId, [call]);
+  async sendTransaction(chainId: number, call: Call | Call[]): Promise<Address> {
+    // One on-chain transaction, ERC20-sponsored (user pays gas in USDC). Accepts
+    // a single call OR an array — an array becomes one atomic EIP-5792 bundle
+    // (prepareCalls handles both), so callers can batch through this method.
+    return this.submitSponsoredCalls(chainId, Array.isArray(call) ? call : [call]);
   }
 
   async sendCalls(
     chainId: number,
     _calls: Call[]
   ): Promise<Address | Address[]> {
-    // Batch: an atomic EIP-5792 bundle through the same ERC20-sponsored path a
-    // single send uses (prepareCalls accepts the array → one atomic userOp).
-    return this.submitSponsoredCalls(chainId, _calls);
+    // Gasless EIP-5792 bundle via the ACP smart-wallet client. Unchanged from the
+    // original — batched platform-fee trades go through the ERC20-sponsored
+    // sendTransaction instead (the gasless endpoint 400s on Base mainnet), but
+    // other callers (agent registration, ERC-8004, legacy bridge) still rely on
+    // this gasless path on their chains.
+    const smartWalletClient = this.getAcpClient(chainId);
+    const { id } = await smartWalletClient.sendCalls({
+      calls: _calls.map((call) => this.toSponsoredCall(call)),
+      capabilities: {
+        nonceOverride: {
+          nonceKey: this.getRandomNonce(),
+        },
+      },
+    });
+    return this.waitForTransactionHash(smartWalletClient, id);
   }
 
   async getTransactionReceipt(

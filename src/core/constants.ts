@@ -23,7 +23,9 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [bscTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  [SOLANA_DEVNET_CHAIN_ID]: "EUYp7jidumYn6m7APhGYpVR7P6eqBS81Y4u1d99SNo8s",
+  // Devnet mock USDC — matches the ACP program's on-chain AcpState.paymentToken
+  // (verified). Supersedes EUYp… (which the deployed program does not escrow).
+  [SOLANA_DEVNET_CHAIN_ID]: "6f19R51nWkC9fXPK4xNodMuxsMeeyST5aqBU7t978cok",
   [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
@@ -39,21 +41,21 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
-  [SOLANA_DEVNET_CHAIN_ID]: "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
+  [SOLANA_DEVNET_CHAIN_ID]: "7BYmFM1J2xCKTAmKHoxFPgsZG63feKx3iBfbW9cVZSHg",
   [SOLANA_MAINNET_CHAIN_ID]: "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
 };
 
 export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
-  [SOLANA_DEVNET_CHAIN_ID]: "6Qmycqb8UEio4V6wCboi2xWHo4YoSb69s39HzkB9Fzwu",
+  [SOLANA_DEVNET_CHAIN_ID]: "GeMsBukRPHrfR6b8NwtjZQywJBhdUbXzHd2E1xq1j3Ug",
   [SOLANA_MAINNET_CHAIN_ID]: "6Qmycqb8UEio4V6wCboi2xWHo4YoSb69s39HzkB9Fzwu",
 };
 
 export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
-  [SOLANA_DEVNET_CHAIN_ID]: "FLhbbnw4NFvVtJHjK1CtxmnXUVbitMFc4FYN9fQTudm8",
+  [SOLANA_DEVNET_CHAIN_ID]: "267bew4oYUdWkQetBiALCMMTaVT9S5PFhqmragzUaZJD",
   [SOLANA_MAINNET_CHAIN_ID]: "FLhbbnw4NFvVtJHjK1CtxmnXUVbitMFc4FYN9fQTudm8",
 };
 

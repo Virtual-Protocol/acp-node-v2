@@ -1,0 +1,721 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        119,
+        227,
+        48,
+        236,
+        101,
+        194,
+        218,
+        85
+      ],
+      "name": "HookMetadata"
+    },
+    {
+      "discriminator": [
+        10,
+        13,
+        71,
+        116,
+        92,
+        105,
+        237,
+        231
+      ],
+      "name": "HookState"
+    }
+  ],
+  "address": "267bew4oYUdWkQetBiALCMMTaVT9S5PFhqmragzUaZJD",
+  "events": [
+    {
+      "discriminator": [
+        81,
+        50,
+        178,
+        8,
+        93,
+        221,
+        142,
+        71
+      ],
+      "name": "ProposedTermsCleanedUp"
+    },
+    {
+      "discriminator": [
+        66,
+        23,
+        25,
+        128,
+        66,
+        95,
+        220,
+        100
+      ],
+      "name": "SubscriptionActivated"
+    },
+    {
+      "discriminator": [
+        168,
+        155,
+        140,
+        139,
+        180,
+        239,
+        130,
+        153
+      ],
+      "name": "SubscriptionTermsProposed"
+    },
+    {
+      "discriminator": [
+        224,
+        53,
+        137,
+        103,
+        246,
+        117,
+        250,
+        1
+      ],
+      "name": "SubscriptionTermsSkipped"
+    }
+  ],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "new_authority",
+          "signer": true
+        },
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        107,
+        86,
+        198,
+        91,
+        33,
+        12,
+        107,
+        160
+      ],
+      "docs": [
+        "Accepts a pending authority nomination, completing ownership transfer."
+      ],
+      "name": "accept_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ],
+      "discriminator": [
+        100,
+        247,
+        61,
+        195,
+        161,
+        140,
+        250,
+        73
+      ],
+      "docs": [
+        "Post-action hook callback. Mirrors EVM `_postFund` (validate proposed terms),",
+        "`_postComplete` (activate subscription via CPI + cleanup), and `_postReject`",
+        "(cleanup proposed terms PDA)."
+      ],
+      "name": "after_action"
+    },
+    {
+      "accounts": [
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ],
+      "discriminator": [
+        5,
+        61,
+        71,
+        243,
+        197,
+        108,
+        160,
+        137
+      ],
+      "docs": [
+        "Pre-action hook callback. Mirrors EVM `_preSetBudget` for SetBudget action;",
+        "no-op for other actions."
+      ],
+      "name": "before_action"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Permissionless trigger. May be the provider, an evaluator, a keeper,",
+            "or any third party -- the only authorization is that the job has",
+            "expired. Signer requirement preserves \"the rent move comes from an",
+            "account that opted into paying the tx fee\" -- attackers cannot grief",
+            "by spamming cleanups against random jobs (no state mutation that",
+            "affects them)."
+          ],
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "(Expired) and identity (job_id) validated in handler."
+          ],
+          "name": "job_account"
+        },
+        {
+          "docs": [
+            "Manually closed (lamports out, data zeroed, ownership reassigned to",
+            "system program) -- not an `#[account(close = ...)]` because the",
+            "schema-validation provider check is needed first."
+          ],
+          "name": "proposed_terms",
+          "writable": true
+        },
+        {
+          "docs": [
+            "`ProposedTerms.provider` -- prevents a third-party caller from",
+            "redirecting the rent refund."
+          ],
+          "name": "provider",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        }
+      ],
+      "discriminator": [
+        188,
+        204,
+        138,
+        242,
+        152,
+        146,
+        239,
+        238
+      ],
+      "docs": [
+        "F-72: standalone cleanup of the `ProposedTerms` PDA for jobs that",
+        "expired without reaching `complete` or `reject`. Permissionless",
+        "caller; rent always refunds to the original provider (validated",
+        "against `ProposedTerms.provider`). Mirrors",
+        "`fund-transfer-hook::claim_escrow_refund` per the design doc's",
+        "expiry-cleanup pattern."
+      ],
+      "name": "cleanup_proposed_terms"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "docs": [
+            "Self-declared metadata read by multi-hook-router for completeness checks."
+          ],
+          "name": "hook_metadata",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "program_data",
+          "pda": {
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            },
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  16,
+                  43,
+                  12,
+                  255,
+                  55,
+                  218,
+                  168,
+                  93,
+                  225,
+                  213,
+                  23,
+                  121,
+                  9,
+                  193,
+                  81,
+                  110,
+                  136,
+                  235,
+                  45,
+                  222,
+                  183,
+                  207,
+                  172,
+                  22,
+                  171,
+                  172,
+                  141,
+                  234,
+                  236,
+                  75,
+                  208,
+                  30
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "acp_program",
+          "type": "pubkey"
+        },
+        {
+          "name": "subscription_state_program",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "docs": [
+        "Initializes the subscription-hook state. Caller must be the program's upgrade authority."
+      ],
+      "name": "initialize"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        148,
+        182,
+        144,
+        91,
+        186,
+        12,
+        118,
+        18
+      ],
+      "docs": [
+        "Nominates a new authority (first step of two-step transfer)."
+      ],
+      "name": "nominate_authority"
+    }
+  ],
+  "metadata": {
+    "description": "Subscription Hook - subscription management for ACP",
+    "name": "subscription_hook",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "docs": [
+        "Hook self-declaration of which selectors this hook implements. Read by",
+        "multi-hook-router's `_validate_selector_completeness` (mirrors EVM",
+        "`IACPHookMetadata.requiredSelectors()`). PDA seeded by `[b\"hook_metadata\"]`.",
+        "",
+        "Bitmask layout: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
+      ],
+      "name": "HookMetadata",
+      "type": {
+        "fields": [
+          {
+            "name": "required_selectors",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Global hook state — stores config for the subscription hook."
+      ],
+      "name": "HookState",
+      "type": {
+        "fields": [
+          {
+            "name": "acp_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "subscription_state_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "F-72: `ProposedTerms` PDA closed via the standalone `cleanup_proposed_terms`",
+        "instruction after the job expired without reaching `complete` or `reject`.",
+        "Provides indexers a single emission point to track the expiry-cleanup path",
+        "distinct from the normal complete/reject close."
+      ],
+      "name": "ProposedTermsCleanedUp",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports_refunded",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Subscription activated after `complete`. Mirrors EVM",
+        "`SubscriptionActivated`."
+      ],
+      "name": "SubscriptionActivated",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "package_id",
+            "type": "u64"
+          },
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "duration",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Provider proposed terms during `set_budget`. Mirrors EVM",
+        "`SubscriptionTermsProposed`."
+      ],
+      "name": "SubscriptionTermsProposed",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "package_id",
+            "type": "u64"
+          },
+          {
+            "name": "duration",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Provider tried to propose terms but client already has an active subscription",
+        "for this (provider, package_id). Mirrors EVM `SubscriptionTermsSkipped`."
+      ],
+      "name": "SubscriptionTermsSkipped",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "package_id",
+            "type": "u64"
+          },
+          {
+            "name": "current_expiry",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ]
+}

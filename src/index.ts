@@ -26,6 +26,7 @@ export * from "./providers/solana/privySolanaProviderAdapter.js";
 
 // Solana constants
 export * from "./core/solana/constants.js";
+export * from "./core/solana/wallet.js";
 
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient.js";

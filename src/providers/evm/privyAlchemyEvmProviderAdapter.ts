@@ -871,4 +871,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     });
   }
 
+  async signTypedData(_chainId: number, typedData: unknown): Promise<string> {
+    return this.signer.signTypedData(typedData as TypedDataDefinition);
+  }
+
 }

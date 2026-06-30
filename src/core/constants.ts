@@ -23,7 +23,7 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [bscTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  [SOLANA_DEVNET_CHAIN_ID]: "EUYp7jidumYn6m7APhGYpVR7P6eqBS81Y4u1d99SNo8s",
+  [SOLANA_DEVNET_CHAIN_ID]: "6f19R51nWkC9fXPK4xNodMuxsMeeyST5aqBU7t978cok",
   [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
@@ -87,7 +87,7 @@ export const USDC_DECIMALS: Record<number, number> = {
 export function getAddressForChain(
   registry: Record<number, string>,
   chainId: number,
-  label: string
+  label: string,
 ): Address {
   const addr = registry[chainId];
   if (!addr)

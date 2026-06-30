@@ -206,7 +206,7 @@ export type SupportedStreams = "chat" | "wallet";
 export interface AcpChatTransport {
   connect(
     onConnected?: () => void,
-    streams?: SupportedStreams[]
+    streams?: SupportedStreams[],
   ): Promise<void>;
   disconnect(): Promise<void>;
 
@@ -216,14 +216,14 @@ export interface AcpChatTransport {
     jobId: string,
     content: string,
     contentType?: string,
-    packageId?: number
+    packageId?: number,
   ): void;
   postMessage(
     chainId: number,
     jobId: string,
     content: string,
     contentType?: string,
-    packageId?: number
+    packageId?: number,
   ): Promise<void>;
   getHistory(chainId: number, jobId: string): Promise<JobRoomEntry[]>;
 }
@@ -243,15 +243,15 @@ export interface AcpJobApi {
   postDeliverable(
     chainId: number,
     jobId: string,
-    deliverable: string
+    deliverable: string,
   ): Promise<void>;
   browseAgents(
     keyword: string,
     chainIds: number[],
-    params?: BrowseAgentParams
+    params?: BrowseAgentParams,
   ): Promise<Array<AcpAgentDetail>>;
   getAgentByWalletAddress(
-    walletAddress: string
+    walletAddress: string,
   ): Promise<AcpAgentDetail | null>;
 }
 
@@ -295,7 +295,7 @@ export interface AcpAgentDetail {
   description: string;
   imageUrl: string;
   walletAddress: string;
-  solWalletAddress: string | null;
+  solWalletAddress: string;
   role: string;
   cluster: string | null;
   tag: string | null;

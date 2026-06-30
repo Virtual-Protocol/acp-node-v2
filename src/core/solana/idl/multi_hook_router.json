@@ -1,0 +1,1599 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        119,
+        227,
+        48,
+        236,
+        101,
+        194,
+        218,
+        85
+      ],
+      "name": "HookMetadata"
+    },
+    {
+      "discriminator": [
+        184,
+        143,
+        187,
+        182,
+        118,
+        184,
+        3,
+        236
+      ],
+      "name": "HookRouter"
+    },
+    {
+      "discriminator": [
+        141,
+        157,
+        194,
+        155,
+        75,
+        208,
+        200,
+        27
+      ],
+      "name": "RouterState"
+    }
+  ],
+  "address": "GeMsBukRPHrfR6b8NwtjZQywJBhdUbXzHd2E1xq1j3Ug",
+  "errors": [
+    {
+      "code": 6000,
+      "msg": "Only the ACP contract can call this",
+      "name": "OnlyACPContract"
+    },
+    {
+      "code": 6001,
+      "msg": "Only the job client can configure hooks",
+      "name": "OnlyJobClient"
+    },
+    {
+      "code": 6002,
+      "msg": "Hooks are locked after job leaves Open status",
+      "name": "HooksLocked"
+    },
+    {
+      "code": 6003,
+      "msg": "Too many hooks for this job",
+      "name": "TooManyHooks"
+    },
+    {
+      "code": 6004,
+      "msg": "Hook does not implement the expected interface",
+      "name": "InvalidHook"
+    },
+    {
+      "code": 6005,
+      "msg": "Duplicate hook in list",
+      "name": "DuplicateHook"
+    },
+    {
+      "code": 6006,
+      "msg": "Hook not found in current list",
+      "name": "HookNotFound"
+    },
+    {
+      "code": 6007,
+      "msg": "Zero address not allowed",
+      "name": "ZeroAddress"
+    },
+    {
+      "code": 6008,
+      "msg": "Provided array is empty",
+      "name": "EmptyArray"
+    },
+    {
+      "code": 6009,
+      "msg": "Reorder array does not match current hook set",
+      "name": "HookSetMismatch"
+    },
+    {
+      "code": 6010,
+      "msg": "Sub-hook is not whitelisted on the ACP core",
+      "name": "SubHookNotWhitelisted"
+    },
+    {
+      "code": 6011,
+      "msg": "Invalid job account",
+      "name": "InvalidJob"
+    },
+    {
+      "code": 6012,
+      "msg": "Hook count in opt_params does not match router config",
+      "name": "HookCountMismatch"
+    },
+    {
+      "code": 6013,
+      "msg": "opt_params too short to parse header",
+      "name": "OptParamsTooShort"
+    },
+    {
+      "code": 6014,
+      "msg": "Wrong hook program in remaining accounts",
+      "name": "WrongHookProgram"
+    },
+    {
+      "code": 6015,
+      "msg": "Account count exceeds remaining accounts",
+      "name": "AccountSliceOutOfBounds"
+    },
+    {
+      "code": 6016,
+      "msg": "Unauthorized caller",
+      "name": "UnauthorizedCaller"
+    },
+    {
+      "code": 6017,
+      "msg": "Max hooks per job must be >= 1",
+      "name": "InvalidMaxHooks"
+    },
+    {
+      "code": 6018,
+      "msg": "Action is not a hookable selector (only SetBudget, Fund, Submit, Complete, Reject)",
+      "name": "InvalidSelector"
+    },
+    {
+      "code": 6019,
+      "msg": "Sub-hook is missing from a selector list it requires",
+      "name": "HookMissingRequiredSelector"
+    },
+    {
+      "code": 6020,
+      "msg": "Sub-hook does not declare HookMetadata PDA",
+      "name": "InvalidHookMetadata"
+    },
+    {
+      "code": 6021,
+      "msg": "Invalid opt_params mode byte: must be 0x00 (Broadcast) or 0x01 (PerHook)",
+      "name": "InvalidOptParamsMode"
+    },
+    {
+      "code": 6022,
+      "msg": "Hook program account is not executable",
+      "name": "HookNotExecutable"
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        83,
+        253,
+        94,
+        222,
+        179,
+        41,
+        95,
+        127
+      ],
+      "name": "AuthorityNominated"
+    },
+    {
+      "discriminator": [
+        245,
+        109,
+        179,
+        54,
+        135,
+        92,
+        22,
+        64
+      ],
+      "name": "AuthorityTransferred"
+    },
+    {
+      "discriminator": [
+        107,
+        213,
+        140,
+        132,
+        185,
+        14,
+        143,
+        172
+      ],
+      "name": "DewhitelistedHookSkipped"
+    },
+    {
+      "discriminator": [
+        144,
+        225,
+        235,
+        30,
+        112,
+        225,
+        97,
+        215
+      ],
+      "name": "HookAdded"
+    },
+    {
+      "discriminator": [
+        81,
+        39,
+        213,
+        15,
+        171,
+        37,
+        28,
+        78
+      ],
+      "name": "HookRemoved"
+    },
+    {
+      "discriminator": [
+        142,
+        144,
+        70,
+        85,
+        7,
+        178,
+        81,
+        215
+      ],
+      "name": "HooksConfigured"
+    },
+    {
+      "discriminator": [
+        194,
+        8,
+        11,
+        39,
+        28,
+        196,
+        51,
+        161
+      ],
+      "name": "HooksReordered"
+    },
+    {
+      "discriminator": [
+        55,
+        55,
+        208,
+        10,
+        60,
+        174,
+        186,
+        173
+      ],
+      "name": "MaxHooksPerJobUpdated"
+    }
+  ],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "new_authority",
+          "signer": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        107,
+        86,
+        198,
+        91,
+        33,
+        12,
+        107,
+        160
+      ],
+      "docs": [
+        "Accept the pending authority nomination, completing the two-step transfer."
+      ],
+      "name": "accept_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "hook_whitelist"
+        },
+        {
+          "name": "hook_metadata"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "hook",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        112,
+        125,
+        164,
+        213,
+        241,
+        243,
+        17,
+        98
+      ],
+      "docs": [
+        "Append a hook to the end of one selector's list."
+      ],
+      "name": "add_hook"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "See comment on BeforeAction.hook_router."
+          ],
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "Sysvar1nstructions1111111111111111111111111",
+          "name": "instructions_sysvar"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ],
+      "discriminator": [
+        100,
+        247,
+        61,
+        195,
+        161,
+        140,
+        250,
+        73
+      ],
+      "docs": [
+        "Hook callback: routes to the per-selector list for `action` and fans",
+        "out `after_action` to each sub-hook in order. Called by ACP core via CPI."
+      ],
+      "name": "after_action"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "set_budget",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "fund",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "submit",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "complete",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "reject",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ],
+      "discriminator": [
+        152,
+        156,
+        231,
+        0,
+        247,
+        197,
+        31,
+        156
+      ],
+      "docs": [
+        "Atomically replace ALL 5 per-selector hook lists for a job. Mirrors",
+        "EVM `MultiHookRouter.batchConfigureHooks`."
+      ],
+      "name": "batch_configure_hooks"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Manually validated. Jobs created with the router as their hook before",
+            "any `configure_hooks` call don't have a HookRouter PDA yet — handler",
+            "detects this via `data_is_empty()` and returns early."
+          ],
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "Sysvar1nstructions1111111111111111111111111",
+          "name": "instructions_sysvar"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        }
+      ],
+      "discriminator": [
+        5,
+        61,
+        71,
+        243,
+        197,
+        108,
+        160,
+        137
+      ],
+      "docs": [
+        "Hook callback: routes to the per-selector list for `action` and fans",
+        "out `before_action` to each sub-hook in order. Called by ACP core via CPI."
+      ],
+      "name": "before_action"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "hooks",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ],
+      "discriminator": [
+        171,
+        90,
+        59,
+        227,
+        56,
+        135,
+        114,
+        228
+      ],
+      "docs": [
+        "Replace the hook list for ONE selector. Only callable by the job",
+        "client while the job is in Open status."
+      ],
+      "name": "configure_hooks"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "docs": [
+            "Self-declared metadata. Read by other multi-hook-routers if this is",
+            "ever nested as a sub-hook (defensive completeness coverage)."
+          ],
+          "name": "hook_metadata",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "acp_program"
+        },
+        {
+          "name": "program_data",
+          "pda": {
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            },
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  232,
+                  113,
+                  98,
+                  229,
+                  130,
+                  28,
+                  222,
+                  22,
+                  190,
+                  212,
+                  192,
+                  137,
+                  252,
+                  242,
+                  163,
+                  18,
+                  44,
+                  167,
+                  161,
+                  140,
+                  6,
+                  18,
+                  239,
+                  153,
+                  4,
+                  234,
+                  81,
+                  38,
+                  188,
+                  104,
+                  247,
+                  221
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_hooks_per_job",
+          "type": "u8"
+        }
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "docs": [
+        "Initialize the router with ACP program reference and max hooks config.",
+        "`max_hooks_per_job` accepts any value 1..=255 (no logical upper bound)."
+      ],
+      "name": "initialize"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        148,
+        182,
+        144,
+        91,
+        186,
+        12,
+        118,
+        18
+      ],
+      "docs": [
+        "Nominate a new authority. Two-step transfer: nominee must call accept_authority."
+      ],
+      "name": "nominate_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "hook",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        190,
+        124,
+        75,
+        130,
+        220,
+        82,
+        21,
+        208
+      ],
+      "docs": [
+        "Remove a hook from one selector's list (swap-and-pop)."
+      ],
+      "name": "remove_hook"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "hooks",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ],
+      "discriminator": [
+        206,
+        139,
+        158,
+        238,
+        151,
+        152,
+        40,
+        246
+      ],
+      "docs": [
+        "Replace one selector's hook list with a reordered version (must be a permutation)."
+      ],
+      "name": "reorder_hooks"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_max",
+          "type": "u8"
+        }
+      ],
+      "discriminator": [
+        211,
+        27,
+        171,
+        166,
+        105,
+        24,
+        236,
+        200
+      ],
+      "docs": [
+        "Update the maximum sub-hooks allowed per job per selector. Authority only.",
+        "Accepts any value 1..=255 (no logical upper bound)."
+      ],
+      "name": "set_max_hooks_per_job"
+    }
+  ],
+  "metadata": {
+    "description": "MultiHookRouter - routes hook callbacks to an ordered list of sub-hooks per job",
+    "name": "multi_hook_router",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "name": "AuthorityNominated",
+      "type": {
+        "fields": [
+          {
+            "name": "current_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "AuthorityTransferred",
+      "type": {
+        "fields": [
+          {
+            "name": "old_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Cached required-selectors bitmask for one configured sub-hook. Populated",
+        "from the sub-hook's `HookMetadata` PDA at mutation time so that",
+        "`validate_completeness` and fund-time re-validation can run from",
+        "HookRouter alone (no metadata account reads needed at fan-out)."
+      ],
+      "name": "CachedHookMetadata",
+      "type": {
+        "fields": [
+          {
+            "name": "hook",
+            "type": "pubkey"
+          },
+          {
+            "name": "required_selectors",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted in `before_action`/`after_action` when a configured sub-hook is",
+        "no longer whitelisted on ACP at fan-out time. The router skips the",
+        "dewhitelisted hook and continues to the next one. Mirrors EVM",
+        "`DewhitelistedHookSkipped`."
+      ],
+      "name": "DewhitelistedHookSkipped",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "hook",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "HookAdded",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "hook",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Hook self-declaration. Read by other multi-hook-routers if this router",
+        "is ever nested as a sub-hook (defensive: also lets external indexers",
+        "query \"what does multi-hook-router forward?\"). PDA seeded by `[b\"hook_metadata\"]`."
+      ],
+      "name": "HookMetadata",
+      "type": {
+        "fields": [
+          {
+            "name": "required_selectors",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "HookRemoved",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "hook",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Per-job hook configuration. Five per-selector ordered lists, one per",
+        "hookable lifecycle action. PDA seeded by `[\"hook_router\", job_id_le_bytes]`.",
+        "",
+        "Mirrors EVM `mapping(jobId => mapping(selector => address[]))` — the same",
+        "hook can appear in multiple selector lists; lists are independent."
+      ],
+      "name": "HookRouter",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "set_budget_hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "fund_hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "submit_hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "complete_hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "reject_hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "docs": [
+              "Cached metadata for unique configured sub-hooks. Used by",
+              "`validate_completeness` and fund-time re-validation."
+            ],
+            "name": "hook_metadata_cache",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "CachedHookMetadata"
+                }
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "HooksConfigured",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "HooksReordered",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": "u8"
+          },
+          {
+            "name": "hooks",
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MaxHooksPerJobUpdated",
+      "type": {
+        "fields": [
+          {
+            "name": "old_max",
+            "type": "u8"
+          },
+          {
+            "name": "new_max",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Global router configuration. Singleton PDA seeded by `[\"router_state\"]`."
+      ],
+      "name": "RouterState",
+      "type": {
+        "fields": [
+          {
+            "name": "acp_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "docs": [
+              "Admin-configurable max sub-hooks per job, per selector. Range: 1..=255.",
+              "No logical upper bound (mirrors EVM `MultiHookRouter.maxHooksPerJob`).",
+              "Practical limit governed by Solana tx-size at runtime (~5-8 hooks per",
+              "call without Address Lookup Tables)."
+            ],
+            "name": "max_hooks_per_job",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ]
+}

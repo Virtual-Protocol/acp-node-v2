@@ -1,0 +1,951 @@
+{
+  "accounts": [
+    {
+      "discriminator": [
+        105,
+        124,
+        131,
+        88,
+        127,
+        32,
+        75,
+        16
+      ],
+      "name": "StateConfig"
+    },
+    {
+      "discriminator": [
+        21,
+        49,
+        228,
+        3,
+        101,
+        108,
+        246,
+        154
+      ],
+      "name": "SubscriptionExpiry"
+    },
+    {
+      "discriminator": [
+        92,
+        146,
+        228,
+        26,
+        250,
+        38,
+        56,
+        237
+      ],
+      "name": "WriterRegistry"
+    }
+  ],
+  "address": "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
+  "errors": [
+    {
+      "code": 6000,
+      "msg": "Subscription expiry must extend beyond current",
+      "name": "SubscriptionNotExtended"
+    },
+    {
+      "code": 6001,
+      "msg": "Zero address not allowed",
+      "name": "ZeroAddress"
+    },
+    {
+      "code": 6002,
+      "msg": "Unauthorized caller",
+      "name": "UnauthorizedCaller"
+    },
+    {
+      "code": 6003,
+      "msg": "Writer not registered",
+      "name": "WriterNotRegistered"
+    },
+    {
+      "code": 6004,
+      "msg": "Writer has been deactivated",
+      "name": "WriterDeactivated"
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        83,
+        253,
+        94,
+        222,
+        179,
+        41,
+        95,
+        127
+      ],
+      "name": "AuthorityNominated"
+    },
+    {
+      "discriminator": [
+        245,
+        109,
+        179,
+        54,
+        135,
+        92,
+        22,
+        64
+      ],
+      "name": "AuthorityTransferred"
+    },
+    {
+      "discriminator": [
+        66,
+        23,
+        25,
+        128,
+        66,
+        95,
+        220,
+        100
+      ],
+      "name": "SubscriptionActivated"
+    },
+    {
+      "discriminator": [
+        85,
+        84,
+        253,
+        78,
+        229,
+        105,
+        159,
+        221
+      ],
+      "name": "WriterAdded"
+    },
+    {
+      "discriminator": [
+        216,
+        93,
+        239,
+        230,
+        124,
+        86,
+        161,
+        210
+      ],
+      "name": "WriterRemoved"
+    }
+  ],
+  "instructions": [
+    {
+      "accounts": [
+        {
+          "name": "new_authority",
+          "signer": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        107,
+        86,
+        198,
+        91,
+        33,
+        12,
+        107,
+        160
+      ],
+      "docs": [
+        "Accepts a pending authority nomination, completing ownership transfer."
+      ],
+      "name": "accept_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "docs": [
+            "The calling program must be a registered writer.",
+            "PDA seeded by the writer's program ID. Writer identity validated in handler."
+          ],
+          "name": "writer_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  114,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "account": "WriterRegistry",
+                "kind": "account",
+                "path": "writer_registry.writer"
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "The writer program's hook_state PDA — proves CPI origin.",
+            "Only the registered writer program can produce a valid signature for this PDA."
+          ],
+          "name": "writer_signer",
+          "signer": true
+        },
+        {
+          "docs": [
+            "L-14: init_if_needed is safe here because the monotonic expiry check",
+            "(expiry > sub.expiry) prevents backward reinitialization, no close path",
+            "exists for this PDA, and access is CPI-only via registered writers."
+          ],
+          "name": "subscription_expiry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  117,
+                  98,
+                  95,
+                  101,
+                  120,
+                  112,
+                  105,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "client"
+              },
+              {
+                "kind": "arg",
+                "path": "provider"
+              },
+              {
+                "kind": "arg",
+                "path": "package_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "client",
+          "type": "pubkey"
+        },
+        {
+          "name": "provider",
+          "type": "pubkey"
+        },
+        {
+          "name": "package_id",
+          "type": "u64"
+        },
+        {
+          "name": "expiry",
+          "type": "i64"
+        }
+      ],
+      "discriminator": [
+        101,
+        41,
+        57,
+        61,
+        203,
+        67,
+        214,
+        17
+      ],
+      "docs": [
+        "Activates or extends a subscription. CPI-only -- requires a registered writer's signature."
+      ],
+      "name": "activate_subscription"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "writer_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  114,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "writer"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "writer",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        95,
+        14,
+        80,
+        179,
+        133,
+        216,
+        154,
+        108
+      ],
+      "docs": [
+        "Grants a program the writer role, allowing it to activate subscriptions via CPI."
+      ],
+      "name": "add_writer"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "program_data",
+          "pda": {
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            },
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  64,
+                  82,
+                  151,
+                  249,
+                  247,
+                  156,
+                  164,
+                  50,
+                  141,
+                  195,
+                  134,
+                  87,
+                  198,
+                  171,
+                  171,
+                  11,
+                  224,
+                  103,
+                  156,
+                  30,
+                  93,
+                  53,
+                  253,
+                  230,
+                  81,
+                  50,
+                  152,
+                  105,
+                  131,
+                  45,
+                  138,
+                  214
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "docs": [
+        "Initializes the subscription-state config PDA. Caller must be the program's upgrade authority."
+      ],
+      "name": "initialize"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        148,
+        182,
+        144,
+        91,
+        186,
+        12,
+        118,
+        18
+      ],
+      "docs": [
+        "Nominates a new authority (first step of two-step transfer)."
+      ],
+      "name": "nominate_authority"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "docs": [
+            "Existing (deactivated) writer registry PDA — sets is_active back to true (F-34)."
+          ],
+          "name": "writer_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  114,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "writer"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "writer",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        62,
+        184,
+        214,
+        49,
+        203,
+        151,
+        133,
+        51
+      ],
+      "docs": [
+        "Re-activates a previously deactivated writer."
+      ],
+      "name": "reactivate_writer"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "state_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  116,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "writer_registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  114,
+                  105,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "writer"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "writer",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        247,
+        145,
+        28,
+        134,
+        227,
+        132,
+        243,
+        83
+      ],
+      "docs": [
+        "Revokes the writer role. PDA is kept alive for in-flight observability (F-34)."
+      ],
+      "name": "remove_writer"
+    }
+  ],
+  "metadata": {
+    "description": "Subscription State - shared subscription storage for ACP hooks",
+    "name": "subscription_state",
+    "spec": "0.1.0",
+    "version": "0.1.0"
+  },
+  "types": [
+    {
+      "docs": [
+        "Emitted when a new authority is nominated (first step of two-step transfer)."
+      ],
+      "name": "AuthorityNominated",
+      "type": {
+        "fields": [
+          {
+            "name": "current_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when a pending authority accepts ownership (second step of two-step transfer)."
+      ],
+      "name": "AuthorityTransferred",
+      "type": {
+        "fields": [
+          {
+            "name": "old_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_authority",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Global state -- stores admin authority. Singleton PDA seeded by `[\"state_config\"]`."
+      ],
+      "name": "StateConfig",
+      "type": {
+        "fields": [
+          {
+            "docs": [
+              "Current program authority; can add/remove writers and transfer ownership."
+            ],
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Nominated successor (two-step transfer). `None` until `nominate_authority` is called."
+            ],
+            "name": "pending_authority",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "docs": [
+              "PDA bump seed."
+            ],
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when a subscription is activated or extended by a writer via CPI."
+      ],
+      "name": "SubscriptionActivated",
+      "type": {
+        "fields": [
+          {
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "name": "package_id",
+            "type": "u64"
+          },
+          {
+            "name": "expiry",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Subscription expiry per client/provider/package.",
+        "Seeds: [\"sub_expiry\", client, provider, package_id]"
+      ],
+      "name": "SubscriptionExpiry",
+      "type": {
+        "fields": [
+          {
+            "docs": [
+              "The subscribing client."
+            ],
+            "name": "client",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "The service provider."
+            ],
+            "name": "provider",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Identifies which subscription package this tracks."
+            ],
+            "name": "package_id",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Unix timestamp when this subscription expires. Monotonically increasing."
+            ],
+            "name": "expiry",
+            "type": "i64"
+          },
+          {
+            "docs": [
+              "PDA bump seed."
+            ],
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when a program is granted the writer role (or re-activated)."
+      ],
+      "name": "WriterAdded",
+      "type": {
+        "fields": [
+          {
+            "name": "writer",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Writer registry — tracks authorized programs that can write subscription data.",
+        "Equivalent to Solidity's WRITER_ROLE in AccessControl.",
+        "Seeds: [\"writer\", writer_pubkey]",
+        "",
+        "`is_active` mirrors EVM's revokeRole semantics: the PDA is never closed so",
+        "in-flight subscription jobs (whose fund step has not yet fired) can still",
+        "observe the deactivation and abort cleanly (F-34)."
+      ],
+      "name": "WriterRegistry",
+      "type": {
+        "fields": [
+          {
+            "docs": [
+              "The authorized program ID."
+            ],
+            "name": "writer",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Whether this writer is currently active. Deactivated writers are kept alive (F-34)."
+            ],
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "docs": [
+              "PDA bump seed."
+            ],
+            "name": "bump",
+            "type": "u8"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when a writer's role is revoked (deactivated, PDA kept alive)."
+      ],
+      "name": "WriterRemoved",
+      "type": {
+        "fields": [
+          {
+            "name": "writer",
+            "type": "pubkey"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ]
+}

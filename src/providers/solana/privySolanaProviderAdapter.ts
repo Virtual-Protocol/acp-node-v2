@@ -481,7 +481,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         params: [
           {
             serializedTransaction,
-            // prefundRent: true,
+            prefundRent: true,
           },
         ],
       }),

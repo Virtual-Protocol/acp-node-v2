@@ -28,7 +28,7 @@ import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
 } from "../providers/types.js";
-import { JOB_CREATED_EVENT_DISC } from "../core/solana/constants.js";
+import { JOB_CREATED_EVENT_DISC, ACP_COMMITMENT } from "../core/solana/constants.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
@@ -126,7 +126,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const signer = this.provider.getSigner();
 
     const acpStatePda = await this.deriveAcpStatePda();
-    const acpState = await fetchAcpState(rpc, acpStatePda);
+    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
     const jobCounter = acpState.data.jobCounter;
 
     const jobPda = await this.deriveJobPda(signer.address, jobCounter);
@@ -175,14 +175,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
-    const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     let mintAddress: Address;
     if (job.data.budgetMint.__option === "Some") {
       mintAddress = job.data.budgetMint.value;
     } else {
       const acpStatePda = await this.deriveAcpStatePda();
-      const acpState = await fetchAcpState(rpc, acpStatePda);
+      const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
       mintAddress = acpState.data.paymentToken;
     }
 
@@ -212,7 +212,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         "Sysvar1nstructions1111111111111111111111111" as Address;
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
       const hookState = await fetchHookState(rpc, hookStatePda, {
-        commitment: "confirmed",
+        commitment: ACP_COMMITMENT,
       });
       // The hook PRE-increments intent_counter, then creates the intent at the
       // new value: a fresh hook (counter=0) creates intent id=1. Derive from
@@ -262,7 +262,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
-    const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
 
@@ -271,7 +271,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       mintAddress = job.data.budgetMint.value;
     } else {
       const acpStatePda = await this.deriveAcpStatePda();
-      const acpState = await fetchAcpState(rpc, acpStatePda);
+      const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
       mintAddress = acpState.data.paymentToken;
     }
 
@@ -321,14 +321,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const friidAccount = await fetchFundRequestIntentId(
         rpc,
         fundRequestIntentIdPda,
-        { commitment: "confirmed" }
+        { commitment: ACP_COMMITMENT }
       );
       const intentPda = await this.deriveIntentPda(
         hookAddress,
         friidAccount.data.intentId
       );
       const intent = await fetchIntent(rpc, intentPda, {
-        commitment: "confirmed",
+        commitment: ACP_COMMITMENT,
       });
 
       fundOptParams = hexToBytes(
@@ -403,7 +403,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
-    const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     const deliverableBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
       params.deliverable
@@ -424,7 +424,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (isFunded) {
       const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
       const acpStatePda = await this.deriveAcpStatePda();
-      const acpState = await fetchAcpState(rpc, acpStatePda);
+      const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
       let mintAddress: Address;
       if (job.data.budgetMint.__option === "Some") {
@@ -473,7 +473,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
         const hookStatePda = await this.deriveHookStatePda(hookAddress);
         const hookState = await fetchHookState(rpc, hookStatePda, {
-          commitment: "confirmed",
+          commitment: ACP_COMMITMENT,
         });
         // post_submit pre-increments intent_counter before creating the escrow
         // intent, so the new intent id is counter + 1 (mismatch → InvalidJob).
@@ -564,7 +564,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
-    const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     const reasonBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
       params.reason
@@ -573,7 +573,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
 
     const acpStatePda = await this.deriveAcpStatePda();
-    const acpState = await fetchAcpState(rpc, acpStatePda);
+    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
     let mintAddress: Address;
     if (job.data.budgetMint.__option === "Some") {
@@ -621,7 +621,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const maybePeii = await fetchMaybeProviderEscrowIntentId(
         rpc,
         provEscrowIntentIdPda,
-        { commitment: "confirmed" }
+        { commitment: ACP_COMMITMENT }
       );
 
       if (maybePeii.exists) {
@@ -630,7 +630,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           maybePeii.data.intentId
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
-          commitment: "confirmed",
+          commitment: ACP_COMMITMENT,
         });
         const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
           hookAddress,
@@ -701,10 +701,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const rpc = this.provider.getRpc();
     const signer = this.provider.getSigner();
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
-    const job = await fetchJob(rpc, jobPda, { commitment: "confirmed" });
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
     const acpStatePda = await this.deriveAcpStatePda();
     const acpState = await fetchAcpState(rpc, acpStatePda, {
-      commitment: "confirmed",
+      commitment: ACP_COMMITMENT,
     });
 
     const reasonBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
@@ -758,7 +758,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const maybePeii = await fetchMaybeProviderEscrowIntentId(
         rpc,
         provEscrowIntentIdPda,
-        { commitment: "confirmed" }
+        { commitment: ACP_COMMITMENT }
       );
 
       if (maybePeii.exists) {
@@ -767,7 +767,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           maybePeii.data.intentId
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
-          commitment: "confirmed",
+          commitment: ACP_COMMITMENT,
         });
         const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
           hookAddress,
@@ -863,7 +863,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     try {
       const jobAccount = await fetchJob(rpc, jobPda, {
-        commitment: "confirmed",
+        commitment: ACP_COMMITMENT,
       });
       const job = jobAccount.data;
 

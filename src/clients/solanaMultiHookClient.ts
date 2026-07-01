@@ -437,25 +437,68 @@ export class SolanaMultiHookClient {
       chunk.forEach((a, j) => ext.set(ae.encode(a), 12 + j * 32));
       await actor.sendInstructions([{ programAddress: ALT_PROGRAM, accounts: accts, data: ext }]);
     }
-    await new Promise((r) => setTimeout(r, 2000));
     // Read back the authoritative on-chain ordering so the caller compresses
-    // against real indices (finding L-01).
-    return { lut, addresses: await this.fetchLutAddresses(lut) };
+    // against real indices (finding L-01). Poll instead of a fixed sleep so we
+    // deterministically wait for both conditions rather than guessing a delay.
+    return { lut, addresses: await this.awaitLutReady(lut, addresses) };
   }
 
-  /** Decode the ordered address list stored in an on-chain Address Lookup Table. */
-  private async fetchLutAddresses(lut: Address): Promise<Address[]> {
+  /**
+   * Poll the ALT until it is safe to use for compression:
+   *  - every one of `expected` has landed on-chain (partial-read guard: a missing
+   *    address would stay uncompressed and can overflow tx size). This is a SUBSET
+   *    check, not a count check, so a table shared by a concurrent same-slot
+   *    `complete` (which appends the other caller's addresses, making the on-chain
+   *    list LONGER than `expected` — the L-01 case) still passes, and
+   *  - its `last_extended_slot` is strictly behind the current slot — the runtime
+   *    rejects a lookup table used in the same slot it was extended.
+   * Returns the full on-chain ordering (superset-safe for compression). Bounded
+   * retry; throws if the table never converges.
+   */
+  private async awaitLutReady(lut: Address, expected: Address[]): Promise<Address[]> {
+    const RETRIES = 30;
+    const DELAY_MS = 400;
+    for (let i = 0; i < RETRIES; i++) {
+      const state = await this.fetchLutState(lut);
+      if (state) {
+        const onChain = new Set(state.addresses as string[]);
+        const allPresent = expected.every((a) => onChain.has(a as string));
+        if (allPresent) {
+          const slot = await this.rpc.getSlot({ commitment: ACP_COMMITMENT }).send();
+          if (state.lastExtendedSlot < slot) return state.addresses;
+        }
+      }
+      await new Promise((r) => setTimeout(r, DELAY_MS));
+    }
+    throw new Error(
+      `lookup table ${lut} did not converge (all ${expected.length} addresses present + warmed up)`
+    );
+  }
+
+  /**
+   * Decode an on-chain Address Lookup Table: its ordered address list and its
+   * `last_extended_slot` (u64 at offset 12 of LookupTableMeta). Returns null if
+   * the account is not yet visible at {@link ACP_COMMITMENT}.
+   */
+  private async fetchLutState(
+    lut: Address
+  ): Promise<{ addresses: Address[]; lastExtendedSlot: bigint } | null> {
     const info = await this.rpc
       .getAccountInfo(lut, { encoding: "base64", commitment: ACP_COMMITMENT })
       .send();
     const b64 = info.value?.data?.[0];
-    if (!b64) throw new Error(`lookup table not found: ${lut}`);
+    if (!b64) return null;
     const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const out: Address[] = [];
+    const lastExtendedSlot = new DataView(
+      data.buffer,
+      data.byteOffset,
+      data.byteLength
+    ).getBigUint64(12, true);
+    const addresses: Address[] = [];
     for (let off = LUT_META_SIZE; off + 32 <= data.length; off += 32) {
-      out.push(ad.decode(data.subarray(off, off + 32)));
+      addresses.push(ad.decode(data.subarray(off, off + 32)));
     }
-    return out;
+    return { addresses, lastExtendedSlot };
   }
 
   private async sendMulti(

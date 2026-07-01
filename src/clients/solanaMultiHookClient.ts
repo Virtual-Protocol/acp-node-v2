@@ -2,6 +2,7 @@ import {
   AccountRole,
   getProgramDerivedAddress,
   getAddressEncoder,
+  getAddressDecoder,
   getU64Encoder,
   pipe,
   createTransactionMessage,
@@ -15,7 +16,9 @@ import {
   type Address,
   type Signature,
   type KeyPairSigner,
+  type FetchAccountConfig,
 } from "@solana/kit";
+import { ACP_COMMITMENT } from "../core/solana/constants.js";
 import {
   ACP_CONTRACT_ADDRESSES,
   MULTI_HOOK_ROUTER_ADDRESSES,
@@ -44,7 +47,10 @@ const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const ALT_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 
 const ae = getAddressEncoder();
+const ad = getAddressDecoder();
 const u64 = getU64Encoder();
+// LookupTableMeta serialized size; account address list begins at this offset.
+const LUT_META_SIZE = 56;
 const ro = (address: Address) => ({ address, role: AccountRole.READONLY });
 const w = (address: Address) => ({ address, role: AccountRole.WRITABLE });
 const ws = (address: Address) => ({ address, role: AccountRole.WRITABLE_SIGNER });
@@ -82,7 +88,7 @@ export class SolanaMultiHookClient {
     p: { provider: Address; evaluator: Address; expiredAt: number; description: string }
   ): Promise<bigint> {
     const signer = client.getSigner();
-    const acpState = await fetchAcpState(this.rpc, await mh.acpStatePda(this.acp));
+    const acpState = await this.read(fetchAcpState, await mh.acpStatePda(this.acp));
     const jobId = acpState.data.jobCounter;
     const jobPda = await mh.jobPda(this.acp, signer.address, jobId);
     const ix = await getCreateJobInstructionAsync({
@@ -155,7 +161,7 @@ export class SolanaMultiHookClient {
     const jobPda = await mh.jobPda(this.acp, p.clientAddress, jobId);
     const paymentToken = await this.paymentToken();
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const counter = (await fetchHookState(this.rpc, fundHookState)).data.intentCounter;
+    const counter = (await this.read(fetchHookState, fundHookState)).data.intentCounter;
     const setBudgetIntent = await mh.intentPda(this.fundHook, counter + 1n);
 
     const subParams = mh.encodeSubParams(p.terms.durationSecs, p.terms.packageId);
@@ -200,7 +206,7 @@ export class SolanaMultiHookClient {
     const clientAta = await deriveAta(buyer.address, paymentToken);
     const providerAta = await deriveAta(p.providerAddress, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const friid = await fetchFundRequestIntentId(this.rpc, await mh.fundRequestIntentIdPda(this.fundHook, jobId));
+    const friid = await this.read(fetchFundRequestIntentId, await mh.fundRequestIntentIdPda(this.fundHook, jobId));
     const setBudgetIntent = await mh.intentPda(this.fundHook, friid.data.intentId);
 
     const subParams = mh.encodeSubParams(p.terms.durationSecs, p.terms.packageId);
@@ -250,13 +256,13 @@ export class SolanaMultiHookClient {
     const seller = provider.getSigner();
     const jobPda = await mh.jobPda(this.acp, p.clientAddress, jobId);
     const paymentToken = await this.paymentToken();
-    const acpState = await fetchAcpState(this.rpc, await mh.acpStatePda(this.acp));
+    const acpState = await this.read(fetchAcpState, await mh.acpStatePda(this.acp));
     const vaultAuthority = await mh.vaultAuthorityPda(this.acp, jobPda);
     const vaultAta = await deriveAta(vaultAuthority, paymentToken);
     const providerAta = await deriveAta(seller.address, paymentToken);
     const treasuryAta = await deriveAta(acpState.data.platformTreasury, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const counter = (await fetchHookState(this.rpc, fundHookState)).data.intentCounter;
+    const counter = (await this.read(fetchHookState, fundHookState)).data.intentCounter;
     const submitIntent = await mh.intentPda(this.fundHook, counter + 1n);
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
@@ -311,7 +317,7 @@ export class SolanaMultiHookClient {
     const evalSigner = evaluator.getSigner();
     const jobPda = await mh.jobPda(this.acp, p.clientAddress, jobId);
     const paymentToken = await this.paymentToken();
-    const acpState = await fetchAcpState(this.rpc, await mh.acpStatePda(this.acp));
+    const acpState = await this.read(fetchAcpState, await mh.acpStatePda(this.acp));
     const vaultAuthority = await mh.vaultAuthorityPda(this.acp, jobPda);
     const vaultAta = await deriveAta(vaultAuthority, paymentToken);
     const providerAta = await deriveAta(providerSigner.address, paymentToken);
@@ -319,7 +325,7 @@ export class SolanaMultiHookClient {
     const treasuryAta = await deriveAta(acpState.data.platformTreasury, paymentToken);
     const clientAta = await deriveAta(p.clientAddress, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const peid = await fetchProviderEscrowIntentId(this.rpc, await mh.providerEscrowIntentIdPda(this.fundHook, jobId));
+    const peid = await this.read(fetchProviderEscrowIntentId, await mh.providerEscrowIntentIdPda(this.fundHook, jobId));
     const submitIntent = await mh.intentPda(this.fundHook, peid.data.intentId);
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
@@ -359,12 +365,19 @@ export class SolanaMultiHookClient {
     const lutAddrs = [...new Set(completeInstruction.accounts.map((a) => a.address as string))].filter(
       (a) => !signerSet.has(a)
     ) as Address[];
-    const lut = await this.createLut(evaluator, lutAddrs);
+    // Use the ACTUAL on-chain table ordering for compression, not the local
+    // `lutAddrs` array. If a concurrent same-slot `complete` shared this table
+    // (the address is derived from [authority, slot] by the ALT program, which
+    // we cannot nonce), its `extend` appends ahead/behind ours, so the local
+    // array's positions no longer match the on-chain indices. Compressing
+    // against the real table makes our accounts resolve correctly regardless of
+    // who else extended it.
+    const { lut, addresses: tableAddrs } = await this.createLut(evaluator, lutAddrs);
     return this.sendMulti(evalSigner, [evalSigner, providerSigner], [
       cuLimitIx(1_400_000),
       createAtaIdempotentIx(evalSigner.address, evaluatorAta, evalSigner.address, paymentToken),
       completeInstruction,
-    ], { [lut]: lutAddrs });
+    ], { [lut]: tableAddrs });
   }
 
   // -------------------------------------------------------------------------
@@ -375,7 +388,7 @@ export class SolanaMultiHookClient {
     return mh.hookWhitelistPda(this.acp, hook);
   }
   private async paymentToken(): Promise<Address> {
-    return (await fetchAcpState(this.rpc, await mh.acpStatePda(this.acp))).data.paymentToken;
+    return (await this.read(fetchAcpState, await mh.acpStatePda(this.acp))).data.paymentToken;
   }
   private async routerPrefix(jobId: bigint) {
     return [ro(await mh.hookRouterPda(this.router, jobId)), ro(await mh.routerStatePda(this.router)), ro(SYSVAR_IX)];
@@ -384,7 +397,24 @@ export class SolanaMultiHookClient {
     return Array.isArray(r) ? r[0]! : r;
   }
 
-  private async createLut(actor: ISolanaProviderAdapter, addresses: Address[]): Promise<Address> {
+  /**
+   * Centralized account read. Every generated fetcher defaults to the JSON-RPC
+   * default commitment (`finalized`) when no config is passed; routing all reads
+   * through here injects {@link ACP_COMMITMENT} ("confirmed") in one place so the
+   * read commitment provably matches the write commitment and cannot regress at
+   * a new call site.
+   */
+  private read<T>(
+    fetch: (rpc: Rpc, address: Address, config?: FetchAccountConfig) => Promise<T>,
+    address: Address
+  ): Promise<T> {
+    return fetch(this.rpc, address, { commitment: ACP_COMMITMENT });
+  }
+
+  private async createLut(
+    actor: ISolanaProviderAdapter,
+    addresses: Address[]
+  ): Promise<{ lut: Address; addresses: Address[] }> {
     const me = actor.getSigner().address;
     const recentSlot = await this.rpc.getSlot({ commitment: "finalized" }).send();
     const [lut, bump] = await getProgramDerivedAddress({
@@ -408,7 +438,24 @@ export class SolanaMultiHookClient {
       await actor.sendInstructions([{ programAddress: ALT_PROGRAM, accounts: accts, data: ext }]);
     }
     await new Promise((r) => setTimeout(r, 2000));
-    return lut;
+    // Read back the authoritative on-chain ordering so the caller compresses
+    // against real indices (finding L-01).
+    return { lut, addresses: await this.fetchLutAddresses(lut) };
+  }
+
+  /** Decode the ordered address list stored in an on-chain Address Lookup Table. */
+  private async fetchLutAddresses(lut: Address): Promise<Address[]> {
+    const info = await this.rpc
+      .getAccountInfo(lut, { encoding: "base64", commitment: ACP_COMMITMENT })
+      .send();
+    const b64 = info.value?.data?.[0];
+    if (!b64) throw new Error(`lookup table not found: ${lut}`);
+    const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const out: Address[] = [];
+    for (let off = LUT_META_SIZE; off + 32 <= data.length; off += 32) {
+      out.push(ad.decode(data.subarray(off, off + 32)));
+    }
+    return out;
   }
 
   private async sendMulti(

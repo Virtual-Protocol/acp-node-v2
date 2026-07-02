@@ -65,7 +65,6 @@ export const ERC20_SPONSORED_CHAINS: Chain[] = [
   optimism,
   monad,
   robinhood,
-  robinhoodTestnet,
 ] as const;
 
 export const EVM_CHAINS = [
@@ -105,13 +104,13 @@ export type NetworkContext =
     };
 
 export function isEvmNetworkContext(
-  context: NetworkContext,
+  context: NetworkContext
 ): context is Extract<NetworkContext, { family: "evm" }> {
   return context.family === "evm";
 }
 
 export function isSolanaNetworkContext(
-  context: NetworkContext,
+  context: NetworkContext
 ): context is Extract<NetworkContext, { family: "solana" }> {
   return context.family === "solana";
 }
@@ -139,7 +138,7 @@ export function createEvmNetworkContext(chainId: number): NetworkContext {
 }
 
 export function createSolanaNetworkContext(
-  cluster: SolanaCluster,
+  cluster: SolanaCluster
 ): NetworkContext {
   return {
     family: "solana",

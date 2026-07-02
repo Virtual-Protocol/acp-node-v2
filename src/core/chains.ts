@@ -11,12 +11,48 @@ import {
   sepolia,
   Chain,
 } from "viem/chains";
+import { defineChain } from "viem";
 
 export type ChainFamily = "evm" | "solana";
 
-export const EVM_MAINNET_CHAINS: Chain[] = [base] as const;
+export const robinhoodTestnet = defineChain({
+  id: 46630,
+  name: "Robinhood Chain Testnet",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.testnet.chain.robinhood.com"] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Robinhood Chain Explorer",
+      url: "https://explorer.testnet.chain.robinhood.com",
+    },
+  },
+  testnet: true,
+});
 
-export const EVM_TESTNET_CHAINS: Chain[] = [baseSepolia, bscTestnet] as const;
+export const robinhood = defineChain({
+  id: 4663,
+  name: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.chain.robinhood.com"] },
+  },
+  blockExplorers: {
+    default: {
+      name: "Robinhood Chain Explorer",
+      url: "https://explorer.chain.robinhood.com/",
+    },
+  },
+});
+
+export const EVM_MAINNET_CHAINS: Chain[] = [base, robinhood] as const;
+
+export const EVM_TESTNET_CHAINS: Chain[] = [
+  baseSepolia,
+  bscTestnet,
+  robinhoodTestnet,
+] as const;
 
 export const ERC20_SPONSORED_CHAINS: Chain[] = [
   base,
@@ -28,6 +64,7 @@ export const ERC20_SPONSORED_CHAINS: Chain[] = [
   polygon,
   optimism,
   monad,
+  robinhood,
 ] as const;
 
 export const EVM_CHAINS = [

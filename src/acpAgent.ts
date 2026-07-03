@@ -24,9 +24,9 @@ import {
   getAddressForChain,
   MIN_SLA_MINS,
   BUFFER_SECONDS,
-  type ChainFamily,
   getChainFamily,
 } from "./core/constants.js";
+import { type ChainFamily } from "./core/chains.js";
 import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi.js";
 import { SUBSCRIPTION_HOOK_ABI } from "./core/subscriptionHookAbi.js";
 import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi.js";
@@ -59,7 +59,7 @@ import { DEFAULT_STREAMS, SseTransport } from "./events/sseTransport.js";
 
 export type EntryHandler = (
   session: JobSession,
-  entry: JobRoomEntry
+  entry: JobRoomEntry,
 ) => void | Promise<void>;
 
 // ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ export class AcpAgent {
   constructor(
     clients: Map<ChainFamily, AcpClient>,
     transport: AcpChatTransport,
-    api: AcpJobApi
+    api: AcpJobApi,
   ) {
     this.clients = clients;
     this.transport = transport;
@@ -219,7 +219,7 @@ export class AcpAgent {
 
   async browseAgents(
     keyword: string,
-    params?: BrowseAgentParams
+    params?: BrowseAgentParams,
   ): Promise<Array<AcpAgentDetail>> {
     const chainIds = this.getSupportedChainIds();
     const walletAddress = [...this.addresses.values()][0] ?? "";
@@ -231,7 +231,7 @@ export class AcpAgent {
   }
 
   async getAgentByWalletAddress(
-    walletAddress: string
+    walletAddress: string,
   ): Promise<AcpAgentDetail | null> {
     return this.api.getAgentByWalletAddress(walletAddress);
   }
@@ -250,7 +250,9 @@ export class AcpAgent {
       if (!this.addresses.has(family)) {
         const client = this.clients.get(family);
         if (!client) {
-          throw new Error(`No ${family} client configured for ${family} family`);
+          throw new Error(
+            `No ${family} client configured for ${family} family`,
+          );
         }
         this.addresses.set(family, await client.getAddress());
       }
@@ -301,7 +303,7 @@ export class AcpAgent {
     for (const [, client] of this.clients) {
       if (client instanceof EvmAcpClient) {
         providerChainIds.push(
-          ...(await client.getProvider().getSupportedChainIds())
+          ...(await client.getProvider().getSupportedChainIds()),
         );
       } else {
         providerChainIds.push(...client.getSupportedChainIds());
@@ -318,7 +320,7 @@ export class AcpAgent {
         const client = this.clients.get(family);
         if (!client) {
           throw new Error(
-            `No ${family} client for signing on chainId ${chainId}`
+            `No ${family} client for signing on chainId ${chainId}`,
           );
         }
 
@@ -342,7 +344,7 @@ export class AcpAgent {
 
   async start(
     onConnected?: () => void,
-    streams: SupportedStreams[] = DEFAULT_STREAMS
+    streams: SupportedStreams[] = DEFAULT_STREAMS,
   ): Promise<void> {
     if (this.started) {
       throw new Error("Agent already started. Call stop() first.");
@@ -351,7 +353,7 @@ export class AcpAgent {
     this.started = true;
 
     this.transport.onEntry((entry) =>
-      this.dispatch(entry).catch(console.error)
+      this.dispatch(entry).catch(console.error),
     );
     await this.transport.connect(onConnected, streams);
 
@@ -378,13 +380,13 @@ export class AcpAgent {
     for (const job of jobs) {
       const entries = await this.transport.getHistory(
         job.chainId,
-        job.onChainJobId
+        job.onChainJobId,
       );
       if (entries.length === 0) continue;
       const session = this.getOrCreateSession(
         job.onChainJobId,
         job.chainId,
-        entries
+        entries,
       );
       await session.fetchJob();
       this.fireHandler(session, entries[entries.length - 1]!);
@@ -433,7 +435,7 @@ export class AcpAgent {
   private getOrCreateSession(
     jobId: string,
     chainId: number,
-    initialEntries: JobRoomEntry[] = []
+    initialEntries: JobRoomEntry[] = [],
   ): JobSession {
     let session = this.sessionMap.get(this.getSessionKey(chainId, jobId));
     if (session) return session;
@@ -445,7 +447,7 @@ export class AcpAgent {
       jobId,
       chainId,
       roles,
-      initialEntries
+      initialEntries,
     );
     this.sessionMap.set(this.getSessionKey(chainId, jobId), session);
     return session;
@@ -453,7 +455,7 @@ export class AcpAgent {
 
   private inferRoles(entries: JobRoomEntry[]): AgentRole[] {
     const myAddresses = new Set(
-      [...this.addresses.values()].map((a) => a.toLowerCase())
+      [...this.addresses.values()].map((a) => a.toLowerCase()),
     );
 
     for (const entry of entries) {
@@ -498,7 +500,7 @@ export class AcpAgent {
           jobId,
           chainId,
           roles,
-          session.entries
+          session.entries,
         );
         this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
         await newSession.fetchJob();
@@ -536,7 +538,7 @@ export class AcpAgent {
     jobId: string,
     content: string,
     contentType: string = "text",
-    packageId?: number
+    packageId?: number,
   ): void {
     if (!this.started) throw new Error("Agent not started");
     this.transport.sendMessage(chainId, jobId, content, contentType, packageId);
@@ -547,14 +549,14 @@ export class AcpAgent {
     jobId: string,
     content: string,
     contentType: string = "text",
-    packageId?: number
+    packageId?: number,
   ): Promise<void> {
     await this.transport.postMessage(
       chainId,
       jobId,
       content,
       contentType,
-      packageId
+      packageId,
     );
   }
 
@@ -565,26 +567,26 @@ export class AcpAgent {
   async resolveAssetToken(
     address: Address,
     amount: number,
-    chainId: number
+    chainId: number,
   ): Promise<AssetToken> {
     return AssetToken.fromOnChain(
       address,
       amount,
       chainId,
-      this.getClient(chainId)
+      this.getClient(chainId),
     );
   }
 
   async resolveRawAssetToken(
     address: Address,
     rawAmount: bigint,
-    chainId: number
+    chainId: number,
   ): Promise<AssetToken> {
     return AssetToken.fromOnChainRaw(
       address,
       rawAmount,
       chainId,
-      this.getClient(chainId)
+      this.getClient(chainId),
     );
   }
 
@@ -605,12 +607,12 @@ export class AcpAgent {
 
   async createFundTransferJob(
     chainId: number,
-    params: CreateJobParams
+    params: CreateJobParams,
   ): Promise<bigint> {
     const defaultHook = getAddressForChain(
       FUND_TRANSFER_HOOK_ADDRESSES,
       chainId,
-      "FundTransferHook"
+      "FundTransferHook",
     );
     return this.createJob(chainId, {
       ...params,
@@ -620,12 +622,12 @@ export class AcpAgent {
 
   async createSubscriptionJob(
     chainId: number,
-    params: CreateJobParams
+    params: CreateJobParams,
   ): Promise<bigint> {
     const defaultHook = getAddressForChain(
       SUBSCRIPTION_HOOK_ADDRESSES,
       chainId,
-      "SubscriptionHook"
+      "SubscriptionHook",
     );
     return this.createJob(chainId, {
       ...params,
@@ -636,12 +638,12 @@ export class AcpAgent {
   async createMultiHookJob(
     chainId: number,
     params: CreateJobParams,
-    hookConfig?: MultiHookConfig
+    hookConfig?: MultiHookConfig,
   ): Promise<bigint> {
     const routerAddress = getAddressForChain(
       MULTI_HOOK_ROUTER_ADDRESSES,
       chainId,
-      "MultiHookRouter"
+      "MultiHookRouter",
     );
 
     const jobId = await this.createJob(chainId, {
@@ -701,7 +703,7 @@ export class AcpAgent {
       evaluatorAddress?: string;
       hookAddress?: string;
       packageId?: number;
-    }
+    },
   ): Promise<bigint> {
     // Validate requirement data against JSON schema if requirements is an object.
     if (
@@ -714,7 +716,7 @@ export class AcpAgent {
       const validate = ajv.compile(offering.requirements);
       if (!validate(requirementData)) {
         throw new Error(
-          `Requirement validation failed: ${ajv.errorsText(validate.errors)}`
+          `Requirement validation failed: ${ajv.errorsText(validate.errors)}`,
         );
       }
     }
@@ -736,7 +738,7 @@ export class AcpAgent {
 
     if (opts?.packageId) {
       const subscription = offering.subscriptions?.find(
-        (s) => s.packageId === Number(opts.packageId)
+        (s) => s.packageId === Number(opts.packageId),
       );
       if (!subscription) {
         throw new Error(`Package ID ${opts.packageId} not found in offerings`);
@@ -766,7 +768,7 @@ export class AcpAgent {
           jobId.toString(),
           JSON.stringify(requirementData),
           "requirement",
-          packageId
+          packageId,
         );
         break;
       } catch (err) {
@@ -798,7 +800,7 @@ export class AcpAgent {
       evaluatorAddress?: string;
       hookAddress?: string;
       packageId?: number;
-    }
+    },
   ): Promise<bigint> {
     const agent = await this.api.getAgentByWalletAddress(providerAddress);
     if (!agent) {
@@ -806,7 +808,7 @@ export class AcpAgent {
     }
 
     const matchingOfferings = agent.offerings.filter(
-      (o) => o.name === offeringName
+      (o) => o.name === offeringName,
     );
 
     if (matchingOfferings.length === 0) {
@@ -814,13 +816,13 @@ export class AcpAgent {
       throw new Error(
         `Offering "${offeringName}" not found. Available offerings: ${
           available || "none"
-        }`
+        }`,
       );
     }
 
     if (matchingOfferings.length > 1) {
       throw new Error(
-        `Multiple offerings named "${offeringName}" found. Use createJobFromOffering with the full offering object instead.`
+        `Multiple offerings named "${offeringName}" found. Use createJobFromOffering with the full offering object instead.`,
       );
     }
 
@@ -829,13 +831,13 @@ export class AcpAgent {
       matchingOfferings[0]!,
       providerAddress,
       requirementData,
-      opts
+      opts,
     );
   }
 
   async batchConfigureHooks(
     chainId: number,
-    params: BatchConfigureHooksAgentParams
+    params: BatchConfigureHooksAgentParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     if (!(client instanceof EvmAcpClient)) {
@@ -858,7 +860,7 @@ export class AcpAgent {
     chainId: number,
     client: string,
     provider: string,
-    packageId: number
+    packageId: number,
   ): Promise<bigint> {
     const acpClient = this.getClient(chainId);
     if (!(acpClient instanceof EvmAcpClient)) {
@@ -867,7 +869,7 @@ export class AcpAgent {
     const stateAddress = getAddressForChain(
       SUBSCRIPTION_STATE_ADDRESSES,
       chainId,
-      "SubscriptionState"
+      "SubscriptionState",
     );
     const result = await acpClient.getProvider().readContract(chainId, {
       address: stateAddress,
@@ -882,31 +884,31 @@ export class AcpAgent {
     chainId: number,
     client: string,
     provider: string,
-    packageId: number
+    packageId: number,
   ): Promise<boolean> {
     const expiry = await this.getSubscriptionExpiry(
       chainId,
       client,
       provider,
-      packageId
+      packageId,
     );
     return expiry > BigInt(Math.floor(Date.now() / 1000));
   }
 
   async getProposedSubscriptionTerms(
     chainId: number,
-    jobId: bigint
+    jobId: bigint,
   ): Promise<{ duration: bigint; packageId: bigint }> {
     const acpClient = this.getClient(chainId);
     if (!(acpClient instanceof EvmAcpClient)) {
       throw new Error(
-        "getProposedSubscriptionTerms is only supported on EVM chains"
+        "getProposedSubscriptionTerms is only supported on EVM chains",
       );
     }
     const hookAddress = getAddressForChain(
       SUBSCRIPTION_HOOK_ADDRESSES,
       chainId,
-      "SubscriptionHook"
+      "SubscriptionHook",
     );
     const result = (await acpClient.getProvider().readContract(chainId, {
       address: hookAddress,
@@ -924,7 +926,7 @@ export class AcpAgent {
   /** @internal */
   async internalSetBudget(
     chainId: number,
-    params: SetBudgetParams
+    params: SetBudgetParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = await client.setBudget(chainId, {
@@ -939,7 +941,7 @@ export class AcpAgent {
   /** @internal */
   async internalFund(
     chainId: number,
-    params: FundJobParams
+    params: FundJobParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = [];
@@ -950,7 +952,7 @@ export class AcpAgent {
           tokenAddress: params.amount.address,
           spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
-        })
+        }),
       );
     }
 
@@ -959,7 +961,7 @@ export class AcpAgent {
         jobId: params.jobId,
         expectedBudget: params.amount.rawAmount,
         ...(params.clientAddress && { clientAddress: params.clientAddress }),
-      })
+      }),
     );
 
     return client.submitPrepared(chainId, prepared);
@@ -968,13 +970,13 @@ export class AcpAgent {
   /** @internal */
   async internalSubmit(
     chainId: number,
-    params: SubmitParams
+    params: SubmitParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
-      params.deliverable
+      params.deliverable,
     );
     const prepared = await client.submit(chainId, params);
     return client.submitPrepared(chainId, [prepared]);
@@ -983,7 +985,7 @@ export class AcpAgent {
   /** @internal */
   async internalComplete(
     chainId: number,
-    params: CompleteParams
+    params: CompleteParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = await client.complete(chainId, params);
@@ -993,7 +995,7 @@ export class AcpAgent {
   /** @internal */
   async internalReject(
     chainId: number,
-    params: RejectParams
+    params: RejectParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = await client.reject(chainId, params);
@@ -1003,13 +1005,13 @@ export class AcpAgent {
   /** @internal */
   async internalSetBudgetWithFundRequest(
     chainId: number,
-    params: SetBudgetWithFundRequestParams
+    params: SetBudgetWithFundRequestParams,
   ): Promise<string | string[]> {
     const optParams = encodeFundTransferSetBudgetOptParams(
       chainId,
       params.transferAmount.address,
       params.transferAmount.rawAmount,
-      params.destination
+      params.destination,
     );
 
     return this.internalSetBudget(chainId, {
@@ -1023,7 +1025,7 @@ export class AcpAgent {
   /** @internal */
   async internalFundWithTransfer(
     chainId: number,
-    params: FundWithTransferParams
+    params: FundWithTransferParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = [];
@@ -1034,7 +1036,7 @@ export class AcpAgent {
           tokenAddress: params.amount.address,
           spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
-        })
+        }),
       );
 
       const hookAddr =
@@ -1042,14 +1044,14 @@ export class AcpAgent {
         getAddressForChain(
           FUND_TRANSFER_HOOK_ADDRESSES,
           chainId,
-          "FundTransferHook"
+          "FundTransferHook",
         );
       prepared.push(
         await client.approveAllowance(chainId, {
           tokenAddress: params.transferAmount.address,
           spenderAddress: hookAddr,
           amount: params.transferAmount.rawAmount,
-        })
+        }),
       );
     }
 
@@ -1057,7 +1059,7 @@ export class AcpAgent {
       chainId,
       params.transferAmount.address,
       params.transferAmount.rawAmount,
-      params.destination
+      params.destination,
     );
 
     prepared.push(
@@ -1066,7 +1068,7 @@ export class AcpAgent {
         expectedBudget: params.amount.rawAmount,
         ...(params.clientAddress && { clientAddress: params.clientAddress }),
         optParams,
-      })
+      }),
     );
 
     return client.submitPrepared(chainId, prepared);
@@ -1075,11 +1077,11 @@ export class AcpAgent {
   /** @internal */
   async internalSetBudgetWithSubscription(
     chainId: number,
-    params: SetBudgetWithSubscriptionParams
+    params: SetBudgetWithSubscriptionParams,
   ): Promise<string | string[]> {
     const optParams = encodeSubscriptionOptParams(
       params.duration,
-      params.packageId
+      params.packageId,
     );
 
     return this.internalSetBudget(chainId, {
@@ -1092,7 +1094,7 @@ export class AcpAgent {
   /** @internal */
   async internalFundWithSubscription(
     chainId: number,
-    params: FundWithSubscriptionParams
+    params: FundWithSubscriptionParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = [];
@@ -1103,13 +1105,13 @@ export class AcpAgent {
           tokenAddress: params.amount.address,
           spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
-        })
+        }),
       );
     }
 
     const optParams = encodeSubscriptionOptParams(
       params.duration,
-      params.packageId
+      params.packageId,
     );
 
     prepared.push(
@@ -1117,7 +1119,7 @@ export class AcpAgent {
         jobId: params.jobId,
         expectedBudget: params.amount.rawAmount,
         optParams,
-      })
+      }),
     );
 
     return client.submitPrepared(chainId, prepared);
@@ -1126,16 +1128,16 @@ export class AcpAgent {
   /** @internal */
   async internalSetBudgetWithSubscriptionAndFundRequest(
     chainId: number,
-    params: SetBudgetWithSubscriptionAndFundRequestParams
+    params: SetBudgetWithSubscriptionAndFundRequestParams,
   ): Promise<string | string[]> {
     const subSlice = encodeSubscriptionOptParams(
       params.duration,
-      params.packageId
+      params.packageId,
     );
     const fundSlice = encodeFundTransferOptParams(
       params.transferAmount.address as Address,
       params.transferAmount.rawAmount,
-      params.destination as Address
+      params.destination as Address,
     );
     const optParams = encodeRouterOptParams([subSlice, fundSlice]);
 
@@ -1149,7 +1151,7 @@ export class AcpAgent {
   async getRouterHooks(
     chainId: number,
     jobId: bigint,
-    selector: Hex
+    selector: Hex,
   ): Promise<Address[]> {
     const client = this.getClient(chainId);
     if (!(client instanceof EvmAcpClient)) {
@@ -1158,7 +1160,7 @@ export class AcpAgent {
     const router = getAddressForChain(
       MULTI_HOOK_ROUTER_ADDRESSES,
       chainId,
-      "MultiHookRouter"
+      "MultiHookRouter",
     );
     const result = await client.getProvider().readContract(chainId, {
       address: router,
@@ -1172,7 +1174,7 @@ export class AcpAgent {
   /** @internal */
   async internalFundViaRouter(
     chainId: number,
-    params: FundViaRouterParams
+    params: FundViaRouterParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     const prepared = [];
@@ -1183,7 +1185,7 @@ export class AcpAgent {
           tokenAddress: params.amount.address,
           spenderAddress: client.getContractAddress(chainId),
           amount: params.amount.rawAmount,
-        })
+        }),
       );
     }
 
@@ -1199,19 +1201,19 @@ export class AcpAgent {
       if (subHookAddr && normalizedHook === subHookAddr) {
         if (!params.subscriptionTerms) {
           throw new Error(
-            "SubscriptionHook is configured on the router but no subscriptionTerms were provided"
+            "SubscriptionHook is configured on the router but no subscriptionTerms were provided",
           );
         }
         slices.push(
           encodeSubscriptionOptParams(
             params.subscriptionTerms.duration,
-            params.subscriptionTerms.packageId
-          )
+            params.subscriptionTerms.packageId,
+          ),
         );
       } else if (fundHookAddr && normalizedHook === fundHookAddr) {
         if (!params.transferAmount || !params.destination) {
           throw new Error(
-            "FundTransferHook is configured on the router but no transferAmount/destination were provided"
+            "FundTransferHook is configured on the router but no transferAmount/destination were provided",
           );
         }
         if (client.getCapabilities().supportsAllowance) {
@@ -1220,19 +1222,19 @@ export class AcpAgent {
               tokenAddress: params.transferAmount.address,
               spenderAddress: hook,
               amount: params.transferAmount.rawAmount,
-            })
+            }),
           );
         }
         slices.push(
           encodeFundTransferOptParams(
             params.transferAmount.address as Address,
             params.transferAmount.rawAmount,
-            params.destination as Address
-          )
+            params.destination as Address,
+          ),
         );
       } else {
         throw new Error(
-          `Unknown sub-hook configured on router at ${hook}. The SDK can only build optParams slices for SubscriptionHook and FundTransferHook.`
+          `Unknown sub-hook configured on router at ${hook}. The SDK can only build optParams slices for SubscriptionHook and FundTransferHook.`,
         );
       }
     }
@@ -1244,7 +1246,7 @@ export class AcpAgent {
         jobId: params.jobId,
         expectedBudget: params.amount.rawAmount,
         optParams,
-      })
+      }),
     );
 
     return client.submitPrepared(chainId, prepared);
@@ -1253,13 +1255,13 @@ export class AcpAgent {
   /** @internal */
   async internalSubmitWithTransfer(
     chainId: number,
-    params: SubmitWithTransferParams
+    params: SubmitWithTransferParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
     await this.api.postDeliverable(
       chainId,
       params.jobId.toString(),
-      params.deliverable
+      params.deliverable,
     );
 
     const prepared = [];
@@ -1270,21 +1272,21 @@ export class AcpAgent {
         getAddressForChain(
           FUND_TRANSFER_HOOK_ADDRESSES,
           chainId,
-          "FundTransferHook"
+          "FundTransferHook",
         );
       prepared.push(
         await client.approveAllowance(chainId, {
           tokenAddress: params.transferAmount.address,
           spenderAddress: hookAddr,
           amount: params.transferAmount.rawAmount,
-        })
+        }),
       );
     }
 
     const optParams: Hex = encodeFundTransferSubmitOptParams(
       chainId,
       params.transferAmount.address,
-      params.transferAmount.rawAmount
+      params.transferAmount.rawAmount,
     );
 
     prepared.push(
@@ -1293,7 +1295,7 @@ export class AcpAgent {
         deliverable: params.deliverable,
         ...(params.clientAddress && { clientAddress: params.clientAddress }),
         optParams,
-      })
+      }),
     );
 
     return client.submitPrepared(chainId, prepared);

@@ -1,5 +1,5 @@
 import type { AcpClient } from "../clientFactory.js";
-import { AgentSort, OnlineStatus } from "../clients/baseAcpClient.js";
+import { AgentSort, BrowseMode, OnlineStatus } from "../clients/baseAcpClient.js";
 
 // ---------------------------------------------------------------------------
 // ACP job events (discriminated union — used inside SystemEntry.event)
@@ -235,6 +235,8 @@ export interface BrowseAgentParams {
   isOnline?: OnlineStatus;
   showHidden?: boolean; // include hidden offerings and resources
   walletAddressToExclude?: string;
+  browseMode?: BrowseMode; // result ordering: relevance (default) | recency | mixed
+  mixNewCount?: number; // MIXED mode: how many new agents to interleave
 }
 
 export interface AcpJobApi {
@@ -306,4 +308,7 @@ export interface AcpAgentDetail {
   offerings: Array<AcpAgentOffering>;
   resources: Array<AcpAgentResource>;
   subscriptions: Array<AcpAgentSubscription>;
+  // Present when the backend tags discovery results: a recently-created
+  // (unproven) agent. Lets clients surface a "NEW" indicator.
+  isNew?: boolean;
 }

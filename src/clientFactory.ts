@@ -1,10 +1,7 @@
 import { EvmAcpClient } from "./clients/evmAcpClient.js";
 import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
-import {
-  ACP_CONTRACT_ADDRESSES,
-  type ChainFamily,
-  getChainFamily,
-} from "./core/constants.js";
+import { ACP_CONTRACT_ADDRESSES, getChainFamily } from "./core/constants.js";
+import { type ChainFamily } from "./core/chains.js";
 import type {
   IEvmProviderAdapter,
   ISolanaProviderAdapter,
@@ -19,11 +16,13 @@ export type CreateAcpClientInput = {
 };
 
 export async function createAcpClients(
-  input: CreateAcpClientInput
+  input: CreateAcpClientInput,
 ): Promise<Map<ChainFamily, AcpClient>> {
   const { evmProvider, solanaProvider } = input;
   if (!evmProvider && !solanaProvider) {
-    throw new Error("At least one provider (evmProvider or solanaProvider) must be provided.");
+    throw new Error(
+      "At least one provider (evmProvider or solanaProvider) must be provided.",
+    );
   }
 
   const allAddresses = input.contractAddresses ?? ACP_CONTRACT_ADDRESSES;
@@ -47,7 +46,7 @@ export async function createAcpClients(
       await EvmAcpClient.create({
         contractAddresses: evmAddresses,
         provider: evmProvider,
-      })
+      }),
     );
   }
 
@@ -57,13 +56,13 @@ export async function createAcpClients(
       await SolanaAcpClient.create({
         contractAddresses: solanaAddresses,
         provider: solanaProvider,
-      })
+      }),
     );
   }
 
   if (clients.size === 0) {
     throw new Error(
-      "No clients could be created. Check that contractAddresses match the provided providers."
+      "No clients could be created. Check that contractAddresses match the provided providers.",
     );
   }
 

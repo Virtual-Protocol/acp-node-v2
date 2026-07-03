@@ -35,6 +35,18 @@ export enum OnlineStatus {
   OFFLINE = "offline",
 }
 
+/**
+ * Result ordering for browseAgents.
+ * - RELEVANCE (default): best query match first.
+ * - RECENCY: newest agents first, within the relevant results.
+ * - MIXED: proven results with a few new agents interleaved (each flagged isNew).
+ */
+export enum BrowseMode {
+  RELEVANCE = "relevance",
+  RECENCY = "recency",
+  MIXED = "mixed",
+}
+
 export abstract class BaseAcpClient<TTx> {
   protected readonly contractAddresses: Record<number, string>;
 

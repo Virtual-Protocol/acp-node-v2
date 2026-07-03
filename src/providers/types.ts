@@ -1,11 +1,20 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
-import { AccountRole, type Rpc, type SolanaRpcApi, type KeyPairSigner, type Address as SolanaAddress } from "@solana/kit";
+import {
+  AccountRole,
+  type Rpc,
+  type SolanaRpcApi,
+  type KeyPairSigner,
+  type Address as SolanaAddress,
+} from "@solana/kit";
 
 import type { NetworkContext, SolanaCluster } from "../core/chains.js";
 
 // A Solana signer that can partially sign transactions and messages.
 // KeyPairSigner (local keys) satisfies this, as do remote signers (e.g. Privy).
-export type SolanaSigner = Pick<KeyPairSigner, 'address' | 'signTransactions' | 'signMessages'>;
+export type SolanaSigner = Pick<
+  KeyPairSigner,
+  "address" | "signTransactions" | "signMessages"
+>;
 
 export type SolanaInstructionLike = {
   programAddress: SolanaAddress;
@@ -38,11 +47,11 @@ export type GetLogsParams = {
 
 export interface IEvmProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<Address>;
-  sendTransaction(chainId: number, call: Call): Promise<Address>;
+  sendTransaction(chainId: number, call: Call | Call[]): Promise<Address>;
   sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(
     chainId: number,
-    hash: Address
+    hash: Address,
   ): Promise<TransactionReceipt>;
   readContract(chainId: number, params: ReadContractParams): Promise<unknown>;
   getLogs(chainId: number, params: GetLogsParams): Promise<Log[]>;
@@ -56,7 +65,8 @@ export interface ISolanaProviderAdapter extends IProviderAdapter {
   getCluster(): Promise<SolanaCluster>;
   getRpc(): Rpc<SolanaRpcApi>;
   getSigner(): SolanaSigner;
+  signMessage(message: string): Promise<string>;
   sendInstructions(
-    instructions: SolanaInstructionLike[]
+    instructions: SolanaInstructionLike[],
   ): Promise<string | string[]>;
 }

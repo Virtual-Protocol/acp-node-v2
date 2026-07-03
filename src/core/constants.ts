@@ -1,7 +1,11 @@
 import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
 import type { ChainFamily, SolanaCluster } from "./chains.js";
-export type { ChainFamily } from "./chains.js";
+import { robinhood, robinhoodTestnet } from "./chains.js";
+
+// ---------------------------------------------------------------------------
+// Solana chain ids / clusters
+// ---------------------------------------------------------------------------
 
 export const SOLANA_DEVNET_CHAIN_ID = 500;
 export const SOLANA_MAINNET_CHAIN_ID = 501;
@@ -25,6 +29,8 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [base.id]: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   [SOLANA_DEVNET_CHAIN_ID]: "6f19R51nWkC9fXPK4xNodMuxsMeeyST5aqBU7t978cok",
   [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  [robinhoodTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
+  [robinhood.id]: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
 };
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
@@ -33,6 +39,8 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
   [SOLANA_DEVNET_CHAIN_ID]: "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
   [SOLANA_MAINNET_CHAIN_ID]: "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
+  [robinhoodTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
+  [robinhood.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
@@ -41,6 +49,8 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [SOLANA_DEVNET_CHAIN_ID]: "7BYmFM1J2xCKTAmKHoxFPgsZG63feKx3iBfbW9cVZSHg",
   [SOLANA_MAINNET_CHAIN_ID]: "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
+  [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
+  [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
 
 export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
@@ -48,6 +58,8 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [SOLANA_DEVNET_CHAIN_ID]: "GeMsBukRPHrfR6b8NwtjZQywJBhdUbXzHd2E1xq1j3Ug",
   [SOLANA_MAINNET_CHAIN_ID]: "6Qmycqb8UEio4V6wCboi2xWHo4YoSb69s39HzkB9Fzwu",
+  [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
+  [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
 };
 
 export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
@@ -55,6 +67,8 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [SOLANA_DEVNET_CHAIN_ID]: "267bew4oYUdWkQetBiALCMMTaVT9S5PFhqmragzUaZJD",
   [SOLANA_MAINNET_CHAIN_ID]: "FLhbbnw4NFvVtJHjK1CtxmnXUVbitMFc4FYN9fQTudm8",
+  [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
+  [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
 };
 
 export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
@@ -62,6 +76,8 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [SOLANA_DEVNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
   [SOLANA_MAINNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
+  [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
+  [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
 };
 
 export const ACP_SELECTORS = {
@@ -78,6 +94,8 @@ export const USDC_DECIMALS: Record<number, number> = {
   [bscTestnet.id]: 18,
   [SOLANA_DEVNET_CHAIN_ID]: 6,
   [SOLANA_MAINNET_CHAIN_ID]: 6,
+  [robinhoodTestnet.id]: 6,
+  [robinhood.id]: 6,
 };
 
 // ---------------------------------------------------------------------------
@@ -123,6 +141,14 @@ export const SUPPORTED_CHAINS = [
   {
     id: base.id,
     name: base.name,
+  },
+  {
+    id: robinhoodTestnet.id,
+    name: robinhoodTestnet.name,
+  },
+  {
+    id: robinhood.id,
+    name: robinhood.name,
   },
 ];
 

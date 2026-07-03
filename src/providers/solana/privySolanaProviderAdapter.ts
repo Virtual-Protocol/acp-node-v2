@@ -481,7 +481,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         params: [
           {
             serializedTransaction,
-            prefundRent: true,
+            // prefundRent: true,
           },
         ],
       }),
@@ -538,12 +538,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       .getLatestBlockhash()
       .send();
 
-    const useSponsorship =
-      this._sponsored && this._rpcProxyUrl && this._getAuthToken;
+    // const useSponsorship = this._rpcProxyUrl && this._getAuthToken;
 
-    if (useSponsorship) {
-      return this.sendSponsoredTransaction(instructions, latestBlockhash);
-    }
+    // if (useSponsorship) {
+    //   return this.sendSponsoredTransaction(instructions, latestBlockhash);
+    // }
     return this.sendSelfPayTransaction(instructions, latestBlockhash);
   }
 

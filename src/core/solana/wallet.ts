@@ -23,8 +23,7 @@ import type { SolanaInstructionLike } from "../../providers/types.js";
 // Program ids
 // ---------------------------------------------------------------------------
 
-export const SYSTEM_PROGRAM_ID =
-  "11111111111111111111111111111111" as Address;
+export const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
 export const TOKEN_PROGRAM_ID =
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 export const ATA_PROGRAM_ID =
@@ -37,7 +36,7 @@ export const ATA_PROGRAM_ID =
 /** Derive the Associated Token Account address for (owner, mint). */
 export async function deriveAta(
   owner: Address,
-  mint: Address
+  mint: Address,
 ): Promise<Address> {
   const enc = getAddressEncoder();
   const [pda] = await getProgramDerivedAddress({
@@ -55,7 +54,7 @@ export function buildCreateAtaIdempotentIx(
   payer: Address,
   ata: Address,
   owner: Address,
-  mint: Address
+  mint: Address,
 ): SolanaInstructionLike {
   return {
     programAddress: ATA_PROGRAM_ID,
@@ -79,7 +78,7 @@ export function buildCreateAtaIdempotentIx(
 export function buildSolTransferIx(
   from: Address,
   to: Address,
-  lamports: bigint
+  lamports: bigint,
 ): SolanaInstructionLike {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
@@ -141,7 +140,7 @@ export async function buildSplTransferInstructions(params: {
 /** Native SOL balance in lamports. */
 export async function getSolBalance(
   rpc: Rpc<SolanaRpcApi>,
-  address: Address
+  address: Address,
 ): Promise<bigint> {
   const { value } = await rpc.getBalance(address).send();
   return BigInt(value);
@@ -154,7 +153,7 @@ export async function getSolBalance(
 export async function getSplTokenBalance(
   rpc: Rpc<SolanaRpcApi>,
   owner: Address,
-  mint: Address
+  mint: Address,
 ): Promise<{ amount: bigint; decimals: number }> {
   const ata = await deriveAta(owner, mint);
   try {

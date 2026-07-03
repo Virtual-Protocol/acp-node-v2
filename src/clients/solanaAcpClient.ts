@@ -51,6 +51,8 @@ const JOB_STATE_SUBMITTED = 2;
 
 const EMPTY_OPT_PARAMS = new Uint8Array(0);
 
+const DEFAULT_PUBKEY = "11111111111111111111111111111111" as Address;
+
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
   private readonly contractAddress: string;
@@ -419,7 +421,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     let vaultAccounts: Record<string, Address> = {};
     let hookNamedAccounts: Record<string, Address> = {};
     const preIxs: SolanaInstructionLike[] = [];
+    const postIxs: SolanaInstructionLike[] = [];
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
+    let completeOptParams: Uint8Array = EMPTY_OPT_PARAMS;
 
     if (isFunded) {
       const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
@@ -509,7 +513,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           providerHookTokenAccount: providerAta,
         };
 
-        extraAccounts.push(
+        // post_submit layout: [hook_state, sysvar, payer, intent, map,
+        // provider_token, escrow_vault, escrow_authority, token_program,
+        // system_program, job]. The hook reads the job from the LAST slot of
+        // its slice, so jobPda is included here even though the program also
+        // appends it to the end of the full remaining set.
+        const submitSlice: SolanaInstructionLike["accounts"] = [
           { address: hookStatePda, role: AccountRole.WRITABLE },
           { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY },
           { address: signer.address, role: AccountRole.WRITABLE_SIGNER },
@@ -520,8 +529,68 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           { address: escrowAuthorityPda, role: AccountRole.READONLY },
           { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
           { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
-          { address: jobPda, role: AccountRole.READONLY }
-        );
+          { address: jobPda, role: AccountRole.READONLY },
+        ];
+
+        const hasEvaluator = job.data.evaluator !== DEFAULT_PUBKEY;
+        if (hasEvaluator) {
+          extraAccounts.push(...submitSlice);
+        } else {
+          // No evaluator: submit auto-completes in the same instruction, which
+          // fires the after-Submit AND after-Complete hooks. Two on-chain gaps
+          // must be bridged from the SDK side:
+          //
+          // 1. The program's F-25 approve_hook_delegate (hook_state PDA as SPL
+          //    delegate on the provider ATA, required by post_submit's escrow
+          //    transfer) only runs in the evaluator branch of submit. Without
+          //    it the hook's transfer fails with TokenError 0x4 (owner does
+          //    not match). Wrap the submit ix in an outer Approve/Revoke pair
+          //    so the delegation exists exactly for the duration of this tx.
+          //
+          // 2. after-Complete routes to auto_sign_escrow, whose account layout
+          //    differs from post_submit's. Use F-66 per-action mode: a non-empty
+          //    completeOptParams whose first u16 LE is the number of accounts
+          //    (of remaining + appended job) belonging to the Submit slice.
+          //
+          // auto_sign_escrow layout: [hook_state, sysvar, escrow_map, intent,
+          // escrow_vault, dest, escrow_authority, token_program]. dest must be
+          // owned by intent.recipient == job.client (the escrow releases to
+          // the client on completion; the appended job account is ignored).
+          const clientAta = await this.deriveAta(job.data.client, mintAddress);
+          preIxs.push(
+            this.buildCreateAtaIdempotentIx(
+              signer.address,
+              clientAta,
+              job.data.client,
+              mintAddress
+            ),
+            this.buildApproveIx(
+              providerAta,
+              hookStatePda,
+              signer.address,
+              job.data.budgetAmount
+            )
+          );
+          postIxs.push(this.buildRevokeIx(providerAta, signer.address));
+
+          const completeSlice: SolanaInstructionLike["accounts"] = [
+            { address: hookStatePda, role: AccountRole.WRITABLE },
+            { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY },
+            { address: provEscrowIntentIdPda, role: AccountRole.READONLY },
+            { address: escrowIntentPda, role: AccountRole.WRITABLE },
+            { address: escrowVault, role: AccountRole.WRITABLE },
+            { address: clientAta, role: AccountRole.WRITABLE },
+            { address: escrowAuthorityPda, role: AccountRole.READONLY },
+            { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+          ];
+          extraAccounts.push(...submitSlice, ...completeSlice);
+
+          const submitCount = submitSlice.length;
+          completeOptParams = new Uint8Array([
+            submitCount & 0xff,
+            (submitCount >> 8) & 0xff,
+          ]);
+        }
       }
     } else if (hookAddress) {
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
@@ -544,7 +613,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       optParams: params.optParams
         ? hexToBytes(params.optParams)
         : EMPTY_OPT_PARAMS,
-      completeOptParams: EMPTY_OPT_PARAMS,
+      completeOptParams,
     });
 
     return this.wrapMany([
@@ -554,6 +623,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         accounts: [...ix.accounts, ...extraAccounts],
         data: ix.data as Uint8Array,
       },
+      ...postIxs,
     ]);
   }
 
@@ -1095,6 +1165,47 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
       ],
       data: new Uint8Array([1]), // CreateIdempotent instruction index
+    };
+  }
+
+  private buildApproveIx(
+    source: Address,
+    delegate: Address,
+    owner: Address,
+    amount: bigint
+  ): SolanaInstructionLike {
+    const TOKEN_PROGRAM_ID =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+
+    const data = new Uint8Array(9);
+    data[0] = 4; // Approve instruction index
+    data.set(getU64Encoder().encode(amount), 1);
+
+    return {
+      programAddress: TOKEN_PROGRAM_ID,
+      accounts: [
+        { address: source, role: AccountRole.WRITABLE },
+        { address: delegate, role: AccountRole.READONLY },
+        { address: owner, role: AccountRole.READONLY_SIGNER },
+      ],
+      data,
+    };
+  }
+
+  private buildRevokeIx(
+    source: Address,
+    owner: Address
+  ): SolanaInstructionLike {
+    const TOKEN_PROGRAM_ID =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+
+    return {
+      programAddress: TOKEN_PROGRAM_ID,
+      accounts: [
+        { address: source, role: AccountRole.WRITABLE },
+        { address: owner, role: AccountRole.READONLY_SIGNER },
+      ],
+      data: new Uint8Array([5]), // Revoke instruction index
     };
   }
 }

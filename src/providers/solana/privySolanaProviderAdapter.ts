@@ -37,6 +37,7 @@ import {
   ApprovalRequiredError,
   awaitApproval,
 } from "../../core/approvalGate.js";
+import { withFeePayerRetry } from "./feePayerRetry.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -591,8 +592,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const wireBytes = getTransactionEncoder().encode(compiled);
     const unsignedBase64 = Buffer.from(wireBytes).toString("base64");
 
-    // 2. Request gas sponsorship
-    const sponsoredBase64 = await this.requestFeePayer(unsignedBase64);
+    // 2. Request gas sponsorship. Alchemy simulates on its own node, which
+    // can lag ours by a few slots — accounts we just confirmed may not be
+    // visible there yet, so retry that class of failure.
+    const sponsoredBase64 = await withFeePayerRetry(
+      () => this.requestFeePayer(unsignedBase64),
+      {
+        onRetry: (attempt, maxAttempts, message) => {
+          console.warn(
+            `[PrivySolana] Fee payer simulation lag (attempt ${attempt}/${maxAttempts}), retrying: ${message}`,
+          );
+        },
+      },
+    );
 
     // 3. Sign with Privy (user's signature)
     const signedBase64 = await this.signTransactionViaPrivy(sponsoredBase64);

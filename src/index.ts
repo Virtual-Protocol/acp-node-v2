@@ -26,8 +26,6 @@ export * from "./providers/solana/solanaProviderAdapter.js";
 export * from "./providers/solana/keypairSolanaProviderAdapter.js";
 export * from "./providers/solana/privySolanaProviderAdapter.js";
 
-// Solana constants
-export * from "./core/solana/constants.js";
 export * from "./providers/providerAuthClient.js";
 
 // Solana wallet helpers (balances + transfer instruction builders)

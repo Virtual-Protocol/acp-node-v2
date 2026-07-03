@@ -115,3 +115,11 @@ export function encodeFundConfirmation(token: Address, amount: bigint, recipient
   buf.set(addr.encode(recipient), 40);
   return buf;
 }
+
+/** Fund-hook post_submit escrow proposal (40 bytes): [token:32][u64 amount]. */
+export function encodeEscrowProposal(token: Address, amount: bigint): Uint8Array {
+  const buf = new Uint8Array(40);
+  buf.set(addr.encode(token), 0);
+  buf.set(getU64Encoder().encode(amount), 32);
+  return buf;
+}

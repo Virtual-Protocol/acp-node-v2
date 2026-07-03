@@ -1,6 +1,8 @@
 import { encodeAbiParameters, toHex, type Address, type Hex } from "viem";
 import {
+  getAddressDecoder as getSolAddressDecoder,
   getAddressEncoder as getSolAddressEncoder,
+  getU64Decoder as getSolU64Decoder,
   getU64Encoder as getSolU64Encoder,
 } from "@solana/kit";
 import {
@@ -105,17 +107,40 @@ export function encodeFundTransferSetBudgetOptParams(
   destination: string
 ): Hex {
   if (getChainFamily(chainId) === "solana") {
-    // The Solana FundTransferHook's set_budget path takes NO opt_params: it
-    // auto-derives the fund request from the job (full budget amount, paid by
-    // the client to the provider, using the job's budget mint). The EVM-style
-    // (token, amount, destination) tuple does not apply here. Sending a
-    // non-empty payload makes after_action reject the job (InvalidJob).
-    void token;
-    void amount;
-    void destination;
-    return "0x";
+    // The Solana hook decodes the fund-request proposal from opt_params
+    // exactly like the EVM hook — [token (32)] [amount u64 LE (8)]
+    // [destination (32)] = 72 bytes. Empty opt_params proposes nothing;
+    // token = the default pubkey (all zeros / system program address) cancels
+    // a live proposal. Budget-mint amounts must not exceed the job budget
+    // (AmountExceedsBudgetBound — the core delegate approval bound).
+    return encodeSolanaBorsh([
+      { type: "pubkey", value: token },
+      { type: "u64", value: amount },
+      { type: "pubkey", value: destination },
+    ]);
   }
   return encodeFundTransferOptParams(token as Address, amount, destination as Address);
+}
+
+/** Decoded Solana fund-transfer submit escrow proposal (token, amount). */
+export type SolanaEscrowOptParams = { token: string; amount: bigint };
+
+/**
+ * Decode the Solana submit escrow opt_params layout
+ * ([token (32)] [amount u64 LE (8)] = 40 bytes) so the client can derive the
+ * escrow vault, the provider's source token account, and the delegate
+ * approval amount from a caller-supplied proposal. Returns null for empty or
+ * short payloads (empty = no escrow proposed).
+ */
+export function decodeSolanaEscrowOptParams(
+  bytes: Uint8Array
+): SolanaEscrowOptParams | null {
+  if (bytes.length < 40) {
+    return null;
+  }
+  const token = getSolAddressDecoder().decode(bytes.subarray(0, 32));
+  const amount = getSolU64Decoder().decode(bytes.subarray(32, 40));
+  return { token, amount };
 }
 
 export function encodeFundTransferFundOptParams(

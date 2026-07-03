@@ -9,7 +9,12 @@ import {
   getUtf8Encoder,
 } from "@solana/kit";
 import { hexToBytes } from "viem";
-import { encodeFundTransferFundOptParams } from "../core/hookEncoding.js";
+import {
+  decodeSolanaEscrowOptParams,
+  encodeFundTransferFundOptParams,
+  encodeFundTransferSetBudgetOptParams,
+  encodeFundTransferSubmitOptParams,
+} from "../core/hookEncoding.js";
 import { BaseAcpClient } from "./baseAcpClient.js";
 import type {
   ApproveAllowanceParams,
@@ -28,7 +33,7 @@ import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
 } from "../providers/types.js";
-import { JOB_CREATED_EVENT_DISC, ACP_COMMITMENT } from "../core/solana/constants.js";
+import { JOB_CREATED_EVENT_DISC, ACP_COMMITMENT } from "../core/constants.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
@@ -41,7 +46,7 @@ import { getCompleteInstructionAsync } from "../core/solana/generated/acp/instru
 import { getRejectInstructionAsync } from "../core/solana/generated/acp/instructions/reject.js";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated.js";
 import { fetchHookState } from "../core/solana/generated/fund-transfer-hook/accounts/hookState.js";
-import { fetchFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
+import { fetchMaybeFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
 import { fetchMaybeProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
 import { fetchIntent } from "../core/solana/generated/fund-transfer-hook/accounts/intent.js";
 
@@ -193,6 +198,25 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ? job.data.hookAddress.value
         : undefined;
 
+    // F-80: the hook decodes the fund-request proposal from opt_params
+    // ([token 32][amount u64 LE 8][destination 32]). Default: propose the
+    // full new budget in the budget mint, paid to the provider (the legacy
+    // behavior). Callers override via params.optParams — including "0x" for
+    // no proposal at all, or token = default pubkey to cancel a live one.
+    const setBudgetOptParams: Uint8Array =
+      params.optParams !== undefined
+        ? hexToBytes(params.optParams)
+        : hookAddress
+          ? hexToBytes(
+              encodeFundTransferSetBudgetOptParams(
+                _chainId,
+                mintAddress,
+                params.amount,
+                signer.address
+              )
+            )
+          : EMPTY_OPT_PARAMS;
+
     const ix = getSetBudgetInstruction({
       caller: signer,
       job: jobPda,
@@ -202,13 +226,21 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       ...(hookAddress
         ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
         : {}),
-      optParams: params.optParams
-        ? hexToBytes(params.optParams)
-        : EMPTY_OPT_PARAMS,
+      optParams: setBudgetOptParams,
     });
 
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
-    if (hookAddress) {
+    if (hookAddress && setBudgetOptParams.length === 0) {
+      // No proposal: post_set_budget no-ops on empty opt_params; the hook CPI
+      // still needs its state account and the caller-validation sysvar.
+      const SYSVAR_INSTRUCTIONS_ID =
+        "Sysvar1nstructions1111111111111111111111111" as Address;
+      const hookStatePda = await this.deriveHookStatePda(hookAddress);
+      extraAccounts.push(
+        { address: hookStatePda, role: AccountRole.WRITABLE },
+        { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY }
+      );
+    } else if (hookAddress) {
       const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
       const SYSVAR_INSTRUCTIONS_ID =
         "Sysvar1nstructions1111111111111111111111111" as Address;
@@ -237,6 +269,28 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { address: jobPda, role: AccountRole.READONLY },
         { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY }
       );
+
+      // F-77 renegotiation/cancel: when the map already points at a live
+      // intent, the hook auto-closes it and needs [old intent, old creator]
+      // appended. intent_id 0 is the post-cancel sentinel (nothing to close).
+      const maybeMap = await fetchMaybeFundRequestIntentId(
+        rpc,
+        fundRequestIntentIdPda,
+        { commitment: ACP_COMMITMENT }
+      );
+      if (maybeMap.exists && maybeMap.data.intentId !== 0n) {
+        const oldIntentPda = await this.deriveIntentPda(
+          hookAddress,
+          maybeMap.data.intentId
+        );
+        const oldIntent = await fetchIntent(rpc, oldIntentPda, {
+          commitment: ACP_COMMITMENT,
+        });
+        extraAccounts.push(
+          { address: oldIntentPda, role: AccountRole.WRITABLE },
+          { address: oldIntent.data.actor, role: AccountRole.WRITABLE }
+        );
+      }
     }
 
     return this.wrapMany([
@@ -301,13 +355,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     const hookPreIxs: SolanaInstructionLike[] = [];
+    const hookPostIxs: SolanaInstructionLike[] = [];
     // The fund confirmation opt_params MUST match the on-chain fund-request
-    // intent (token, amount, recipient) that post_set_budget created — the hook
-    // validates them in post_fund via validate_intent_confirmation. The Solana
-    // hook always records the fund request as the FULL budget paid to the
-    // provider, ignoring any off-chain-requested partial amount/destination, so
-    // we derive the confirmation from the intent itself rather than from
-    // params.optParams.
+    // intent (token, amount, recipient) that post_set_budget created — the
+    // hook validates them in post_fund via validate_intent_confirmation.
+    // F-80: the intent carries whatever the provider proposed in setBudget
+    // opt_params (any amount, any mint, any destination), so the confirmation
+    // is always derived from the on-chain intent itself rather than from
+    // params.optParams. Echoing the intent IS the client's consent to those
+    // exact terms.
     let fundOptParams: Uint8Array = params.optParams
       ? hexToBytes(params.optParams)
       : EMPTY_OPT_PARAMS;
@@ -320,14 +376,24 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
       const fundRequestIntentIdPda =
         await this.deriveFundRequestIntentIdPda(hookAddress, job.data.jobId);
-      const friidAccount = await fetchFundRequestIntentId(
+      // F-80: a hooked job may have no fund-request at all (nothing proposed,
+      // or proposal cancelled — intent_id 0 sentinel). post_fund no-ops on
+      // the sysvar-only skip set in that case.
+      const maybeFriid = await fetchMaybeFundRequestIntentId(
         rpc,
         fundRequestIntentIdPda,
         { commitment: ACP_COMMITMENT }
       );
+      if (!maybeFriid.exists || maybeFriid.data.intentId === 0n) {
+        fundOptParams = EMPTY_OPT_PARAMS;
+        extraAccounts.push(
+          { address: hookStatePda, role: AccountRole.WRITABLE },
+          { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY }
+        );
+      } else {
       const intentPda = await this.deriveIntentPda(
         hookAddress,
-        friidAccount.data.intentId
+        maybeFriid.data.intentId
       );
       const intent = await fetchIntent(rpc, intentPda, {
         commitment: ACP_COMMITMENT,
@@ -357,6 +423,26 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         )
       );
 
+      // F-80: the core's F-25 delegate approval only covers the client's
+      // budget-mint token account (bounded to budget_amount, funded jobs
+      // only). A foreign-mint fund request — or any request on a zero-budget
+      // job — pulls from a token account the core never approves, so the
+      // client authorizes it with an outer Approve/Revoke bracket around the
+      // fund instruction.
+      const coreApprovalCovers =
+        job.data.budgetAmount > 0n && intent.data.token === mintAddress;
+      if (intent.data.amount > 0n && !coreApprovalCovers) {
+        hookPreIxs.push(
+          this.buildApproveIx(
+            fromAta,
+            hookStatePda,
+            signer.address,
+            intent.data.amount
+          )
+        );
+        hookPostIxs.push(this.buildRevokeIx(fromAta, signer.address));
+      }
+
       extraAccounts.push(
         { address: hookStatePda, role: AccountRole.WRITABLE },
         { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY },
@@ -366,6 +452,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { address: recipientAta, role: AccountRole.WRITABLE },
         { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY }
       );
+      }
     }
 
     const ix = getFundInstruction({
@@ -395,6 +482,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         accounts: [...ix.accounts, ...extraAccounts],
         data: ix.data as Uint8Array,
       },
+      ...hookPostIxs,
     ]);
   }
 
@@ -424,6 +512,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const postIxs: SolanaInstructionLike[] = [];
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     let completeOptParams: Uint8Array = EMPTY_OPT_PARAMS;
+    let submitOptParams: Uint8Array = params.optParams
+      ? hexToBytes(params.optParams)
+      : EMPTY_OPT_PARAMS;
 
     if (isFunded) {
       const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
@@ -475,6 +566,26 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         const TOKEN_PROGRAM_ID =
           "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
+        // F-80: the hook decodes the escrow proposal from submit opt_params
+        // ([token 32][amount u64 LE 8]). Default: stake the full budget in
+        // the budget mint (the legacy behavior). Callers override via
+        // params.optParams — a foreign mint enables the atomic-swap mode,
+        // "0x" proposes no escrow (evaluator jobs only, enforced on-chain).
+        if (params.optParams === undefined) {
+          submitOptParams = hexToBytes(
+            encodeFundTransferSubmitOptParams(
+              _chainId,
+              mintAddress,
+              job.data.budgetAmount
+            )
+          );
+        }
+        const escrowProposal = decodeSolanaEscrowOptParams(submitOptParams);
+
+        if (escrowProposal !== null) {
+        const escrowToken = escrowProposal.token as Address;
+        const escrowAmount = escrowProposal.amount;
+
         const hookStatePda = await this.deriveHookStatePda(hookAddress);
         const hookState = await fetchHookState(rpc, hookStatePda, {
           commitment: ACP_COMMITMENT,
@@ -496,7 +607,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         );
         const escrowVault = await this.deriveAta(
           escrowAuthorityPda,
-          mintAddress
+          escrowToken
+        );
+        const providerEscrowAta = await this.deriveAta(
+          signer.address,
+          escrowToken
         );
 
         preIxs.push(
@@ -504,7 +619,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
             signer.address,
             escrowVault,
             escrowAuthorityPda,
-            mintAddress
+            escrowToken
           )
         );
 
@@ -524,7 +639,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           { address: signer.address, role: AccountRole.WRITABLE_SIGNER },
           { address: escrowIntentPda, role: AccountRole.WRITABLE },
           { address: provEscrowIntentIdPda, role: AccountRole.WRITABLE },
-          { address: providerAta, role: AccountRole.WRITABLE },
+          { address: providerEscrowAta, role: AccountRole.WRITABLE },
           { address: escrowVault, role: AccountRole.WRITABLE },
           { address: escrowAuthorityPda, role: AccountRole.READONLY },
           { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
@@ -533,45 +648,49 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ];
 
         const hasEvaluator = job.data.evaluator !== DEFAULT_PUBKEY;
+
+        // Delegate coverage (F-25/F-80): the core approves the hook delegate
+        // on providerHookTokenAccount (budget mint, bounded to budget_amount)
+        // ONLY in the evaluator branch of submit. Whenever that approval does
+        // not cover the escrow pull — no-evaluator auto-complete (on-chain
+        // gap), or a foreign-mint stake — bracket the submit instruction in
+        // an outer Approve/Revoke on the actual source account.
+        const coreApprovalCovers = hasEvaluator && escrowToken === mintAddress;
+        if (escrowAmount > 0n && !coreApprovalCovers) {
+          preIxs.push(
+            this.buildApproveIx(
+              providerEscrowAta,
+              hookStatePda,
+              signer.address,
+              escrowAmount
+            )
+          );
+          postIxs.push(this.buildRevokeIx(providerEscrowAta, signer.address));
+        }
+
         if (hasEvaluator) {
           extraAccounts.push(...submitSlice);
         } else {
           // No evaluator: submit auto-completes in the same instruction, which
-          // fires the after-Submit AND after-Complete hooks. Two on-chain gaps
-          // must be bridged from the SDK side:
-          //
-          // 1. The program's F-25 approve_hook_delegate (hook_state PDA as SPL
-          //    delegate on the provider ATA, required by post_submit's escrow
-          //    transfer) only runs in the evaluator branch of submit. Without
-          //    it the hook's transfer fails with TokenError 0x4 (owner does
-          //    not match). Wrap the submit ix in an outer Approve/Revoke pair
-          //    so the delegation exists exactly for the duration of this tx.
-          //
-          // 2. after-Complete routes to auto_sign_escrow, whose account layout
-          //    differs from post_submit's. Use F-66 per-action mode: a non-empty
-          //    completeOptParams whose first u16 LE is the number of accounts
-          //    (of remaining + appended job) belonging to the Submit slice.
+          // fires the after-Submit AND after-Complete hooks. after-Complete
+          // routes to auto_sign_escrow, whose account layout differs from
+          // post_submit's. Use F-66 per-action mode: a non-empty
+          // completeOptParams whose first u16 LE is the number of accounts
+          // (of remaining + appended job) belonging to the Submit slice.
           //
           // auto_sign_escrow layout: [hook_state, sysvar, escrow_map, intent,
           // escrow_vault, dest, escrow_authority, token_program]. dest must be
           // owned by intent.recipient == job.client (the escrow releases to
           // the client on completion; the appended job account is ignored).
-          const clientAta = await this.deriveAta(job.data.client, mintAddress);
+          const clientAta = await this.deriveAta(job.data.client, escrowToken);
           preIxs.push(
             this.buildCreateAtaIdempotentIx(
               signer.address,
               clientAta,
               job.data.client,
-              mintAddress
-            ),
-            this.buildApproveIx(
-              providerAta,
-              hookStatePda,
-              signer.address,
-              job.data.budgetAmount
+              escrowToken
             )
           );
-          postIxs.push(this.buildRevokeIx(providerAta, signer.address));
 
           const completeSlice: SolanaInstructionLike["accounts"] = [
             { address: hookStatePda, role: AccountRole.WRITABLE },
@@ -590,6 +709,17 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
             submitCount & 0xff,
             (submitCount >> 8) & 0xff,
           ]);
+        }
+        } else {
+          // "0x" override: no escrow proposed. post_submit enforces the
+          // evaluator-or-escrow invariant on-chain; the hook CPI still needs
+          // its state account and the caller-validation sysvar (the program
+          // appends the job account the hook reads last).
+          const hookStatePda = await this.deriveHookStatePda(hookAddress);
+          extraAccounts.push(
+            { address: hookStatePda, role: AccountRole.WRITABLE },
+            { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY }
+          );
         }
       }
     } else if (hookAddress) {
@@ -610,9 +740,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         : {}),
       ...vaultAccounts,
       ...hookNamedAccounts,
-      optParams: params.optParams
-        ? hexToBytes(params.optParams)
-        : EMPTY_OPT_PARAMS,
+      optParams: submitOptParams,
       completeOptParams,
     });
 
@@ -660,7 +788,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
 
     let evaluatorAta: Address | undefined;
-    if (acpState.data.evaluatorFeeBp > 0n) {
+    if (
+      acpState.data.evaluatorFeeBp > 0n &&
+      job.data.evaluator !== DEFAULT_PUBKEY
+    ) {
       evaluatorAta = await this.deriveAta(job.data.evaluator, mintAddress);
     }
 
@@ -671,6 +802,26 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     const preIxs: SolanaInstructionLike[] = [];
+
+    // The evaluator fee ATA is the one destination the lifecycle never
+    // provisions: `submit` idempotently creates the provider + treasury ATAs
+    // (see setBudget/submit), and the hook branch below creates the escrow
+    // recipient ATA, but nothing creates the evaluator's fee ATA. A fresh
+    // evaluator would otherwise revert with AccountNotInitialized (3012) on
+    // the fee transfer. `complete` is signed by the evaluator, so create it
+    // here idempotently (owner == signer == job.data.evaluator). No-op if it
+    // already exists; sponsorship/self-pay covers the rent.
+    if (evaluatorAta) {
+      preIxs.push(
+        this.buildCreateAtaIdempotentIx(
+          signer.address,
+          evaluatorAta,
+          job.data.evaluator,
+          mintAddress
+        )
+      );
+    }
+
     if (hookAddress) {
       const SYSVAR_INSTRUCTIONS_ID =
         "Sysvar1nstructions1111111111111111111111111" as Address;

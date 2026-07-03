@@ -18,7 +18,7 @@ import {
   type KeyPairSigner,
   type FetchAccountConfig,
 } from "@solana/kit";
-import { ACP_COMMITMENT } from "../core/solana/constants.js";
+import { ACP_COMMITMENT } from "../core/constants.js";
 import {
   ACP_CONTRACT_ADDRESSES,
   MULTI_HOOK_ROUTER_ADDRESSES,
@@ -27,6 +27,7 @@ import {
   SUBSCRIPTION_STATE_ADDRESSES,
 } from "../core/constants.js";
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
+import { fetchJob } from "../core/solana/generated/acp/accounts/job.js";
 import { fetchHookState } from "../core/solana/generated/fund-transfer-hook/accounts/hookState.js";
 import { fetchFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
 import { fetchProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
@@ -165,9 +166,12 @@ export class SolanaMultiHookClient {
     const setBudgetIntent = await mh.intentPda(this.fundHook, counter + 1n);
 
     const subParams = mh.encodeSubParams(p.terms.durationSecs, p.terms.packageId);
+    // F-80: the fund-hook slice carries the fund-request proposal (full
+    // budget in the budget mint, paid to the provider). Empty params would
+    // propose nothing and the subsequent fund() would find no intent.
     const header = mh.encodeMultiHookHeader([
       { accountCount: 7, params: subParams },
-      { accountCount: 7, params: new Uint8Array(0) },
+      { accountCount: 7, params: mh.encodeFundConfirmation(paymentToken, p.amount, seller.address) },
     ]);
     const ix = getSetBudgetInstruction({
       caller: seller,
@@ -267,7 +271,13 @@ export class SolanaMultiHookClient {
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
 
-    const header = mh.encodeMultiHookHeader([{ accountCount: 11, params: new Uint8Array(0) }]);
+    // F-80: the fund-hook slice carries the escrow proposal (full budget in
+    // the budget mint — the provider's bond). Empty params would propose no
+    // escrow, and with-evaluator router jobs would submit bond-free.
+    const job = await this.read(fetchJob, jobPda);
+    const header = mh.encodeMultiHookHeader([
+      { accountCount: 11, params: mh.encodeEscrowProposal(paymentToken, job.data.budgetAmount) },
+    ]);
     const deliverable = fixed32(p.deliverable);
     const ix = await getSubmitInstructionAsync({
       provider: seller,

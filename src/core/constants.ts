@@ -1,5 +1,6 @@
 import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
+import type { Address as SolanaAddress, Commitment } from "@solana/kit";
 import type { ChainFamily, SolanaCluster } from "./chains.js";
 import { robinhood, robinhoodTestnet } from "./chains.js";
 
@@ -18,6 +19,16 @@ export const SOLANA_CHAIN_ID_CLUSTERS: Record<number, SolanaCluster> = {
 export function getChainFamily(chainId: number): ChainFamily {
   return chainId in SOLANA_CHAIN_ID_CLUSTERS ? "solana" : "evm";
 }
+
+// ---------------------------------------------------------------------------
+// Solana on-chain constants
+// ---------------------------------------------------------------------------
+
+export const ACP_COMMITMENT: Commitment = "confirmed";
+
+export const JOB_CREATED_EVENT_DISC = new Uint8Array([
+  48, 110, 162, 177, 67, 74, 159, 131,
+]);
 
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
@@ -47,11 +58,16 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
-  [SOLANA_DEVNET_CHAIN_ID]: "7BYmFM1J2xCKTAmKHoxFPgsZG63feKx3iBfbW9cVZSHg",
+  [SOLANA_DEVNET_CHAIN_ID]: "2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz",
   [SOLANA_MAINNET_CHAIN_ID]: "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
+
+export const SOLANA_ACP_PROGRAM_ID =
+  ACP_CONTRACT_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]! as SolanaAddress;
+export const SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID =
+  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]! as SolanaAddress;
 
 export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",

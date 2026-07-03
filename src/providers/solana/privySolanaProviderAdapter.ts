@@ -41,7 +41,7 @@ import { withFeePayerRetry } from "./feePayerRetry.js";
 import {
   SOLANA_ACP_PROGRAM_ID,
   SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID,
-} from "../../core/solana/constants.js";
+} from "../../core/constants.js";
 
 const SPONSORABLE_PROGRAM_IDS: ReadonlySet<string> = new Set([
   SOLANA_ACP_PROGRAM_ID,

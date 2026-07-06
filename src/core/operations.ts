@@ -38,6 +38,14 @@ export type SetBudgetParams = {
   jobId: bigint;
   amount: bigint;
   clientAddress?: string;
+  /**
+   * Hook opt_params, identical semantics on every chain: omitted or "0x"
+   * proposes nothing. For a fund-transfer fund request encode via
+   * encodeFundTransferSetBudgetOptParams(chainId, token, amount, destination)
+   * — F-82: budget-mint amounts may exceed the job budget (fund() then
+   * authorizes with a client-signed Approve/Revoke bracket); token = the
+   * default pubkey cancels a live proposal (Solana).
+   */
   optParams?: Hex;
 };
 

@@ -111,8 +111,9 @@ export function encodeFundTransferSetBudgetOptParams(
     // exactly like the EVM hook — [token (32)] [amount u64 LE (8)]
     // [destination (32)] = 72 bytes. Empty opt_params proposes nothing;
     // token = the default pubkey (all zeros / system program address) cancels
-    // a live proposal. Budget-mint amounts must not exceed the job budget
-    // (AmountExceedsBudgetBound — the core delegate approval bound).
+    // a live proposal. F-82: budget-mint amounts may exceed the job budget —
+    // fund() authorizes over-budget intents with a client-signed
+    // Approve/Revoke bracket (hook_delegate omitted from the core ix).
     return encodeSolanaBorsh([
       { type: "pubkey", value: token },
       { type: "u64", value: amount },

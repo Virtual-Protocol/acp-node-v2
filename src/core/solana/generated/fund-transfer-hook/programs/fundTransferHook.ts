@@ -34,7 +34,7 @@ import {
 } from "../instructions/index.js";
 
 export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
-  "2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz" as Address<"2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz">;
+  "BHYuN3tKJ2jA3x4VPXGoc1oPATzgjBop8HCD6CajJvuD" as Address<"BHYuN3tKJ2jA3x4VPXGoc1oPATzgjBop8HCD6CajJvuD">;
 
 export enum FundTransferHookAccount {
   FundRequestIntentId,
@@ -205,7 +205,7 @@ export function identifyFundTransferHookInstruction(
 }
 
 export type ParsedFundTransferHookInstruction<
-  TProgram extends string = "2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz",
+  TProgram extends string = "BHYuN3tKJ2jA3x4VPXGoc1oPATzgjBop8HCD6CajJvuD",
 > =
   | ({
       instructionType: FundTransferHookInstruction.AcceptAuthority;

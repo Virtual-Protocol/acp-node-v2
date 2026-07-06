@@ -23,7 +23,7 @@ export async function findIntentPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz" as Address<"2Cz6xpUzfQVxkqzt5ewpLvGtumGdMopnJvmZQZrNdHYz">,
+    programAddress = "BHYuN3tKJ2jA3x4VPXGoc1oPATzgjBop8HCD6CajJvuD" as Address<"BHYuN3tKJ2jA3x4VPXGoc1oPATzgjBop8HCD6CajJvuD">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

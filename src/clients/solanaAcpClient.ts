@@ -12,7 +12,6 @@ import { hexToBytes } from "viem";
 import {
   decodeSolanaEscrowOptParams,
   encodeFundTransferFundOptParams,
-  encodeFundTransferSetBudgetOptParams,
   encodeFundTransferSubmitOptParams,
 } from "../core/hookEncoding.js";
 import { BaseAcpClient } from "./baseAcpClient.js";
@@ -199,23 +198,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         : undefined;
 
     // F-80: the hook decodes the fund-request proposal from opt_params
-    // ([token 32][amount u64 LE 8][destination 32]). Default: propose the
-    // full new budget in the budget mint, paid to the provider (the legacy
-    // behavior). Callers override via params.optParams — including "0x" for
-    // no proposal at all, or token = default pubkey to cancel a live one.
+    // ([token 32][amount u64 LE 8][destination 32]). EVM parity: omitted
+    // optParams proposes nothing, exactly like "0x" — callers encode a fund
+    // request via encodeFundTransferSetBudgetOptParams (F-82: the amount may
+    // exceed the budget; token = default pubkey cancels a live proposal).
     const setBudgetOptParams: Uint8Array =
       params.optParams !== undefined
         ? hexToBytes(params.optParams)
-        : hookAddress
-          ? hexToBytes(
-              encodeFundTransferSetBudgetOptParams(
-                _chainId,
-                mintAddress,
-                params.amount,
-                signer.address
-              )
-            )
-          : EMPTY_OPT_PARAMS;
+        : EMPTY_OPT_PARAMS;
 
     const ix = getSetBudgetInstruction({
       caller: signer,
@@ -232,13 +222,17 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (hookAddress && setBudgetOptParams.length === 0) {
       // No proposal: post_set_budget no-ops on empty opt_params; the hook CPI
-      // still needs its state account and the caller-validation sysvar.
+      // still needs its state account and the caller-validation sysvar. The
+      // job account is appended because the core's M-01 guard requires more
+      // than [hookState, sysvar] whenever amount > 0 on a hooked job — the
+      // hook never reads it on the empty-opt_params early return.
       const SYSVAR_INSTRUCTIONS_ID =
         "Sysvar1nstructions1111111111111111111111111" as Address;
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
       extraAccounts.push(
         { address: hookStatePda, role: AccountRole.WRITABLE },
-        { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY }
+        { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY },
+        { address: jobPda, role: AccountRole.READONLY }
       );
     } else if (hookAddress) {
       const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
@@ -356,6 +350,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     const hookPreIxs: SolanaInstructionLike[] = [];
     const hookPostIxs: SolanaInstructionLike[] = [];
+    // F-82: when the client's outer Approve bracket must survive into
+    // post_fund (budget-mint intent above budget), the optional hook_delegate
+    // account is omitted from the core fund instruction — the core's F-25
+    // approve/revoke both run only when hook_delegate is passed, and would
+    // otherwise overwrite the bracket approval (single SPL delegate slot).
+    let passHookDelegate = true;
     // The fund confirmation opt_params MUST match the on-chain fund-request
     // intent (token, amount, recipient) that post_set_budget created — the
     // hook validates them in post_fund via validate_intent_confirmation.
@@ -423,14 +423,19 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         )
       );
 
-      // F-80: the core's F-25 delegate approval only covers the client's
-      // budget-mint token account (bounded to budget_amount, funded jobs
-      // only). A foreign-mint fund request — or any request on a zero-budget
-      // job — pulls from a token account the core never approves, so the
-      // client authorizes it with an outer Approve/Revoke bracket around the
-      // fund instruction.
+      // F-80/F-82: the core's F-25 delegate approval only covers the client's
+      // budget-mint token account, bounded to budget_amount, funded jobs
+      // only. Whenever that approval cannot cover the pull — foreign mint,
+      // zero-budget job, or a budget-mint intent ABOVE the budget (F-82) —
+      // the client authorizes the exact intent amount with an outer
+      // Approve/Revoke bracket around the fund instruction. For budget-mint
+      // brackets the hook_delegate account is additionally omitted from the
+      // core instruction so the core's own approve/revoke (which target the
+      // same token account) do not clobber the bracket.
       const coreApprovalCovers =
-        job.data.budgetAmount > 0n && intent.data.token === mintAddress;
+        job.data.budgetAmount > 0n &&
+        intent.data.token === mintAddress &&
+        intent.data.amount <= job.data.budgetAmount;
       if (intent.data.amount > 0n && !coreApprovalCovers) {
         hookPreIxs.push(
           this.buildApproveIx(
@@ -441,6 +446,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           )
         );
         hookPostIxs.push(this.buildRevokeIx(fromAta, signer.address));
+        if (intent.data.token === mintAddress) {
+          passHookDelegate = false;
+        }
       }
 
       extraAccounts.push(
@@ -466,7 +474,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       ...(hookAddress
         ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
         : {}),
-      ...(hookAddress
+      ...(hookAddress && passHookDelegate
         ? { hookDelegate: await this.deriveHookDelegatePda(hookAddress) }
         : {}),
       expectedBudget: params.expectedBudget,
@@ -714,11 +722,16 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           // "0x" override: no escrow proposed. post_submit enforces the
           // evaluator-or-escrow invariant on-chain; the hook CPI still needs
           // its state account and the caller-validation sysvar (the program
-          // appends the job account the hook reads last).
+          // appends the job account the hook reads last). The job account is
+          // additionally passed because the core's M-01 guard (submit.rs)
+          // requires more than [hookState, sysvar] whenever budget > 0 on a
+          // hooked job — without it the core rejects the tx with
+          // MissingRequiredAccount before the hook's semantic check runs.
           const hookStatePda = await this.deriveHookStatePda(hookAddress);
           extraAccounts.push(
             { address: hookStatePda, role: AccountRole.WRITABLE },
-            { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY }
+            { address: SYSVAR_INSTRUCTIONS_ID, role: AccountRole.READONLY },
+            { address: jobPda, role: AccountRole.READONLY }
           );
         }
       }

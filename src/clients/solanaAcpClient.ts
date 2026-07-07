@@ -32,7 +32,14 @@ import type {
   ISolanaProviderAdapter,
   SolanaInstructionLike,
 } from "../providers/types.js";
-import { JOB_CREATED_EVENT_DISC, ACP_COMMITMENT } from "../core/constants.js";
+import {
+  JOB_CREATED_EVENT_DISC,
+  ACP_COMMITMENT,
+  EVM_NO_EVALUATOR_ADDRESS,
+  SOLANA_NO_EVALUATOR_ADDRESS,
+} from "../core/constants.js";
+
+import { buildJobStateRetryGuard } from "../core/solana/jobStateRetryGuard.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
@@ -55,7 +62,7 @@ const JOB_STATE_SUBMITTED = 2;
 
 const EMPTY_OPT_PARAMS = new Uint8Array(0);
 
-const DEFAULT_PUBKEY = "11111111111111111111111111111111" as Address;
+const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
 
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
@@ -101,8 +108,18 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   async execute(
     instructions: SolanaInstructionLike[]
   ): Promise<string | string[]> {
-    const result = await this.provider.sendInstructions(instructions);
-    console.log("execute result", result);
+    // Lets sponsored adapters distinguish a WrongStatus caused by sponsor-node
+    // simulation lag (retry) from a genuine one, e.g. an already-completed job
+    // (fail fast). Non-sponsored adapters ignore it.
+    const retryGuard = buildJobStateRetryGuard(
+      this.provider.getRpc(),
+      this.contractAddress as Address,
+      instructions
+    );
+    const result = await this.provider.sendInstructions(instructions, {
+      retryGuard,
+    });
+    // console.log("execute result", result);
     return result;
   }
 
@@ -144,11 +161,20 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       );
     }
 
+    // Chain-agnostic callers (e.g. AcpAgent) express "no evaluator" as the
+    // EVM zero address, which is not valid base58 and would fail encoding.
+    // Map it (and an absent value) to the on-chain sentinel.
+    const evaluator =
+      !params.evaluatorAddress ||
+      params.evaluatorAddress.toLowerCase() === EVM_NO_EVALUATOR_ADDRESS
+        ? DEFAULT_PUBKEY
+        : (params.evaluatorAddress as Address);
+
     const ix = await getCreateJobInstructionAsync({
       client: signer,
       job: jobPda,
       provider: params.providerAddress as Address,
-      evaluator: params.evaluatorAddress as Address,
+      evaluator,
       description: params.description,
       expiredAt: params.expiredAt,
       hookAddress: params.hookAddress ? (params.hookAddress as Address) : null,

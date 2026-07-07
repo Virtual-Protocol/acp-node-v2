@@ -10,6 +10,7 @@ import {
 } from "../../core/chains.js";
 import type {
   ISolanaProviderAdapter,
+  SendInstructionsOptions,
   SolanaInstructionLike,
   SolanaSigner,
 } from "../types.js";
@@ -60,6 +61,7 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
 
   async sendInstructions(
     _instructions: SolanaInstructionLike[],
+    _options?: SendInstructionsOptions,
   ): Promise<string | string[]> {
     throw new Error(
       "sendInstructions() not implemented. Override in subclass.",

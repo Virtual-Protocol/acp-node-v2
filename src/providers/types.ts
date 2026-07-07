@@ -60,6 +60,18 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
   signTypedData(chainId: number, typedData: unknown): Promise<string>;
 }
 
+export type SendInstructionsOptions = {
+  /**
+   * Consulted by sponsored (fee-payer) retry logic for guarded errors such
+   * as WrongStatus: return true when the caller's own read RPC confirms the
+   * transaction's state precondition is met (sponsor-node lag — retry), false
+   * when the error is genuine (fail fast). See
+   * providers/solana/feePayerRetry.ts. Adapters without sponsored retry may
+   * ignore it.
+   */
+  retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+};
+
 export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
   getCluster(): Promise<SolanaCluster>;
@@ -68,5 +80,6 @@ export interface ISolanaProviderAdapter extends IProviderAdapter {
   signMessage(message: string): Promise<string>;
   sendInstructions(
     instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
   ): Promise<string | string[]>;
 }

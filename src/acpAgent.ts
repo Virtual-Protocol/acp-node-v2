@@ -1,4 +1,4 @@
-import { encodeAbiParameters, zeroAddress, type Address, type Hex } from "viem";
+import { encodeAbiParameters, type Address, type Hex } from "viem";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const Ajv: typeof import("ajv").default = require("ajv");
@@ -25,6 +25,7 @@ import {
   MIN_SLA_MINS,
   BUFFER_SECONDS,
   getChainFamily,
+  getNoEvaluatorAddress,
 } from "./core/constants.js";
 import { type ChainFamily } from "./core/chains.js";
 import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi.js";
@@ -679,7 +680,9 @@ export class AcpAgent {
    *     `job.completed` / `job.rejected` events.
    *
    *   • **Skip evaluation** — omit `evaluatorAddress` (defaults to the
-   *     zero address). The contract treats this as "no evaluator required":
+   *     chain's no-evaluator sentinel: the zero address on EVM, the
+   *     default pubkey `11111111111111111111111111111111` on Solana).
+   *     The contract treats this as "no evaluator required":
    *     a successful `submit` auto-completes the job and releases funds.
    *     `job.submitted` won't fire for anyone in this mode. Suitable for
    *     trusted-provider flows where the buyer doesn't need a quality gate
@@ -690,8 +693,8 @@ export class AcpAgent {
    * @param providerAddress    Provider's wallet address.
    * @param requirementData    Requirement payload, validated against
    *                           `offering.requirements` if it's a JSON schema.
-   * @param opts.evaluatorAddress  See above. Defaults to the zero address
-   *                               (skip-evaluation mode).
+   * @param opts.evaluatorAddress  See above. Defaults to the chain's
+   *                               no-evaluator sentinel (skip-evaluation mode).
    * @param opts.hookAddress       Optional fund-transfer hook override.
    */
   async createJobFromOffering(
@@ -727,7 +730,7 @@ export class AcpAgent {
 
     const jobParams: CreateJobParams = {
       providerAddress,
-      evaluatorAddress: opts?.evaluatorAddress ?? zeroAddress,
+      evaluatorAddress: opts?.evaluatorAddress ?? getNoEvaluatorAddress(chainId),
       expiredAt,
       description: offering.name,
       ...(opts?.hookAddress ? { hookAddress: opts.hookAddress } : {}),
@@ -786,8 +789,9 @@ export class AcpAgent {
    *
    * See `createJobFromOffering` for the three evaluation modes the
    * `opts.evaluatorAddress` choice selects (self / third-party / skip).
-   * Notably, omitting `evaluatorAddress` defaults to the zero address,
-   * which puts the job in **skip-evaluation** mode (auto-completes on
+   * Notably, omitting `evaluatorAddress` defaults to the chain's
+   * no-evaluator sentinel, which puts the job in **skip-evaluation**
+   * mode (auto-completes on
    * deliverable submission). Pass an explicit address if you want a
    * quality gate before payment.
    */

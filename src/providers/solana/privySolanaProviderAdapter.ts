@@ -16,10 +16,15 @@ import {
   type Address,
   type Rpc,
   type Signature,
+  type Slot,
   type SolanaRpcApi,
 } from "@solana/kit";
 import type { SolanaCluster } from "../../core/chains.js";
-import type { SolanaInstructionLike, SolanaSigner } from "../types.js";
+import type {
+  SendInstructionsOptions,
+  SolanaInstructionLike,
+  SolanaSigner,
+} from "../types.js";
 import { SolanaProviderAdapter } from "./solanaProviderAdapter.js";
 import {
   formatRequestForAuthorizationSignature,
@@ -38,6 +43,7 @@ import {
   awaitApproval,
 } from "../../core/approvalGate.js";
 import { withFeePayerRetry } from "./feePayerRetry.js";
+import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import {
   SOLANA_ACP_PROGRAM_ID,
   SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID,
@@ -66,6 +72,93 @@ export interface PrivySolanaConfig {
   serverUrl?: string;
   privyAppId?: string;
   sponsored?: boolean;
+  /**
+   * Called when a sponsored send is retried due to sponsor-node lag.
+   * When provided, replaces the default one-line console notice. `slot` is
+   * the read RPC's slot at blockhash fetch, `requiredSlot` is the slot in
+   * which the required account state was created (the slot the sponsor node
+   * must reach), `nodeSlot` is the lagging node's own slot when the error
+   * exposes it (only -32016 minimum-context-slot errors do; Alchemy
+   * simulation errors leave it null), and `rawError` carries the underlying
+   * simulation failure for debugging.
+   */
+  onSponsoredRetry?: (info: {
+    attempt: number;
+    maxAttempts: number;
+    slot: bigint | null;
+    requiredSlot: bigint | null;
+    nodeSlot: bigint | null;
+    rawError: string;
+  }) => void;
+}
+
+function maxSlot(a: bigint | null, b: bigint | null): bigint | null {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a > b ? a : b;
+}
+
+// Extracts the responding node's slot from an error chain. Only the
+// broadcast-side -32016 "minimum context slot not reached" error carries it
+// (as `contextSlot` on the SolanaError context); Alchemy's sponsorship
+// simulation errors report no slot.
+export function extractNodeContextSlot(err: unknown): bigint | null {
+  let current: unknown = err;
+  for (let depth = 0; current != null && depth < 6; depth++) {
+    const context = (current as { context?: Record<string, unknown> }).context;
+    const raw = context?.contextSlot;
+    if (typeof raw === "bigint" || typeof raw === "number") {
+      return BigInt(raw);
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
+/**
+ * Resolves the two slots reported when a sponsored attempt is retried:
+ *   - `nodeSlot`: the responding node's slot, present only on a -32016
+ *     broadcast error (see extractNodeContextSlot).
+ *   - `requiredSlot`: the slot the failing step needed to reach. For a -32016
+ *     broadcast error this is the exact `minContextSlot` we sent
+ *     (`max(simulationSlot, lastConfirmedSlot)`), captured as
+ *     `lastMinContextSlot`, so `requiredSlot - nodeSlot` is guaranteed
+ *     positive. When the attempt failed before broadcast (sponsor-simulation
+ *     lag throws a plain error with no slot), it falls back to the last
+ *     confirmed slot, then to our read RPC's blockhash slot — the required
+ *     state is visible by that slot, so it is a valid sync target.
+ */
+export function resolveSponsoredRetrySlots(
+  error: unknown,
+  slots: {
+    lastMinContextSlot: bigint | null;
+    lastConfirmedSlot: bigint | null;
+    lastSeenSlot: bigint | null;
+  },
+): { requiredSlot: bigint | null; nodeSlot: bigint | null } {
+  return {
+    nodeSlot: extractNodeContextSlot(error),
+    requiredSlot:
+      slots.lastMinContextSlot ??
+      slots.lastConfirmedSlot ??
+      slots.lastSeenSlot,
+  };
+}
+
+/** Human-readable warning for a sponsored-transaction retry. */
+export function formatSponsoredRetryWarning(
+  requiredSlot: bigint | null,
+  nodeSlot: bigint | null,
+  attempt: number,
+  maxAttempts: number,
+): string {
+  const gap =
+    requiredSlot != null && nodeSlot != null ? requiredSlot - nodeSlot : null;
+  return gap != null && gap > 0n
+    ? `[PrivySolana] sponsor node ${gap} slot${gap === 1n ? "" : "s"} behind required slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
+    : requiredSlot != null
+      ? `[PrivySolana] waiting for sponsor node to reach slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
+      : `[PrivySolana] sponsor node syncing, waiting (attempt ${attempt}/${maxAttempts})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +424,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _rpcProxyUrl: string | null;
   private _getAuthToken: (() => Promise<string>) | null = null;
   private readonly _sponsored: boolean;
+  private readonly _onSponsoredRetry: PrivySolanaConfig["onSponsoredRetry"];
+  // Slot of the most recently confirmed transaction sent through this
+  // adapter — the slot the sponsor node must reach to see account state
+  // created by the previous step (e.g. createJob before setBudget).
+  private _lastConfirmedSlot: bigint | null = null;
 
   private constructor(params: {
     address: string;
@@ -344,6 +442,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     privyAppId: string;
     rpcProxyUrl: string | null;
     sponsored: boolean;
+    onSponsoredRetry?: PrivySolanaConfig["onSponsoredRetry"];
   }) {
     super("privy-solana");
     this._address = params.address;
@@ -357,6 +456,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     this._privyAppId = params.privyAppId;
     this._rpcProxyUrl = params.rpcProxyUrl;
     this._sponsored = params.sponsored;
+    this._onSponsoredRetry = params.onSponsoredRetry;
   }
 
   static async create(
@@ -445,6 +545,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       privyAppId,
       rpcProxyUrl,
       sponsored: params.sponsored ?? true,
+      ...(params.onSponsoredRetry
+        ? { onSponsoredRetry: params.onSponsoredRetry }
+        : {}),
     });
     adapter._getAuthToken = getToken;
     return adapter;
@@ -470,9 +573,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // Gas sponsorship: alchemy_requestFeePayer
   // -------------------------------------------------------------------------
 
-  private async requestFeePayer(
-    serializedTransaction: string,
-  ): Promise<string> {
+  private async requestFeePayer(serializedTransaction: string): Promise<{
+    serializedTransaction: string;
+    simulationSlot: bigint | null;
+  }> {
     if (!this._rpcProxyUrl || !this._getAuthToken) {
       throw new Error("Gas sponsorship requires a proxied RPC connection");
     }
@@ -503,7 +607,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`,
       );
     }
-    return json.result.serializedTransaction;
+    // simulationSlot is returned when prefundRent is true — the slot Alchemy's
+    // rent-prefunding simulation ran at. Alchemy's docs: "pass it as
+    // minContextSlot when submitting the transaction."
+    const rawSlot = json.result.simulationSlot;
+    return {
+      serializedTransaction: json.result.serializedTransaction,
+      simulationSlot: rawSlot != null ? BigInt(rawSlot) : null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -543,6 +654,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
   async sendInstructions(
     instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
   ): Promise<string> {
     // Sponsorship applies only to ACP actions (batches touching an ACP
     // program). Everything else — generic transfers, unrelated instructions —
@@ -557,7 +669,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       isAcpAction;
 
     if (useSponsorship) {
-      return this.sendSponsoredTransaction(instructions);
+      return this.sendSponsoredTransaction(instructions, options);
     }
 
     const { value: latestBlockhash } = await this._rpc
@@ -606,17 +718,37 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * budget, the sponsor's own fee-payer credit) may not be visible yet. A
    * fresh blockhash is fetched on every attempt so retries never reuse a
    * stale/expired one.
+   *
+   * Sponsor-side simulation lag (requestFeePayer) cannot be avoided —
+   * alchemy_requestFeePayer accepts no minContextSlot and its simulation is
+   * the sponsorship policy gate. Broadcast-side lag IS avoided: we pass
+   * max(Alchemy's simulationSlot, our last confirmed slot) as minContextSlot
+   * to sendTransaction, so preflight never runs against state older than what
+   * the sponsor simulated; a lagging node returns a retryable -32016 instead.
    */
   private async sendSponsoredTransaction(
     instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
   ): Promise<string> {
+    // Slot our read RPC was at when the current attempt's blockhash was
+    // fetched — the state the sponsor's simulation node has not caught up
+    // to yet when a retryable lag error occurs.
+    let lastSeenSlot: bigint | null = null;
+    // The minContextSlot passed to the current attempt's broadcast — i.e. the
+    // exact slot a -32016 "minimum context slot not reached" error means the
+    // broadcast node failed to reach. Reset each attempt; only set once the
+    // attempt actually reaches the broadcast step.
+    let lastMinContextSlot: bigint | null = null;
+
     return withFeePayerRetry(
       async () => {
+        lastMinContextSlot = null;
         // 1. Fresh blockhash + build tx with user as placeholder fee payer
         //    (Alchemy replaces it + prefunds CPI rent).
-        const { value: latestBlockhash } = await this._rpc
+        const { context, value: latestBlockhash } = await this._rpc
           .getLatestBlockhash()
           .send();
+        lastSeenSlot = context.slot;
 
         const message = pipe(
           createTransactionMessage({ version: 0 }),
@@ -631,19 +763,49 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         const unsignedBase64 = Buffer.from(wireBytes).toString("base64");
 
         // 2. Request gas sponsorship.
-        const sponsoredBase64 = await this.requestFeePayer(unsignedBase64);
+        const { serializedTransaction: sponsoredBase64, simulationSlot } =
+          await this.requestFeePayer(unsignedBase64);
 
         // 3. Sign with Privy (user's signature).
         const signedBase64 =
           await this.signTransactionViaPrivy(sponsoredBase64);
 
-        // 4. Broadcast + confirm.
-        return this.broadcastAndConfirm(signedBase64);
+        // 4. Broadcast + confirm. minContextSlot forces the broadcast node's
+        //    preflight to run against state at least as fresh as both
+        //    Alchemy's sponsorship simulation (simulationSlot) and our
+        //    previous confirmed step (_lastConfirmedSlot) — a lagging node
+        //    returns an explicit, retryable -32016 instead of a misleading
+        //    simulation failure.
+        const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
+        lastMinContextSlot = minContextSlot;
+        return this.broadcastAndConfirm(signedBase64, minContextSlot);
       },
       {
-        onRetry: (attempt, maxAttempts, message) => {
+        ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        onRetry: (attempt, maxAttempts, message, error) => {
+          const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
+            lastMinContextSlot,
+            lastConfirmedSlot: this._lastConfirmedSlot,
+            lastSeenSlot,
+          });
+          if (this._onSponsoredRetry) {
+            this._onSponsoredRetry({
+              attempt,
+              maxAttempts,
+              slot: lastSeenSlot,
+              requiredSlot,
+              nodeSlot,
+              rawError: message,
+            });
+            return;
+          }
           console.warn(
-            `[PrivySolana] sponsored send lag (attempt ${attempt}/${maxAttempts}), retrying: ${message}`,
+            formatSponsoredRetryWarning(
+              requiredSlot,
+              nodeSlot,
+              attempt,
+              maxAttempts,
+            ),
           );
         },
       },
@@ -654,11 +816,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // Broadcast + confirm
   // -------------------------------------------------------------------------
 
-  private async broadcastAndConfirm(encodedTx: string): Promise<string> {
+  private async broadcastAndConfirm(
+    encodedTx: string,
+    minContextSlot?: bigint | null,
+  ): Promise<string> {
     let signature: Signature;
     try {
       signature = await this._rpc
-        .sendTransaction(encodedTx as any, { encoding: "base64" })
+        .sendTransaction(encodedTx as any, {
+          encoding: "base64",
+          ...(minContextSlot != null
+            ? { minContextSlot: minContextSlot as Slot }
+            : {}),
+        })
         .send();
     } catch (err: unknown) {
       const errObj = err as Record<string, unknown>;
@@ -681,12 +851,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       const status = value[0];
       if (status) {
         if (status.err) {
-          throw new Error(`Transaction failed: ${JSON.stringify(status.err)}`);
+          throw new Error(
+            `Transaction failed: ${stringifyBigIntSafe(status.err)}`,
+          );
         }
         if (
           status.confirmationStatus === "confirmed" ||
           status.confirmationStatus === "finalized"
         ) {
+          this._lastConfirmedSlot = status.slot;
           return signature;
         }
       }

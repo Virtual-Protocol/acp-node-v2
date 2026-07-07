@@ -21,6 +21,23 @@ export function getChainFamily(chainId: number): ChainFamily {
 }
 
 // ---------------------------------------------------------------------------
+// No-evaluator sentinels
+// ---------------------------------------------------------------------------
+
+// "Skip evaluation" is expressed per chain family: EVM contracts use the zero
+// address, the Solana program uses the default (all-zero-byte) pubkey.
+export const EVM_NO_EVALUATOR_ADDRESS =
+  "0x0000000000000000000000000000000000000000";
+export const SOLANA_NO_EVALUATOR_ADDRESS =
+  "11111111111111111111111111111111";
+
+export function getNoEvaluatorAddress(chainId: number): string {
+  return getChainFamily(chainId) === "solana"
+    ? SOLANA_NO_EVALUATOR_ADDRESS
+    : EVM_NO_EVALUATOR_ADDRESS;
+}
+
+// ---------------------------------------------------------------------------
 // Solana on-chain constants
 // ---------------------------------------------------------------------------
 

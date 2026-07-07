@@ -14,8 +14,12 @@ import {
   type SolanaRpcApi,
 } from "@solana/kit";
 import type { SolanaCluster } from "../../core/chains.js";
-import type { SolanaInstructionLike } from "../types.js";
+import type {
+  SendInstructionsOptions,
+  SolanaInstructionLike,
+} from "../types.js";
 import { SolanaProviderAdapter } from "./solanaProviderAdapter.js";
+import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 
 export class KeypairSolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly signer: KeyPairSigner;
@@ -45,8 +49,11 @@ export class KeypairSolanaProviderAdapter extends SolanaProviderAdapter {
     return this.signer;
   }
 
+  // _options.retryGuard is unused here: this adapter self-pays and its
+  // preflight runs on its own RPC, so there is no sponsor-node lag to guard.
   async sendInstructions(
     instructions: SolanaInstructionLike[],
+    _options?: SendInstructionsOptions,
   ): Promise<string> {
     const { value: latestBlockhash } = await this.rpc
       .getLatestBlockhash()
@@ -95,7 +102,7 @@ export class KeypairSolanaProviderAdapter extends SolanaProviderAdapter {
       if (status) {
         if (status.err) {
           throw new Error(
-            `Transaction failed: ${JSON.stringify(status.err)}`,
+            `Transaction failed: ${stringifyBigIntSafe(status.err)}`,
           );
         }
         if (

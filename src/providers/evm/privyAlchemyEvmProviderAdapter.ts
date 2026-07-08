@@ -786,7 +786,18 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     client: SmartWalletClient,
     id: Hex
   ): Promise<Address> {
-    const status = await client.waitForCallsStatus({ id });
+    // Poll inclusion fast. Without an explicit pollingInterval, viem falls
+    // back to the client's default (4s over http) — so a userOp that lands in
+    // ~2s sits unnoticed until the next 4s tick, which is the bulk of the
+    // user-perceived latency on an L2 send (2s block time). 500ms notices
+    // inclusion within half a second of reality; each tick is one light
+    // wallet_getCallsStatus read. Override with ACP_CALLS_POLL_MS.
+    const pollEnv = Number(process.env.ACP_CALLS_POLL_MS);
+    const status = await client.waitForCallsStatus({
+      id,
+      pollingInterval:
+        Number.isFinite(pollEnv) && pollEnv > 0 ? pollEnv : 500,
+    });
     if (!status.receipts?.[0]?.transactionHash) {
       throw new Error("Transaction failed");
     }

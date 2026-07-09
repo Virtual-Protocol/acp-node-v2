@@ -23,6 +23,7 @@ export * from "./providers/types.js";
 export * from "./providers/evm/viemProviderAdapter.js";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter.js";
 export * from "./providers/solana/solanaProviderAdapter.js";
+export * from "./providers/solana/txConfirmation.js";
 export * from "./providers/solana/keypairSolanaProviderAdapter.js";
 export * from "./providers/solana/privySolanaProviderAdapter.js";
 

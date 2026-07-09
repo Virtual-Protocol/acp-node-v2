@@ -28,6 +28,8 @@
 // first so our own node also gets a moment to catch up before the guard's
 // verdict is trusted.
 
+import { SolanaTransactionError } from "./txConfirmation.js";
+
 const RETRYABLE_FEE_PAYER_PATTERNS = [
   "accountnotinitialized",
   "0xbc4", // Anchor 3012 AccountNotInitialized as a custom program error
@@ -64,6 +66,13 @@ function collectErrorText(err: unknown): string {
 }
 
 export function isRetryableFeePayerError(err: unknown): boolean {
+  // An expired transaction is provably dropped (blockhash validity ended
+  // without inclusion) and every sponsored attempt rebuilds with a fresh
+  // blockhash, so retrying cannot double-apply. The "timeout" phase (stalled
+  // RPC, outcome unknown) is deliberately NOT retryable.
+  if (err instanceof SolanaTransactionError && err.phase === "expired") {
+    return true;
+  }
   const text = collectErrorText(err);
   return RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern));
 }

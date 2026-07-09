@@ -44,6 +44,7 @@ import {
 } from "../../core/approvalGate.js";
 import { withFeePayerRetry } from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
+import { confirmTransaction } from "./txConfirmation.js";
 import {
   SOLANA_ACP_PROGRAM_ID,
   SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID,
@@ -139,9 +140,7 @@ export function resolveSponsoredRetrySlots(
   return {
     nodeSlot: extractNodeContextSlot(error),
     requiredSlot:
-      slots.lastMinContextSlot ??
-      slots.lastConfirmedSlot ??
-      slots.lastSeenSlot,
+      slots.lastMinContextSlot ?? slots.lastConfirmedSlot ?? slots.lastSeenSlot,
   };
 }
 
@@ -155,10 +154,10 @@ export function formatSponsoredRetryWarning(
   const gap =
     requiredSlot != null && nodeSlot != null ? requiredSlot - nodeSlot : null;
   return gap != null && gap > 0n
-    ? `[PrivySolana] sponsor node ${gap} slot${gap === 1n ? "" : "s"} behind required slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
+    ? `[gas_sponsorship] sponsor node ${gap} slot${gap === 1n ? "" : "s"} behind required slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
     : requiredSlot != null
-      ? `[PrivySolana] waiting for sponsor node to reach slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
-      : `[PrivySolana] sponsor node syncing, waiting (attempt ${attempt}/${maxAttempts})`;
+      ? `[gas_sponsorship] waiting for sponsor node to reach slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
+      : `[gas_sponsorship] sponsor node syncing, waiting (attempt ${attempt}/${maxAttempts})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +197,7 @@ async function serverPost<T>(
       const approvalUrl = payload.details?.approvalUrl ?? "";
       const detail = payload.detail ?? "Manual approval required";
       console.error(
-        `[PrivySolana] Manual approval required.\n` +
+        `[gas_sponsorship] Manual approval required.\n` +
           `  Approve at: ${approvalUrl}\n` +
           `  Approval ID: ${approvalId}\n` +
           `  Reason: ${detail}`,
@@ -702,7 +701,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     const signedTx = await signTransactionMessageWithSigners(message);
     const encodedTx = getBase64EncodedWireTransaction(signedTx);
-    return this.broadcastAndConfirm(encodedTx);
+    return this.broadcastAndConfirm(
+      encodedTx,
+      latestBlockhash.lastValidBlockHeight,
+    );
   }
 
   /**
@@ -778,7 +780,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         //    simulation failure.
         const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
         lastMinContextSlot = minContextSlot;
-        return this.broadcastAndConfirm(signedBase64, minContextSlot);
+        return this.broadcastAndConfirm(
+          signedBase64,
+          latestBlockhash.lastValidBlockHeight,
+          minContextSlot,
+        );
       },
       {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
@@ -818,6 +824,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
   private async broadcastAndConfirm(
     encodedTx: string,
+    lastValidBlockHeight: bigint,
     minContextSlot?: bigint | null,
   ): Promise<string> {
     let signature: Signature;
@@ -844,27 +851,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       throw err;
     }
 
-    for (let i = 0; i < 30; i++) {
-      const { value } = await this._rpc
-        .getSignatureStatuses([signature])
-        .send();
-      const status = value[0];
-      if (status) {
-        if (status.err) {
-          throw new Error(
-            `Transaction failed: ${stringifyBigIntSafe(status.err)}`,
-          );
-        }
-        if (
-          status.confirmationStatus === "confirmed" ||
-          status.confirmationStatus === "finalized"
-        ) {
-          this._lastConfirmedSlot = status.slot;
-          return signature;
-        }
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`Transaction confirmation timeout: ${signature}`);
+    const { slot } = await confirmTransaction(
+      this._rpc,
+      signature,
+      lastValidBlockHeight,
+      { stringifyErr: stringifyBigIntSafe },
+    );
+    this._lastConfirmedSlot = slot;
+    return signature;
   }
 }

@@ -782,6 +782,27 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     };
   }
 
+  // Per-hop latency telemetry for the userOp pipeline, gated behind ACP_TIMING
+  // (set to any value except 0/off). One line per send, so a live trace shows
+  // whether the time goes to the serial API hops (prepare/sign/submit) or to
+  // bundler inclusion — the split that decides whether a direct-7702
+  // (no-bundler) fast path is worth building.
+  private static timingEnabled(): boolean {
+    const v = process.env.ACP_TIMING?.trim().toLowerCase();
+    return !!v && v !== "0" && v !== "off" && v !== "false";
+  }
+  private static logTiming(
+    op: string,
+    chainId: number,
+    marks: Record<string, number>
+  ): void {
+    if (!PrivyAlchemyEvmProviderAdapter.timingEnabled()) return;
+    const parts = Object.entries(marks)
+      .map(([k, v]) => `${k}=${v}ms`)
+      .join(" ");
+    console.log(`[acp-timing] ${op} chainId=${chainId} ${parts}`);
+  }
+
   private async waitForTransactionHash(
     client: SmartWalletClient,
     id: Hex
@@ -810,17 +831,29 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   ): Promise<Address> {
     const smartWalletClientErc20 = this.getErc20Client(chainId);
 
+    const t0 = Date.now();
     const prepared = await smartWalletClientErc20.prepareCalls({
       calls: (Array.isArray(call) ? call : [call]).map((call) =>
         this.toSmartWalletCall(call)
       ),
     });
+    const t1 = Date.now();
 
     const signed = await this.signPreparedViaPrivy(chainId, prepared);
+    const t2 = Date.now();
 
     const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+    const t3 = Date.now();
 
-    return this.waitForTransactionHash(smartWalletClientErc20, id);
+    const hash = await this.waitForTransactionHash(smartWalletClientErc20, id);
+    PrivyAlchemyEvmProviderAdapter.logTiming("evm.sendTransaction", chainId, {
+      prepare: t1 - t0,
+      sign: t2 - t1,
+      submit: t3 - t2,
+      confirm: Date.now() - t3,
+      total: Date.now() - t0,
+    });
+    return hash;
   }
 
   async sendCalls(
@@ -828,6 +861,10 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[]
   ): Promise<Address | Address[]> {
     const smartWalletClient = this.getAcpClient(chainId);
+    // account-kit's sendCalls performs prepare + sign + submit internally, so
+    // "submit" here covers all three serial hops; "confirm" is bundler
+    // inclusion + detection.
+    const t0 = Date.now();
     const { id } = await smartWalletClient.sendCalls({
       calls: _calls.map((call) => this.toSmartWalletCall(call)),
       capabilities: {
@@ -836,8 +873,15 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         },
       },
     });
+    const t1 = Date.now();
 
-    return this.waitForTransactionHash(smartWalletClient, id);
+    const hash = await this.waitForTransactionHash(smartWalletClient, id);
+    PrivyAlchemyEvmProviderAdapter.logTiming("evm.sendCalls", chainId, {
+      submit: t1 - t0,
+      confirm: Date.now() - t1,
+      total: Date.now() - t0,
+    });
+    return hash;
   }
 
   async getTransactionReceipt(

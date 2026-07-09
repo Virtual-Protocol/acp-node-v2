@@ -41,6 +41,7 @@ import {
 } from "../core/constants.js";
 
 import { buildJobStateRetryGuard } from "../core/solana/jobStateRetryGuard.js";
+import { decorateSendError } from "../core/solana/programErrors.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
@@ -134,16 +135,18 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     // Lets sponsored adapters distinguish a WrongStatus caused by sponsor-node
     // simulation lag (retry) from a genuine one, e.g. an already-completed job
     // (fail fast). Non-sponsored adapters ignore it.
-    const retryGuard = buildJobStateRetryGuard(
+    const { guard, lastDiagnosis } = buildJobStateRetryGuard(
       this.provider.getRpc(),
       this.contractAddress as Address,
       instructions
     );
-    const result = await this.provider.sendInstructions(instructions, {
-      retryGuard,
-    });
-    // console.log("execute result", result);
-    return result;
+    try {
+      return await this.provider.sendInstructions(instructions, {
+        retryGuard: guard,
+      });
+    } catch (err) {
+      throw decorateSendError(err, lastDiagnosis());
+    }
   }
 
   override async submitPrepared(

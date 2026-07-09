@@ -35,7 +35,41 @@ type StateGate = {
    * a state wrongly missing would abort a recoverable lag retry.
    */
   allowedStates: JobState[];
+  /**
+   * The program rejects this instruction past job.expiredAt even though the
+   * state enum still allows it (state flips to Expired only on claim_refund).
+   * Set only on proof — a wrong true aborts recoverable lag retries.
+   */
+  expiryGated?: boolean;
 };
+
+/**
+ * Why the guard refused a retry: the failing job-state precondition and the
+ * state our own read RPC actually saw. Exposed as AcpSendError.diagnosis.
+ */
+export interface JobStateDiagnosis {
+  jobAddress: string;
+  /** False when the job account does not exist on our read RPC. */
+  jobExists: boolean;
+  /** On-chain state our read RPC saw; null when the account is missing. */
+  actualState: JobState | null;
+  allowedStates: JobState[];
+  /**
+   * Set (unix seconds) when the refusal is because the job's expiry passed
+   * while the state enum still allowed the instruction; null otherwise.
+   */
+  expiredAt: bigint | null;
+}
+
+export interface JobStateRetryGuard {
+  /** Pass as FeePayerRetryOptions.retryGuard. */
+  guard: () => Promise<boolean>;
+  /**
+   * Diagnosis from the most recent guard() call that returned false because
+   * a job-state precondition was unmet; null if the guard never refused.
+   */
+  lastDiagnosis: () => JobStateDiagnosis | null;
+}
 
 // Job state machine (see generated/acp/types/jobState.ts):
 //   Funded path:      Open -> Funded -> Submitted -> Completed | Rejected | Expired
@@ -56,6 +90,8 @@ const STATE_GATES: StateGate[] = [
     discriminator: SUBMIT_DISCRIMINATOR,
     jobAccountIndex: 2,
     allowedStates: [JobState.Open, JobState.Funded],
+    // Proven: submit.rs:120 rejects past-expiry submit while state is Funded.
+    expiryGated: true,
   },
   {
     discriminator: COMPLETE_DISCRIMINATOR,
@@ -79,16 +115,20 @@ function startsWith(data: Uint8Array, prefix: Uint8Array): boolean {
 
 /**
  * Builds a `retryGuard` (see FeePayerRetryOptions) for a batch of
- * instructions. Returns true only when the batch contains at least one
- * state-gated instruction of `acpProgramAddress` AND every such instruction's
- * job account, as seen by `rpc`, is in a state its precondition allows.
+ * instructions. The guard returns true only when the batch contains at least
+ * one state-gated instruction of `acpProgramAddress` AND every such
+ * instruction's job account, as seen by `rpc`, is in a state its precondition
+ * allows. When it refuses because a job-state precondition is unmet, the
+ * refusal's details are available via `lastDiagnosis()`.
  */
 export function buildJobStateRetryGuard(
   rpc: Rpc<SolanaRpcApi>,
   acpProgramAddress: Address,
   instructions: SolanaInstructionLike[],
-): () => Promise<boolean> {
-  return async () => {
+): JobStateRetryGuard {
+  let diagnosis: JobStateDiagnosis | null = null;
+  const guard = async (): Promise<boolean> => {
+    diagnosis = null;
     let sawGatedInstruction = false;
     for (const ix of instructions) {
       if (ix.programAddress !== acpProgramAddress) continue;
@@ -103,10 +143,28 @@ export function buildJobStateRetryGuard(
       const job = await fetchMaybeJob(rpc, jobAddress, {
         commitment: ACP_COMMITMENT,
       });
-      if (!job.exists || !gate.allowedStates.includes(job.data.state)) {
+      const stateOk =
+        job.exists && gate.allowedStates.includes(job.data.state);
+      // Even when the state enum allows the instruction, the program rejects
+      // clock-gated instructions past job.expiredAt (the state is not flipped
+      // to Expired until claim_refund). Retrying cannot fix an expired job.
+      const expired =
+        stateOk &&
+        gate.expiryGated === true &&
+        job.exists &&
+        job.data.expiredAt <= BigInt(Math.floor(Date.now() / 1000));
+      if (!stateOk || expired) {
+        diagnosis = {
+          jobAddress,
+          jobExists: job.exists,
+          actualState: job.exists ? job.data.state : null,
+          allowedStates: gate.allowedStates,
+          expiredAt: expired && job.exists ? job.data.expiredAt : null,
+        };
         return false;
       }
     }
     return sawGatedInstruction;
   };
+  return { guard, lastDiagnosis: () => diagnosis };
 }

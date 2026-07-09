@@ -31,6 +31,10 @@ export * from "./providers/providerAuthClient.js";
 // Solana wallet helpers (balances + transfer instruction builders)
 export * from "./core/solana/wallet.js";
 
+// Solana send errors (typed, message = node error formatted one log per line)
+export * from "./core/solana/programErrors.js";
+export type { JobStateDiagnosis } from "./core/solana/jobStateRetryGuard.js";
+
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient.js";
 export { AcpApiClient } from "./events/acpApiClient.js";

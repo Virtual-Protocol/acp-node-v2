@@ -7,8 +7,9 @@ import {
   getU64Encoder,
   fixEncoderSize,
   getUtf8Encoder,
+  getBytesEncoder,
 } from "@solana/kit";
-import { hexToBytes } from "viem";
+import { hexToBytes, keccak256, toHex, type Hex } from "viem";
 import {
   decodeSolanaEscrowOptParams,
   encodeFundTransferFundOptParams,
@@ -63,6 +64,28 @@ const JOB_STATE_SUBMITTED = 2;
 const EMPTY_OPT_PARAMS = new Uint8Array(0);
 
 const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
+
+/**
+ * Encode a completion/rejection reason into the on-chain [u8; 32] slot, mirroring
+ * the EVM client's `toBytes32` (evmAcpClient.ts):
+ *   - an already-32-byte hex value passes through unchanged;
+ *   - a reason whose UTF-8 fits in 32 bytes is stored as right-zero-padded text,
+ *     so short reasons stay human-readable on-chain;
+ *   - a longer reason is stored as its keccak256 commitment.
+ * Unlike the deliverable (which is always hashed because the full text is kept
+ * off-chain via postDeliverable), the reason has no off-chain copy, so short
+ * reasons must remain readable rather than being hashed and lost.
+ */
+function encodeReasonBytes(reason: string): Uint8Array {
+  if (reason.startsWith("0x") && reason.length === 66) {
+    return hexToBytes(reason as Hex);
+  }
+  const utf8 = new TextEncoder().encode(reason);
+  if (utf8.length <= 32) {
+    return fixEncoderSize(getBytesEncoder(), 32).encode(utf8) as Uint8Array;
+  }
+  return hexToBytes(keccak256(toHex(reason)));
+}
 
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
@@ -529,9 +552,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
-    const deliverableBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
-      params.deliverable
-    );
+    // Store a 32-byte keccak256 commitment of the deliverable on-chain, matching
+    // the EVM client (`keccak256(toHex(deliverable))` -> bytes32) and the backend,
+    // which reads this field as `deliverableHash`. The full deliverable text is
+    // persisted off-chain via `postDeliverable`. UTF-8 truncation into 32 bytes
+    // (the previous behaviour) silently dropped anything past 32 bytes.
+    const deliverableBytes = hexToBytes(keccak256(toHex(params.deliverable)));
 
     const hookAddress =
       job.data.hookAddress.__option === "Some"
@@ -803,9 +829,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
-    const reasonBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
-      params.reason
-    );
+    const reasonBytes = encodeReasonBytes(params.reason);
 
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
 
@@ -967,9 +991,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       commitment: ACP_COMMITMENT,
     });
 
-    const reasonBytes = fixEncoderSize(getUtf8Encoder(), 32).encode(
-      params.reason
-    );
+    const reasonBytes = encodeReasonBytes(params.reason);
 
     const isFunded =
       job.data.state === JOB_STATE_FUNDED ||
@@ -1111,6 +1133,30 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     return null;
+  }
+
+  /**
+   * Signature of the transaction that created the given job, recovered from
+   * the job PDA's history (`getSignaturesForAddress`, oldest entry). Keyed by
+   * jobId, so it stays correct when one agent runs multiple jobs concurrently.
+   * Read-side helper for scripts/observability; costs one RPC round-trip.
+   */
+  async getCreateSignature(
+    jobId: bigint,
+    clientAddress?: string
+  ): Promise<string | null> {
+    const rpc = this.provider.getRpc();
+    const jobPda = await this.resolveJobPda(jobId, clientAddress);
+
+    // Newest-first; the job PDA's oldest signature is its creation tx.
+    // Literal "confirmed" (= ACP_COMMITMENT's value): this RPC method's type
+    // rejects the wider Commitment type, which includes "processed".
+    const signatures = await rpc
+      .getSignaturesForAddress(jobPda, { commitment: "confirmed" })
+      .send();
+    if (signatures.length === 0) return null;
+
+    return signatures[signatures.length - 1]!.signature;
   }
 
   override async getJob(

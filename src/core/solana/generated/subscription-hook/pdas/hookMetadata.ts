@@ -17,7 +17,7 @@ export async function findHookMetadataPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "267bew4oYUdWkQetBiALCMMTaVT9S5PFhqmragzUaZJD" as Address<"267bew4oYUdWkQetBiALCMMTaVT9S5PFhqmragzUaZJD">,
+    programAddress = "CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB" as Address<"CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

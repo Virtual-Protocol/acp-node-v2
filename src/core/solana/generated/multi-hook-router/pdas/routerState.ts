@@ -17,7 +17,7 @@ export async function findRouterStatePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "GeMsBukRPHrfR6b8NwtjZQywJBhdUbXzHd2E1xq1j3Ug" as Address<"GeMsBukRPHrfR6b8NwtjZQywJBhdUbXzHd2E1xq1j3Ug">,
+    programAddress = "Cf6W2cLWW25TfhFhgSZAo2ZAchracAtJF1VM8N3C4yor" as Address<"Cf6W2cLWW25TfhFhgSZAo2ZAchracAtJF1VM8N3C4yor">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

@@ -246,27 +246,12 @@
         },
         {
           "name": "intent",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  116,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "provider_escrow_intent_id.intent_id",
-                "account": "ProviderEscrowIntentId"
-              }
-            ]
-          }
+          "docs": [
+            "The job-scoped escrow intent ([\"intent\", job_id, kind]). The map does",
+            "not participate in the address derivation, so the id equality is",
+            "asserted explicitly."
+          ],
+          "writable": true
         },
         {
           "name": "escrow_vault",
@@ -354,28 +339,14 @@
         {
           "name": "intent",
           "docs": [
-            "The intent PDA to close. Must be unsigned and non-escrow (F-35)."
+            "The intent PDA to close. Must be unsigned and non-escrow (F-35).",
+            "Intent PDAs are job-scoped ([\"intent\", job_id, kind]) — the address",
+            "does not encode the intent id, so the id binding is asserted",
+            "explicitly (`intent.id == intent_id`); without it the active-intent",
+            "map guard below would compare against the caller's claimed id rather",
+            "than the account actually being closed."
           ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  116,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "intent_id"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "fund_request_map",
@@ -890,7 +861,8 @@
     {
       "name": "Intent",
       "docs": [
-        "An intent record (fund request or provider escrow)."
+        "An intent record (fund request or provider escrow).",
+        "Seeds: [\"intent\", job_id, kind]"
       ],
       "type": {
         "kind": "struct",

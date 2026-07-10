@@ -28,9 +28,6 @@ import {
 } from "../core/constants.js";
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
 import { fetchJob } from "../core/solana/generated/acp/accounts/job.js";
-import { fetchHookState } from "../core/solana/generated/fund-transfer-hook/accounts/hookState.js";
-import { fetchFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
-import { fetchProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
 import { getCreateJobInstructionAsync } from "../core/solana/generated/acp/instructions/createJob.js";
 import { getSetBudgetInstruction } from "../core/solana/generated/acp/instructions/setBudget.js";
 import { getFundInstruction } from "../core/solana/generated/acp/instructions/fund.js";
@@ -162,11 +159,10 @@ export class SolanaMultiHookClient {
     const jobPda = await mh.jobPda(this.acp, p.clientAddress, jobId);
     const paymentToken = await this.paymentToken();
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const counter = (await this.read(fetchHookState, fundHookState)).data.intentCounter;
-    const setBudgetIntent = await mh.intentPda(this.fundHook, counter + 1n);
+    const setBudgetIntent = await mh.intentPda(this.fundHook, jobId, 0);
 
     const subParams = mh.encodeSubParams(p.terms.durationSecs, p.terms.packageId);
-    // F-80: the fund-hook slice carries the fund-request proposal (full
+    // The fund-hook slice carries the fund-request proposal (full
     // budget in the budget mint, paid to the provider). Empty params would
     // propose nothing and the subsequent fund() would find no intent.
     const header = mh.encodeMultiHookHeader([
@@ -210,8 +206,7 @@ export class SolanaMultiHookClient {
     const clientAta = await deriveAta(buyer.address, paymentToken);
     const providerAta = await deriveAta(p.providerAddress, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const friid = await this.read(fetchFundRequestIntentId, await mh.fundRequestIntentIdPda(this.fundHook, jobId));
-    const setBudgetIntent = await mh.intentPda(this.fundHook, friid.data.intentId);
+    const setBudgetIntent = await mh.intentPda(this.fundHook, jobId, 0);
 
     const subParams = mh.encodeSubParams(p.terms.durationSecs, p.terms.packageId);
     const fundConfirm = mh.encodeFundConfirmation(paymentToken, p.amount, p.providerAddress);
@@ -266,12 +261,11 @@ export class SolanaMultiHookClient {
     const providerAta = await deriveAta(seller.address, paymentToken);
     const treasuryAta = await deriveAta(acpState.data.platformTreasury, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const counter = (await this.read(fetchHookState, fundHookState)).data.intentCounter;
-    const submitIntent = await mh.intentPda(this.fundHook, counter + 1n);
+    const submitIntent = await mh.intentPda(this.fundHook, jobId, 1);
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
 
-    // F-80: the fund-hook slice carries the escrow proposal (full budget in
+    // The fund-hook slice carries the escrow proposal (full budget in
     // the budget mint — the provider's bond). Empty params would propose no
     // escrow, and with-evaluator router jobs would submit bond-free.
     const job = await this.read(fetchJob, jobPda);
@@ -335,8 +329,7 @@ export class SolanaMultiHookClient {
     const treasuryAta = await deriveAta(acpState.data.platformTreasury, paymentToken);
     const clientAta = await deriveAta(p.clientAddress, paymentToken);
     const fundHookState = await mh.hookStatePda(this.fundHook);
-    const peid = await this.read(fetchProviderEscrowIntentId, await mh.providerEscrowIntentIdPda(this.fundHook, jobId));
-    const submitIntent = await mh.intentPda(this.fundHook, peid.data.intentId);
+    const submitIntent = await mh.intentPda(this.fundHook, jobId, 1);
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
     const subExpiry = await mh.subExpiryPda(this.subState, p.clientAddress, providerSigner.address, p.terms.packageId);

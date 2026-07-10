@@ -86,6 +86,9 @@ export const SOLANA_ACP_PROGRAM_ID =
 export const SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID =
   FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]! as SolanaAddress;
 
+export const INTENT_KIND_FUND_REQUEST = 0;
+export const INTENT_KIND_ESCROW = 1;
+
 export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",

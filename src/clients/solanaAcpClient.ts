@@ -38,10 +38,16 @@ import {
   ACP_COMMITMENT,
   EVM_NO_EVALUATOR_ADDRESS,
   SOLANA_NO_EVALUATOR_ADDRESS,
+  INTENT_KIND_FUND_REQUEST,
+  INTENT_KIND_ESCROW,
 } from "../core/constants.js";
 
 import { buildJobStateRetryGuard } from "../core/solana/jobStateRetryGuard.js";
-import { decorateSendError } from "../core/solana/programErrors.js";
+import {
+  decorateSendError,
+  extractInstructionCustomCode,
+} from "../core/solana/programErrors.js";
+import { SolanaTransactionError } from "../providers/solana/txConfirmation.js";
 
 // Codama-generated imports (direct file paths for Node v24 ESM compatibility)
 import { fetchAcpState } from "../core/solana/generated/acp/accounts/acpState.js";
@@ -53,7 +59,6 @@ import { getSubmitInstructionAsync } from "../core/solana/generated/acp/instruct
 import { getCompleteInstructionAsync } from "../core/solana/generated/acp/instructions/complete.js";
 import { getRejectInstructionAsync } from "../core/solana/generated/acp/instructions/reject.js";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated.js";
-import { fetchHookState } from "../core/solana/generated/fund-transfer-hook/accounts/hookState.js";
 import { fetchMaybeFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
 import { fetchMaybeProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
 import { fetchIntent } from "../core/solana/generated/fund-transfer-hook/accounts/intent.js";
@@ -63,6 +68,11 @@ const JOB_STATE_FUNDED = 1;
 const JOB_STATE_SUBMITTED = 2;
 
 const EMPTY_OPT_PARAMS = new Uint8Array(0);
+
+// Fund-transfer hook InvalidJob (Anchor error 6000) — thrown when the intent
+// PDA passed at prepare time no longer matches the hook's intent counter.
+// No generated errors module exists for the hook, hence the local constant.
+const HOOK_INVALID_JOB_CODE = 6000;
 
 const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
 
@@ -146,6 +156,40 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       });
     } catch (err) {
       throw decorateSendError(err, lastDiagnosis());
+    }
+  }
+
+  /**
+   * Detects the hook's InvalidJob (error 6000) on a confirmed on-chain
+   * failure — the error older hook deployments throw when a prepared intent
+   * PDA goes stale before inclusion. Rebuilding from fresh state and
+   * resending is always safe: the failed transaction is atomic, so nothing
+   * was applied.
+   *
+   * Code 6000 collides across programs (ACP core Unauthorized, router
+   * OnlyACPContract), so the verdict is confirmed against the transaction's
+   * own logs; an unreachable log fetch counts as inconclusive and retries.
+   */
+  override async isStalePrepareError(err: unknown): Promise<boolean> {
+    if (!(err instanceof SolanaTransactionError) || err.phase !== "failed") {
+      return false;
+    }
+    if (extractInstructionCustomCode(err.txErr) !== HOOK_INVALID_JOB_CODE) {
+      return false;
+    }
+    try {
+      const tx = await this.provider
+        .getRpc()
+        .getTransaction(err.signature as Signature, {
+          encoding: "json",
+          maxSupportedTransactionVersion: 0,
+        })
+        .send();
+      const logs = tx?.meta?.logMessages;
+      if (!logs) return true;
+      return logs.some((log) => log.includes("Error Code: InvalidJob"));
+    } catch {
+      return true;
     }
   }
 
@@ -291,15 +335,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const SYSVAR_INSTRUCTIONS_ID =
         "Sysvar1nstructions1111111111111111111111111" as Address;
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
-      const hookState = await fetchHookState(rpc, hookStatePda, {
-        commitment: ACP_COMMITMENT,
-      });
-      // The hook PRE-increments intent_counter, then creates the intent at the
-      // new value: a fresh hook (counter=0) creates intent id=1. Derive from
-      // counter + 1 to match (mismatch → InvalidJob in post_set_budget).
+      // The fund-request intent PDA is job-scoped — no counter read, no
+      // renegotiation appendix (the hook overwrites the intent in place).
       const intentPda = await this.deriveIntentPda(
         hookAddress,
-        hookState.data.intentCounter + 1n
+        job.data.jobId,
+        INTENT_KIND_FUND_REQUEST
       );
       const fundRequestIntentIdPda = await this.deriveFundRequestIntentIdPda(
         hookAddress,
@@ -315,28 +356,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { address: jobPda, role: AccountRole.READONLY },
         { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY }
       );
-
-      // F-77 renegotiation/cancel: when the map already points at a live
-      // intent, the hook auto-closes it and needs [old intent, old creator]
-      // appended. intent_id 0 is the post-cancel sentinel (nothing to close).
-      const maybeMap = await fetchMaybeFundRequestIntentId(
-        rpc,
-        fundRequestIntentIdPda,
-        { commitment: ACP_COMMITMENT }
-      );
-      if (maybeMap.exists && maybeMap.data.intentId !== 0n) {
-        const oldIntentPda = await this.deriveIntentPda(
-          hookAddress,
-          maybeMap.data.intentId
-        );
-        const oldIntent = await fetchIntent(rpc, oldIntentPda, {
-          commitment: ACP_COMMITMENT,
-        });
-        extraAccounts.push(
-          { address: oldIntentPda, role: AccountRole.WRITABLE },
-          { address: oldIntent.data.actor, role: AccountRole.WRITABLE }
-        );
-      }
     }
 
     return this.wrapMany([
@@ -445,7 +464,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       } else {
       const intentPda = await this.deriveIntentPda(
         hookAddress,
-        maybeFriid.data.intentId
+        job.data.jobId,
+        INTENT_KIND_FUND_REQUEST
       );
       const intent = await fetchIntent(rpc, intentPda, {
         commitment: ACP_COMMITMENT,
@@ -650,14 +670,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         const escrowAmount = escrowProposal.amount;
 
         const hookStatePda = await this.deriveHookStatePda(hookAddress);
-        const hookState = await fetchHookState(rpc, hookStatePda, {
-          commitment: ACP_COMMITMENT,
-        });
-        // post_submit pre-increments intent_counter before creating the escrow
-        // intent, so the new intent id is counter + 1 (mismatch → InvalidJob).
+        // Job-scoped escrow intent PDA — no counter read, no race with
+        // concurrent intent-creating transactions on the same hook.
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          hookState.data.intentCounter + 1n
+          job.data.jobId,
+          INTENT_KIND_ESCROW
         );
         const provEscrowIntentIdPda =
           await this.deriveProviderEscrowIntentIdPda(
@@ -914,7 +932,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       if (maybePeii.exists) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          maybePeii.data.intentId
+          job.data.jobId,
+          INTENT_KIND_ESCROW
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
           commitment: ACP_COMMITMENT,
@@ -1049,7 +1068,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       if (maybePeii.exists) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          maybePeii.data.intentId
+          job.data.jobId,
+          INTENT_KIND_ESCROW
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
           commitment: ACP_COMMITMENT,
@@ -1283,15 +1303,23 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
+  /**
+   * Intent PDAs are job-scoped — ["intent", job_id, kind] with kind
+   * 0 = fund-request, 1 = escrow. Derived from the job id alone, so prepare
+   * never predicts the hook's global intent counter (predicting it raced
+   * whenever two intent-creating transactions were in flight).
+   */
   private async deriveIntentPda(
     hookProgram: Address,
-    intentId: bigint
+    jobId: bigint,
+    kind: typeof INTENT_KIND_FUND_REQUEST | typeof INTENT_KIND_ESCROW
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: hookProgram,
       seeds: [
         getUtf8Encoder().encode("intent"),
-        getU64Encoder().encode(intentId),
+        getU64Encoder().encode(jobId),
+        new Uint8Array([kind]),
       ],
     });
     return pda;

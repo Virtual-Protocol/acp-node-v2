@@ -152,6 +152,11 @@ export type ClaimEscrowRefundAsyncInput<
   hookState?: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
   providerEscrowIntentId?: Address<TAccountProviderEscrowIntentId>;
+  /**
+   * The job-scoped escrow intent (["intent", job_id, kind]). The map does
+   * not participate in the address derivation, so the id equality is
+   * asserted explicitly.
+   */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
   escrowVault: Address<TAccountEscrowVault>;
@@ -298,6 +303,11 @@ export type ClaimEscrowRefundInput<
   hookState: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
   providerEscrowIntentId: Address<TAccountProviderEscrowIntentId>;
+  /**
+   * The job-scoped escrow intent (["intent", job_id, kind]). The map does
+   * not participate in the address derivation, so the id equality is
+   * asserted explicitly.
+   */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
   escrowVault: Address<TAccountEscrowVault>;
@@ -424,6 +434,11 @@ export type ParsedClaimEscrowRefundInstruction<
     hookState: TAccountMetas[1];
     jobAccount: TAccountMetas[2];
     providerEscrowIntentId: TAccountMetas[3];
+    /**
+     * The job-scoped escrow intent (["intent", job_id, kind]). The map does
+     * not participate in the address derivation, so the id equality is
+     * asserted explicitly.
+     */
     intent: TAccountMetas[4];
     /** Escrow vault holding the escrowed tokens */
     escrowVault: TAccountMetas[5];

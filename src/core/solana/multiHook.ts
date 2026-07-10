@@ -64,8 +64,8 @@ export const writerRegistryPda = (subState: Address, writer: Address) =>
   pda(subState, [utf8.encode("writer"), addr.encode(writer)]);
 export const stateConfigPda = (subState: Address) => pda(subState, [utf8.encode("state_config")]);
 
-export const intentPda = (fundHook: Address, intentId: bigint) =>
-  pda(fundHook, [utf8.encode("intent"), u64le(intentId)]);
+export const intentPda = (fundHook: Address, jobId: bigint, kind: 0 | 1) =>
+  pda(fundHook, [utf8.encode("intent"), u64le(jobId), new Uint8Array([kind])]);
 export const fundRequestIntentIdPda = (fundHook: Address, jobId: bigint) =>
   pda(fundHook, [utf8.encode("fund_request_intent_id"), u64le(jobId)]);
 export const providerEscrowIntentIdPda = (fundHook: Address, jobId: bigint) =>

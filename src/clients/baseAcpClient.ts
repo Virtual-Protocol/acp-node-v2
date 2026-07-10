@@ -113,6 +113,16 @@ export abstract class BaseAcpClient<TTx> {
     prepared: PreparedTxInput
   ): Promise<string | string[]>;
 
+  /**
+   * Whether a submitPrepared failure was caused by chain state that moved
+   * between prepare and inclusion, so rebuilding the transaction from fresh
+   * state may succeed. Chains without such prepare-time state dependencies
+   * (EVM) never report stale prepares.
+   */
+  async isStalePrepareError(_err: unknown): Promise<boolean> {
+    return false;
+  }
+
   abstract getJobIdFromTxHash(
     chainId: number,
     txHash: string,

@@ -24,6 +24,31 @@ export class AcpSendError extends Error {
   }
 }
 
+/**
+ * Extracts the custom program error code from a raw on-chain transaction
+ * error (`{ InstructionError: [index, { Custom: code }] }`). Returns null for
+ * any other shape. The code is program-relative: 6000 from the fund-transfer
+ * hook is InvalidJob, while 6000 from the ACP core is Unauthorized — callers
+ * that need to disambiguate must check the transaction logs.
+ */
+export function extractInstructionCustomCode(txErr: unknown): number | null {
+  if (typeof txErr !== "object" || txErr === null) return null;
+  const instructionError = (txErr as { InstructionError?: unknown })
+    .InstructionError;
+  if (!Array.isArray(instructionError) || instructionError.length < 2) {
+    return null;
+  }
+  const detail = instructionError[1];
+  if (typeof detail !== "object" || detail === null) return null;
+  const custom = (detail as { Custom?: unknown }).Custom;
+  if (typeof custom === "number") return custom;
+  if (typeof custom === "bigint") return Number(custom);
+  if (typeof custom === "string" && /^\d+$/.test(custom)) {
+    return Number(custom);
+  }
+  return null;
+}
+
 /** Flattens an error and its `cause` chain into one string, case preserved. */
 function collectErrorText(err: unknown): string {
   const parts: string[] = [];

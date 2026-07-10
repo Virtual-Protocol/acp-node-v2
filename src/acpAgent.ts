@@ -13,6 +13,7 @@ import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
 import type {
   CompleteParams,
   CreateJobParams,
+  PreparedTx,
   RejectParams,
   SubmitParams,
 } from "./core/operations.js";
@@ -42,6 +43,7 @@ import {
   type MultiHookConfig,
 } from "./core/hookEncoding.js";
 import { AssetToken } from "./core/assetToken.js";
+import { withReprepare } from "./core/reprepareRetry.js";
 import { JobSession } from "./jobSession.js";
 import { AcpApiClient } from "./events/acpApiClient.js";
 import { AcpHttpClient } from "./events/acpHttpClient.js";
@@ -933,13 +935,20 @@ export class AcpAgent {
     params: SetBudgetParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.setBudget(chainId, {
-      jobId: params.jobId,
-      amount: params.amount.rawAmount,
-      ...(params.clientAddress && { clientAddress: params.clientAddress }),
-      optParams: params.optParams ?? "0x",
-    });
-    return client.submitPrepared(chainId, [prepared]);
+    // setBudget with a fund-request proposal precomputes a Solana intent PDA
+    // from the hook's counter; re-prepare when a concurrent intent-creating
+    // transaction consumes it first (see withReprepare).
+    return withReprepare<PreparedTx, string | string[]>(
+      () =>
+        client.setBudget(chainId, {
+          jobId: params.jobId,
+          amount: params.amount.rawAmount,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
+          optParams: params.optParams ?? "0x",
+        }),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(err),
+    );
   }
 
   /** @internal */
@@ -982,8 +991,14 @@ export class AcpAgent {
       params.jobId.toString(),
       params.deliverable,
     );
-    const prepared = await client.submit(chainId, params);
-    return client.submitPrepared(chainId, [prepared]);
+    // submit with an escrow proposal precomputes a Solana intent PDA from the
+    // hook's counter; re-prepare when a concurrent intent-creating
+    // transaction consumes it first (see withReprepare).
+    return withReprepare<PreparedTx, string | string[]>(
+      () => client.submit(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(err),
+    );
   }
 
   /** @internal */
@@ -1268,40 +1283,51 @@ export class AcpAgent {
       params.deliverable,
     );
 
-    const prepared = [];
+    const prepare = async () => {
+      const prepared = [];
 
-    if (client.getCapabilities().supportsAllowance) {
-      const hookAddr =
-        params.hookAddress ??
-        getAddressForChain(
-          FUND_TRANSFER_HOOK_ADDRESSES,
-          chainId,
-          "FundTransferHook",
+      if (client.getCapabilities().supportsAllowance) {
+        const hookAddr =
+          params.hookAddress ??
+          getAddressForChain(
+            FUND_TRANSFER_HOOK_ADDRESSES,
+            chainId,
+            "FundTransferHook",
+          );
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.transferAmount.address,
+            spenderAddress: hookAddr,
+            amount: params.transferAmount.rawAmount,
+          }),
         );
+      }
+
+      const optParams: Hex = encodeFundTransferSubmitOptParams(
+        chainId,
+        params.transferAmount.address,
+        params.transferAmount.rawAmount,
+      );
+
       prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.transferAmount.address,
-          spenderAddress: hookAddr,
-          amount: params.transferAmount.rawAmount,
+        await client.submit(chainId, {
+          jobId: params.jobId,
+          deliverable: params.deliverable,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
+          optParams,
         }),
       );
-    }
 
-    const optParams: Hex = encodeFundTransferSubmitOptParams(
-      chainId,
-      params.transferAmount.address,
-      params.transferAmount.rawAmount,
+      return prepared;
+    };
+
+    // submit with an escrow proposal precomputes a Solana intent PDA from the
+    // hook's counter; re-prepare when a concurrent intent-creating
+    // transaction consumes it first (see withReprepare).
+    return withReprepare<PreparedTx[], string | string[]>(
+      prepare,
+      (prepared) => client.submitPrepared(chainId, prepared),
+      (err) => client.isStalePrepareError(err),
     );
-
-    prepared.push(
-      await client.submit(chainId, {
-        jobId: params.jobId,
-        deliverable: params.deliverable,
-        ...(params.clientAddress && { clientAddress: params.clientAddress }),
-        optParams,
-      }),
-    );
-
-    return client.submitPrepared(chainId, prepared);
   }
 }

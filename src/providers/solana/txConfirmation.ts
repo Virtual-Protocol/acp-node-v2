@@ -26,12 +26,23 @@ export type ConfirmationPhase =
 export class SolanaTransactionError extends Error {
   readonly signature: string;
   readonly phase: ConfirmationPhase;
+  /** The raw on-chain `status.err` for the "failed" phase (e.g.
+   * `{ InstructionError: [6, { Custom: 6000 }] }`), so callers can inspect
+   * the failure structurally instead of parsing the message. Undefined for
+   * "expired" and "timeout". */
+  readonly txErr?: unknown;
 
-  constructor(phase: ConfirmationPhase, signature: string, message: string) {
+  constructor(
+    phase: ConfirmationPhase,
+    signature: string,
+    message: string,
+    txErr?: unknown,
+  ) {
     super(message);
     this.name = "SolanaTransactionError";
     this.phase = phase;
     this.signature = signature;
+    this.txErr = txErr;
   }
 }
 
@@ -87,6 +98,7 @@ export async function confirmTransaction(
         "failed",
         signature,
         `Transaction failed: ${stringifyErr(status.err)} (signature: ${signature})`,
+        status.err,
       );
     }
     if (

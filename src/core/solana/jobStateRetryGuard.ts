@@ -80,6 +80,7 @@ const STATE_GATES: StateGate[] = [
     discriminator: SET_BUDGET_DISCRIMINATOR,
     jobAccountIndex: 1,
     allowedStates: [JobState.Open],
+    expiryGated: true,
   },
   {
     discriminator: FUND_DISCRIMINATOR,

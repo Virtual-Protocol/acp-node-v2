@@ -85,18 +85,19 @@ const STATE_GATES: StateGate[] = [
     discriminator: FUND_DISCRIMINATOR,
     jobAccountIndex: 1,
     allowedStates: [JobState.Open],
+    expiryGated: true,
   },
   {
     discriminator: SUBMIT_DISCRIMINATOR,
     jobAccountIndex: 2,
     allowedStates: [JobState.Open, JobState.Funded],
-    // Proven: submit.rs:120 rejects past-expiry submit while state is Funded.
     expiryGated: true,
   },
   {
     discriminator: COMPLETE_DISCRIMINATOR,
     jobAccountIndex: 2,
     allowedStates: [JobState.Submitted],
+    expiryGated: true,
   },
   {
     discriminator: REJECT_DISCRIMINATOR,

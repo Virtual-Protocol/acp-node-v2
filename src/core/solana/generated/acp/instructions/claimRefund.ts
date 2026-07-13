@@ -128,10 +128,12 @@ export type ClaimRefundAsyncInput<
   caller: TransactionSigner<TAccountCaller>;
   acpState?: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
-  vault: Address<TAccountVault>;
-  vaultAuthority: Address<TAccountVaultAuthority>;
-  clientTokenAccount: Address<TAccountClientTokenAccount>;
-  platformTreasury: Address<TAccountPlatformTreasury>;
+  /** Optional: required when the job was Funded/Submitted with budget > 0 */
+  vault?: Address<TAccountVault>;
+  vaultAuthority?: Address<TAccountVaultAuthority>;
+  /** Optional: required when the job was Funded/Submitted with budget > 0 */
+  clientTokenAccount?: Address<TAccountClientTokenAccount>;
+  platformTreasury?: Address<TAccountPlatformTreasury>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -246,10 +248,12 @@ export type ClaimRefundInput<
   caller: TransactionSigner<TAccountCaller>;
   acpState: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
-  vault: Address<TAccountVault>;
-  vaultAuthority: Address<TAccountVaultAuthority>;
-  clientTokenAccount: Address<TAccountClientTokenAccount>;
-  platformTreasury: Address<TAccountPlatformTreasury>;
+  /** Optional: required when the job was Funded/Submitted with budget > 0 */
+  vault?: Address<TAccountVault>;
+  vaultAuthority?: Address<TAccountVaultAuthority>;
+  /** Optional: required when the job was Funded/Submitted with budget > 0 */
+  clientTokenAccount?: Address<TAccountClientTokenAccount>;
+  platformTreasury?: Address<TAccountPlatformTreasury>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -355,11 +359,13 @@ export type ParsedClaimRefundInstruction<
     caller: TAccountMetas[0];
     acpState: TAccountMetas[1];
     job: TAccountMetas[2];
-    vault: TAccountMetas[3];
-    vaultAuthority: TAccountMetas[4];
-    clientTokenAccount: TAccountMetas[5];
-    platformTreasury: TAccountMetas[6];
-    tokenProgram: TAccountMetas[7];
+    /** Optional: required when the job was Funded/Submitted with budget > 0 */
+    vault?: TAccountMetas[3] | undefined;
+    vaultAuthority?: TAccountMetas[4] | undefined;
+    /** Optional: required when the job was Funded/Submitted with budget > 0 */
+    clientTokenAccount?: TAccountMetas[5] | undefined;
+    platformTreasury?: TAccountMetas[6] | undefined;
+    tokenProgram?: TAccountMetas[7] | undefined;
   };
   data: ClaimRefundInstructionData;
 };
@@ -382,17 +388,23 @@ export function parseClaimRefundInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       caller: getNextAccount(),
       acpState: getNextAccount(),
       job: getNextAccount(),
-      vault: getNextAccount(),
-      vaultAuthority: getNextAccount(),
-      clientTokenAccount: getNextAccount(),
-      platformTreasury: getNextAccount(),
-      tokenProgram: getNextAccount(),
+      vault: getNextOptionalAccount(),
+      vaultAuthority: getNextOptionalAccount(),
+      clientTokenAccount: getNextOptionalAccount(),
+      platformTreasury: getNextOptionalAccount(),
+      tokenProgram: getNextOptionalAccount(),
     },
     data: getClaimRefundInstructionDataDecoder().decode(instruction.data),
   };

@@ -220,7 +220,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const acpStatePda = await this.deriveAcpStatePda();
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
-    const jobCounter = acpState.data.jobCounter;
+    // On-chain job_counter stores the LAST issued ID (EVM jobCounter
+    // parity); the job we are about to create receives counter+1.
+    const jobCounter = acpState.data.jobCounter + 1n;
 
     const jobPda = await this.deriveJobPda(signer.address, jobCounter);
 

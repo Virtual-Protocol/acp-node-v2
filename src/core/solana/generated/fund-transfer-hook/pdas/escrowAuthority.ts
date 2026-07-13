@@ -23,7 +23,7 @@ export async function findEscrowAuthorityPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "2ceSoYX1Q1C7gZwMFfdrfN9dKVbW4J2GiaUwRmf1qhVb" as Address<"2ceSoYX1Q1C7gZwMFfdrfN9dKVbW4J2GiaUwRmf1qhVb">,
+    programAddress = "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq" as Address<"4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

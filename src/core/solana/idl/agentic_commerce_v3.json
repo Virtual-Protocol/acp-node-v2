@@ -40,7 +40,7 @@
       "name": "Job"
     }
   ],
-  "address": "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
+  "address": "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
   "errors": [
     {
       "code": 6000,
@@ -194,36 +194,31 @@
     },
     {
       "code": 6030,
-      "msg": "Job counter must be >= 1",
-      "name": "InvalidJobCounter"
-    },
-    {
-      "code": 6031,
       "msg": "Insufficient vault balance",
       "name": "InsufficientVaultBalance"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "msg": "Missing required account for funded job",
       "name": "MissingRequiredAccount"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "msg": "Arithmetic overflow",
       "name": "ArithmeticOverflow"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "msg": "Hook program must be immutable (upgrade authority must be None)",
       "name": "HookProgramIsUpgradeable"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "msg": "Missing hook program account: job declares a hook but hook_program was not supplied",
       "name": "MissingHookProgram"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "msg": "Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len()",
       "name": "InvalidAutoCompleteParams"
     }
@@ -674,23 +669,34 @@
           "writable": true
         },
         {
+          "docs": [
+            "Optional: required when the job was Funded/Submitted with budget > 0"
+          ],
           "name": "vault",
+          "optional": true,
           "writable": true
         },
         {
-          "name": "vault_authority"
+          "name": "vault_authority",
+          "optional": true
         },
         {
+          "docs": [
+            "Optional: required when the job was Funded/Submitted with budget > 0"
+          ],
           "name": "client_token_account",
+          "optional": true,
           "writable": true
         },
         {
           "name": "platform_treasury",
+          "optional": true,
           "writable": true
         },
         {
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-          "name": "token_program"
+          "name": "token_program",
+          "optional": true
         }
       ],
       "args": [],
@@ -873,7 +879,7 @@
               {
                 "account": "AcpState",
                 "kind": "account",
-                "path": "acp_state.job_counter"
+                "path": "acp_state.job_counter.wrapping_add(1)"
               }
             ]
           },
@@ -1098,38 +1104,38 @@
               {
                 "kind": "const",
                 "value": [
-                  204,
-                  63,
-                  149,
-                  163,
-                  99,
-                  219,
-                  73,
-                  112,
-                  44,
-                  106,
-                  231,
-                  109,
-                  58,
-                  223,
-                  98,
-                  48,
-                  178,
-                  233,
-                  196,
-                  241,
-                  209,
-                  188,
-                  37,
-                  87,
                   215,
-                  207,
-                  72,
-                  225,
-                  103,
-                  220,
-                  13,
-                  155
+                  88,
+                  164,
+                  37,
+                  37,
+                  167,
+                  35,
+                  155,
+                  134,
+                  215,
+                  69,
+                  245,
+                  181,
+                  35,
+                  244,
+                  68,
+                  27,
+                  66,
+                  252,
+                  90,
+                  229,
+                  167,
+                  231,
+                  185,
+                  212,
+                  144,
+                  134,
+                  15,
+                  14,
+                  60,
+                  203,
+                  45
                 ]
               }
             ]
@@ -1821,7 +1827,9 @@
           },
           {
             "docs": [
-              "Monotonically increasing counter; next job receives this ID."
+              "Monotonically increasing counter storing the LAST issued job ID",
+              "(F-87: EVM `jobCounter` parity — `jobId = ++jobCounter`). The next job",
+              "receives `job_counter + 1`; 0 means no jobs issued yet."
             ],
             "name": "job_counter",
             "type": "u64"
@@ -1985,7 +1993,8 @@
         "fields": [
           {
             "docs": [
-              "Unique identifier assigned from `AcpState.job_counter` at creation."
+              "Unique identifier: `AcpState.job_counter` after its increment at",
+              "creation (F-87 EVM parity — first job is 1; 0 is never issued)."
             ],
             "name": "job_id",
             "type": "u64"

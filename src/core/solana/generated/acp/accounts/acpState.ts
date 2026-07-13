@@ -65,7 +65,11 @@ export type AcpState = {
   platformFeeBp: bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: bigint;
-  /** Monotonically increasing counter; next job receives this ID. */
+  /**
+   * Monotonically increasing counter storing the LAST issued job ID
+   * (F-87: EVM `jobCounter` parity — `jobId = ++jobCounter`). The next job
+   * receives `job_counter + 1`; 0 means no jobs issued yet.
+   */
   jobCounter: bigint;
   /** PDA bump seed. */
   bump: number;
@@ -84,7 +88,11 @@ export type AcpStateArgs = {
   platformFeeBp: number | bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: number | bigint;
-  /** Monotonically increasing counter; next job receives this ID. */
+  /**
+   * Monotonically increasing counter storing the LAST issued job ID
+   * (F-87: EVM `jobCounter` parity — `jobId = ++jobCounter`). The next job
+   * receives `job_counter + 1`; 0 means no jobs issued yet.
+   */
   jobCounter: number | bigint;
   /** PDA bump seed. */
   bump: number;

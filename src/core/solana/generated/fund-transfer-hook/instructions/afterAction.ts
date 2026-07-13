@@ -12,6 +12,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -68,12 +70,14 @@ export type AfterActionInstructionData = {
   jobId: bigint;
   action: number;
   optParams: ReadonlyUint8Array;
+  caller: Address;
 };
 
 export type AfterActionInstructionDataArgs = {
   jobId: number | bigint;
   action: number;
   optParams: ReadonlyUint8Array;
+  caller: Address;
 };
 
 export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstructionDataArgs> {
@@ -83,6 +87,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
       ["jobId", getU64Encoder()],
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
+      ["caller", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: AFTER_ACTION_DISCRIMINATOR }),
   );
@@ -94,6 +99,7 @@ export function getAfterActionInstructionDataDecoder(): Decoder<AfterActionInstr
     ["jobId", getU64Decoder()],
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
+    ["caller", getAddressDecoder()],
   ]);
 }
 
@@ -112,6 +118,7 @@ export type AfterActionAsyncInput<TAccountHookState extends string = string> = {
   jobId: AfterActionInstructionDataArgs["jobId"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
+  caller: AfterActionInstructionDataArgs["caller"];
 };
 
 export async function getAfterActionInstructionAsync<
@@ -157,6 +164,7 @@ export type AfterActionInput<TAccountHookState extends string = string> = {
   jobId: AfterActionInstructionDataArgs["jobId"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
+  caller: AfterActionInstructionDataArgs["caller"];
 };
 
 export function getAfterActionInstruction<

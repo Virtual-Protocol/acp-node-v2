@@ -17,7 +17,7 @@ export async function findHookStatePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB" as Address<"CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB">,
+    programAddress = "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT" as Address<"BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

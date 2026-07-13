@@ -42,7 +42,7 @@ import {
 } from "../instructions/index.js";
 
 export const MULTI_HOOK_ROUTER_PROGRAM_ADDRESS =
-  "Cf6W2cLWW25TfhFhgSZAo2ZAchracAtJF1VM8N3C4yor" as Address<"Cf6W2cLWW25TfhFhgSZAo2ZAchracAtJF1VM8N3C4yor">;
+  "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q" as Address<"HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q">;
 
 export enum MultiHookRouterAccount {
   HookMetadata,
@@ -237,7 +237,7 @@ export function identifyMultiHookRouterInstruction(
 }
 
 export type ParsedMultiHookRouterInstruction<
-  TProgram extends string = "Cf6W2cLWW25TfhFhgSZAo2ZAchracAtJF1VM8N3C4yor",
+  TProgram extends string = "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q",
 > =
   | ({
       instructionType: MultiHookRouterInstruction.AcceptAuthority;

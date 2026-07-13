@@ -74,20 +74,18 @@ export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_OWNER = 0x178b; // 6027
 export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT = 0x178c; // 6028
 /** BudgetMintNotSet: Budget mint must be set when budget amount is nonzero */
 export const AGENTIC_COMMERCE_V3_ERROR__BUDGET_MINT_NOT_SET = 0x178d; // 6029
-/** InvalidJobCounter: Job counter must be >= 1 */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB_COUNTER = 0x178e; // 6030
 /** InsufficientVaultBalance: Insufficient vault balance */
-export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x178f; // 6031
+export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x178e; // 6030
 /** MissingRequiredAccount: Missing required account for funded job */
-export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x1790; // 6032
+export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x178f; // 6031
 /** ArithmeticOverflow: Arithmetic overflow */
-export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1791; // 6033
+export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1790; // 6032
 /** HookProgramIsUpgradeable: Hook program must be immutable (upgrade authority must be None) */
-export const AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE = 0x1792; // 6034
+export const AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE = 0x1791; // 6033
 /** MissingHookProgram: Missing hook program account: job declares a hook but hook_program was not supplied */
-export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1793; // 6035
+export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1792; // 6034
 /** InvalidAutoCompleteParams: Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len() */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1794; // 6036
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1793; // 6035
 
 export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__AMOUNT_MUST_BE_GREATER_THAN_ZERO
@@ -108,7 +106,6 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_HOOK_PROGRAM
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB
-  | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB_COUNTER
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_PAYMENT_TOKEN
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT
@@ -151,7 +148,6 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION]: `Invalid destination account`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_HOOK_PROGRAM]: `Invalid hook program`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB]: `Invalid job`,
-    [AGENTIC_COMMERCE_V3_ERROR__INVALID_JOB_COUNTER]: `Job counter must be >= 1`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_PAYMENT_TOKEN]: `Invalid payment token`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY]: `Invalid vault authority`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT]: `Invalid vault mint`,

@@ -32,7 +32,7 @@ import {
 } from "../instructions/index.js";
 
 export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS =
-  "CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB" as Address<"CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB">;
+  "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT" as Address<"BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT">;
 
 export enum SubscriptionHookAccount {
   HookMetadata,
@@ -155,7 +155,7 @@ export function identifySubscriptionHookInstruction(
 }
 
 export type ParsedSubscriptionHookInstruction<
-  TProgram extends string = "CG2kdS2S6FxRxEJ7MaxdbbPmACVYimdV7UvqjCP793gB",
+  TProgram extends string = "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT",
 > =
   | ({
       instructionType: SubscriptionHookInstruction.AcceptAuthority;

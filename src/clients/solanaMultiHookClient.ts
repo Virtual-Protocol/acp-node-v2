@@ -87,7 +87,9 @@ export class SolanaMultiHookClient {
   ): Promise<bigint> {
     const signer = client.getSigner();
     const acpState = await this.read(fetchAcpState, await mh.acpStatePda(this.acp));
-    const jobId = acpState.data.jobCounter;
+    // On-chain job_counter stores the LAST issued ID (EVM jobCounter
+    // parity); the job we are about to create receives counter+1.
+    const jobId = acpState.data.jobCounter + 1n;
     const jobPda = await mh.jobPda(this.acp, signer.address, jobId);
     const ix = await getCreateJobInstructionAsync({
       client: signer,

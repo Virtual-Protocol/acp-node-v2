@@ -17,7 +17,7 @@ export async function findAcpStatePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp" as Address<"EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp">,
+    programAddress = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

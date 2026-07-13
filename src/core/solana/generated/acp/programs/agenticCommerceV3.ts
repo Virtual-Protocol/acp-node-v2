@@ -50,7 +50,7 @@ import {
 } from "../instructions/index.js";
 
 export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS =
-  "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp" as Address<"EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp">;
+  "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">;
 
 export enum AgenticCommerceV3Account {
   AcpState,
@@ -293,7 +293,7 @@ export function identifyAgenticCommerceV3Instruction(
 }
 
 export type ParsedAgenticCommerceV3Instruction<
-  TProgram extends string = "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
+  TProgram extends string = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
 > =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;

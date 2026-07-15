@@ -476,6 +476,77 @@ function toPrivyUserOperation(u: PrivyUserOperation) {
   };
 }
 
+// ERC-4337 EntryPoint (v0.6/v0.7) event topics. The op's real outcome lives in
+// these logs — the EntryPoint transaction itself mines with status 0x1 either way.
+// UserOperationEvent(bytes32 idx userOpHash, address idx sender, address idx paymaster,
+//                    uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)
+const USER_OPERATION_EVENT_TOPIC =
+  "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
+// UserOperationRevertReason(bytes32 idx userOpHash, address idx sender, uint256 nonce, bytes revertReason)
+const USER_OPERATION_REVERT_REASON_TOPIC =
+  "0xf62676f440ff169a3a9afdbf812e89e7f95975ee8e5c31214ffdef631c5f4792";
+
+export type EntryPointLog = {
+  topics?: readonly string[];
+  data?: string;
+};
+
+// The user operation's outcome for `sender`, read off the EntryPoint receipt
+// logs — scoped by the indexed sender topic because a bundle transaction can
+// carry other wallets' operations. Returns undefined when no UserOperationEvent
+// for the sender is present (non-4337 receipt), leaving the decision to the
+// EIP-5792 status field.
+export function findUserOpOutcome(
+  logs: readonly EntryPointLog[] | undefined,
+  sender: string
+): { success: boolean; revertReason?: string } | undefined {
+  const senderTopic = `0x${sender.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`;
+  let success: boolean | undefined;
+  let revertReason: string | undefined;
+  for (const log of logs ?? []) {
+    const topics = log.topics ?? [];
+    if (topics[2]?.toLowerCase() !== senderTopic) continue;
+    const topic0 = topics[0]?.toLowerCase();
+    const data = (log.data ?? "0x").slice(2);
+    if (topic0 === USER_OPERATION_EVENT_TOPIC) {
+      // data words: [nonce, success, actualGasCost, actualGasUsed]
+      success = data.length >= 128 && BigInt(`0x${data.slice(64, 128)}`) !== 0n;
+    } else if (topic0 === USER_OPERATION_REVERT_REASON_TOPIC) {
+      revertReason = decodeRevertReason(data) ?? revertReason;
+    }
+  }
+  if (success === undefined) return undefined;
+  return { success, ...(revertReason ? { revertReason } : {}) };
+}
+
+// Extract a human-readable reason from UserOperationRevertReason's `revertReason`
+// bytes. Smart accounts wrap the inner Error(string) under their own selectors
+// (seen live: 0xad7954bc), so rather than walk every wrapper ABI, locate the
+// innermost Error(string) / Panic(uint256) selector directly.
+export function decodeRevertReason(dataHex: string): string | undefined {
+  const hex = dataHex.replace(/^0x/, "").toLowerCase();
+  const errIdx = hex.lastIndexOf("08c379a0");
+  if (errIdx >= 0) {
+    const body = hex.slice(errIdx + 8);
+    try {
+      const len = Number(BigInt(`0x${body.slice(64, 128)}`));
+      const text = Buffer.from(body.slice(128, 128 + len * 2), "hex").toString("utf8");
+      if (text.trim()) return text;
+    } catch {
+      /* fall through to panic/undefined */
+    }
+  }
+  const panicIdx = hex.lastIndexOf("4e487b71");
+  if (panicIdx >= 0) {
+    try {
+      return `Panic(0x${BigInt(`0x${hex.slice(panicIdx + 8, panicIdx + 72)}`).toString(16)})`;
+    } catch {
+      /* fall through */
+    }
+  }
+  return undefined;
+}
+
 export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   public readonly providerName: string = "Privy Alchemy";
   public readonly address: Address;
@@ -787,10 +858,29 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     id: Hex
   ): Promise<Address> {
     const status = await client.waitForCallsStatus({ id });
-    if (!status.receipts?.[0]?.transactionHash) {
+    const receipt = status.receipts?.[0];
+    if (!receipt?.transactionHash) {
       throw new Error("Transaction failed");
     }
-    return status.receipts[0].transactionHash;
+    // The mined receipt belongs to the bundler's ENTRYPOINT transaction, which
+    // reports status 0x1 even when the wrapped user operation REVERTS — the
+    // op's real outcome is the `success` flag of the UserOperationEvent log
+    // (scoped to our sender: a bundle can carry other wallets' ops), with the
+    // captured revert data in UserOperationRevertReason. Trusting the tx hash
+    // alone reported reverted trades upstream as successful fills.
+    const outcome = findUserOpOutcome(
+      receipt.logs as readonly EntryPointLog[] | undefined,
+      this.address
+    );
+    if (status.status === "failure" || outcome?.success === false) {
+      const reason = outcome?.revertReason;
+      throw new Error(
+        `User operation reverted in tx ${receipt.transactionHash}${
+          reason ? `: ${reason}` : ""
+        }`
+      );
+    }
+    return receipt.transactionHash;
   }
 
   async sendTransaction(

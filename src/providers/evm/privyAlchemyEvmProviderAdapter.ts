@@ -482,8 +482,13 @@ function toPrivyUserOperation(u: PrivyUserOperation) {
 //                    uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)
 const USER_OPERATION_EVENT_TOPIC =
   "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
-// UserOperationRevertReason(bytes32 idx userOpHash, address idx sender, uint256 nonce, bytes revertReason)
+// Revert-detail events, both shaped (bytes32 idx userOpHash, address idx sender,
+// uint256 nonce, bytes revertReason): UserOperationRevertReason fires when the
+// op's callData reverts; PostOpRevertReason (v0.7) when the paymaster's postOp
+// does (e.g. the ERC-20 gas pull — the live case this fix was built from).
 const USER_OPERATION_REVERT_REASON_TOPIC =
+  "0x1c4fada7374c0a9ee8841fc38afe82932dc0f8e69012e927f061a8bae611a201";
+const POST_OP_REVERT_REASON_TOPIC =
   "0xf62676f440ff169a3a9afdbf812e89e7f95975ee8e5c31214ffdef631c5f4792";
 
 export type EntryPointLog = {
@@ -511,7 +516,10 @@ export function findUserOpOutcome(
     if (topic0 === USER_OPERATION_EVENT_TOPIC) {
       // data words: [nonce, success, actualGasCost, actualGasUsed]
       success = data.length >= 128 && BigInt(`0x${data.slice(64, 128)}`) !== 0n;
-    } else if (topic0 === USER_OPERATION_REVERT_REASON_TOPIC) {
+    } else if (
+      topic0 === USER_OPERATION_REVERT_REASON_TOPIC ||
+      topic0 === POST_OP_REVERT_REASON_TOPIC
+    ) {
       revertReason = decodeRevertReason(data) ?? revertReason;
     }
   }

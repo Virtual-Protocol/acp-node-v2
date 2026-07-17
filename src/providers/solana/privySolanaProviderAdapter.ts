@@ -820,6 +820,105 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   // -------------------------------------------------------------------------
+  // sendSponsoredSignedTransaction — EVM-paymaster parity for a SERVER-BUILT tx
+  // -------------------------------------------------------------------------
+
+  /**
+   * Sponsor + sign + broadcast a transaction the CALLER already built. This is
+   * the Solana analog of the EVM adapter attaching the Alchemy paymaster on
+   * sendCalls: the caller (the trading planner) builds the swap tx with the
+   * user as a PLACEHOLDER fee payer and a fresh blockhash, and here we swap
+   * Alchemy in as the fee payer (alchemy_requestFeePayer — its sig + CPI-rent
+   * prefund), add the user's Privy signature, and broadcast. A zero-SOL wallet
+   * trades gasless; the CLI is a pure signer/submitter, the planner never
+   * touches sponsorship.
+   *
+   * SPONSORSHIP-ONLY: there is no self-pay fallback. If the proxy/policy is
+   * absent or the sponsor refuses after retries, this throws — the caller
+   * re-quotes rather than silently billing the user's SOL.
+   *
+   * Unlike sendSponsoredTransaction(instructions), the tx is prebuilt so its
+   * blockhash is fixed: a retry re-runs requestFeePayer→sign→broadcast on the
+   * SAME bytes (valid within the blockhash's ~60s window) to ride out sponsor
+   * simulation / broadcast slot lag. A stale blockhash surfaces as a terminal
+   * error for the caller to rebuild.
+   */
+  public async sendSponsoredSignedTransaction(
+    serializedTransaction: string,
+    options?: SendInstructionsOptions & { lastValidBlockHeight?: bigint },
+  ): Promise<string> {
+    if (!this._sponsored || !this._rpcProxyUrl || !this._getAuthToken) {
+      throw new Error(
+        "sendSponsoredSignedTransaction requires sponsorship (a proxied RPC + auth token) — no self-pay fallback",
+      );
+    }
+
+    let lastSeenSlot: bigint | null = null;
+    let lastMinContextSlot: bigint | null = null;
+
+    return withFeePayerRetry(
+      async () => {
+        lastMinContextSlot = null;
+        // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
+        // error) + a lastValidBlockHeight upper bound for confirmation polling.
+        // The tx carries its OWN blockhash — we do not rebuild it here.
+        const { context, value: latest } = await this._rpc
+          .getLatestBlockhash()
+          .send();
+        lastSeenSlot = context.slot;
+
+        // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
+        const { serializedTransaction: sponsoredBase64, simulationSlot } =
+          await this.requestFeePayer(serializedTransaction);
+
+        // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
+        //    the user's sig (two required signers, distinct slots).
+        const signedBase64 =
+          await this.signTransactionViaPrivy(sponsoredBase64);
+
+        // 3. Broadcast + confirm. minContextSlot keeps the broadcast node's
+        //    preflight at least as fresh as Alchemy's sponsorship simulation.
+        const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
+        lastMinContextSlot = minContextSlot;
+        return this.broadcastAndConfirm(
+          signedBase64,
+          options?.lastValidBlockHeight ?? latest.lastValidBlockHeight,
+          minContextSlot,
+        );
+      },
+      {
+        ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        onRetry: (attempt, maxAttempts, message, error) => {
+          const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
+            lastMinContextSlot,
+            lastConfirmedSlot: this._lastConfirmedSlot,
+            lastSeenSlot,
+          });
+          if (this._onSponsoredRetry) {
+            this._onSponsoredRetry({
+              attempt,
+              maxAttempts,
+              slot: lastSeenSlot,
+              requiredSlot,
+              nodeSlot,
+              rawError: message,
+            });
+            return;
+          }
+          console.warn(
+            formatSponsoredRetryWarning(
+              requiredSlot,
+              nodeSlot,
+              attempt,
+              maxAttempts,
+            ),
+          );
+        },
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Broadcast + confirm
   // -------------------------------------------------------------------------
 

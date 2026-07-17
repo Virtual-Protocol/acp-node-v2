@@ -840,8 +840,16 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * Unlike sendSponsoredTransaction(instructions), the tx is prebuilt so its
    * blockhash is fixed: a retry re-runs requestFeePayer→sign→broadcast on the
    * SAME bytes (valid within the blockhash's ~60s window) to ride out sponsor
-   * simulation / broadcast slot lag. A stale blockhash surfaces as a terminal
-   * error for the caller to rebuild.
+   * simulation / broadcast slot lag. Because no retry can refresh the
+   * blockhash, an "expired" confirmation is terminal (retryExpired: false) —
+   * the caller rebuilds the tx instead.
+   *
+   * options.lastValidBlockHeight is the expiry height of the blockhash baked
+   * into the tx — pass it whenever the builder has it. When omitted, expiry
+   * polling is bounded by the validity window of the CURRENT tip at the first
+   * attempt: a strict upper bound (the tx's blockhash is older than the tip),
+   * so "expired" stays definitive, at the cost of over-polling a dropped tx
+   * by roughly the tx's pre-submission age.
    */
   public async sendSponsoredSignedTransaction(
     serializedTransaction: string,
@@ -855,17 +863,23 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     let lastSeenSlot: bigint | null = null;
     let lastMinContextSlot: bigint | null = null;
+    // Confirmation bound for the tx's FIXED blockhash — resolved once and
+    // held across retries. Re-reading the tip's lastValidBlockHeight on every
+    // attempt would slide the expiry window forward each retry and keep
+    // polling a transaction that is already provably dropped.
+    let confirmUntilHeight: bigint | undefined = options?.lastValidBlockHeight;
 
     return withFeePayerRetry(
       async () => {
         lastMinContextSlot = null;
         // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
-        // error) + a lastValidBlockHeight upper bound for confirmation polling.
-        // The tx carries its OWN blockhash — we do not rebuild it here.
+        // error) + the first-attempt fallback confirmation bound. The tx
+        // carries its OWN blockhash — we do not rebuild it here.
         const { context, value: latest } = await this._rpc
           .getLatestBlockhash()
           .send();
         lastSeenSlot = context.slot;
+        confirmUntilHeight ??= latest.lastValidBlockHeight;
 
         // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
         const { serializedTransaction: sponsoredBase64, simulationSlot } =
@@ -882,11 +896,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         lastMinContextSlot = minContextSlot;
         return this.broadcastAndConfirm(
           signedBase64,
-          options?.lastValidBlockHeight ?? latest.lastValidBlockHeight,
+          confirmUntilHeight,
           minContextSlot,
         );
       },
       {
+        // Fixed bytes: an expired blockhash can never land on a retry.
+        retryExpired: false,
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {

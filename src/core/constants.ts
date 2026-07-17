@@ -28,8 +28,7 @@ export function getChainFamily(chainId: number): ChainFamily {
 // address, the Solana program uses the default (all-zero-byte) pubkey.
 export const EVM_NO_EVALUATOR_ADDRESS =
   "0x0000000000000000000000000000000000000000";
-export const SOLANA_NO_EVALUATOR_ADDRESS =
-  "11111111111111111111111111111111";
+export const SOLANA_NO_EVALUATOR_ADDRESS = "11111111111111111111111111111111";
 
 export function getNoEvaluatorAddress(chainId: number): string {
   return getChainFamily(chainId) === "solana"
@@ -66,7 +65,7 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [bscTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
   [SOLANA_DEVNET_CHAIN_ID]: "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
-  [SOLANA_MAINNET_CHAIN_ID]: "EkJQUp3Xouu94Wt8vf2hxuZcFLL5Wk2h91bNdFiiS5Bp",
+  [SOLANA_MAINNET_CHAIN_ID]: "2heRZzq7QY8EX2hLceTron7jkzQe8uqsRztQnseavCcx",
   [robinhoodTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [robinhood.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
 };
@@ -76,15 +75,10 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [SOLANA_DEVNET_CHAIN_ID]: "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq",
-  [SOLANA_MAINNET_CHAIN_ID]: "9gX4rKCkXuxwQpSSfVET2KFsiTm8eFs93pp3h6yB3hwr",
+  [SOLANA_MAINNET_CHAIN_ID]: "GsuY2v1a7eeAHdx45c5VpBYFhrMuyjCN1cgxGkdBDD5J",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
-
-export const SOLANA_ACP_PROGRAM_ID =
-  ACP_CONTRACT_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]! as SolanaAddress;
-export const SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID =
-  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]! as SolanaAddress;
 
 export const INTENT_KIND_FUND_REQUEST = 0;
 export const INTENT_KIND_ESCROW = 1;
@@ -93,7 +87,7 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [SOLANA_DEVNET_CHAIN_ID]: "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q",
-  [SOLANA_MAINNET_CHAIN_ID]: "6Qmycqb8UEio4V6wCboi2xWHo4YoSb69s39HzkB9Fzwu",
+  [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
 };
@@ -102,7 +96,7 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [SOLANA_DEVNET_CHAIN_ID]: "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT",
-  [SOLANA_MAINNET_CHAIN_ID]: "FLhbbnw4NFvVtJHjK1CtxmnXUVbitMFc4FYN9fQTudm8",
+  [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
 };
@@ -111,7 +105,7 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [SOLANA_DEVNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-  [SOLANA_MAINNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
+  [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
 };

@@ -180,7 +180,10 @@ export class SseTransport extends AcpHttpClient implements AcpChatTransport {
     );
 
     if (!res.ok) {
-      throw new Error(`postMessage failed: ${res.status} ${res.statusText}`);
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `postMessage failed: ${res.status} ${res.statusText}${body ? ` - ${body}` : ""}`
+      );
     }
   }
 

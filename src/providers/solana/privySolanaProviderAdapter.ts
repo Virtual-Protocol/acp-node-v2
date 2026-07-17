@@ -36,6 +36,9 @@ import {
   PRIVY_APP_ID,
   SOLANA_DEVNET_CHAIN_ID,
   SOLANA_CHAIN_ID_CLUSTERS,
+  ACP_CONTRACT_ADDRESSES,
+  FUND_TRANSFER_HOOK_ADDRESSES,
+  SOLANA_MAINNET_CHAIN_ID,
 } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 import {
@@ -45,14 +48,12 @@ import {
 import { withFeePayerRetry } from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
-import {
-  SOLANA_ACP_PROGRAM_ID,
-  SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID,
-} from "../../core/constants.js";
 
 const SPONSORABLE_PROGRAM_IDS: ReadonlySet<string> = new Set([
-  SOLANA_ACP_PROGRAM_ID,
-  SOLANA_FUND_TRANSFER_HOOK_PROGRAM_ID,
+  ACP_CONTRACT_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]!,
+  ACP_CONTRACT_ADDRESSES[SOLANA_MAINNET_CHAIN_ID]!,
+  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]!,
+  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_MAINNET_CHAIN_ID]!,
 ]);
 
 // ---------------------------------------------------------------------------

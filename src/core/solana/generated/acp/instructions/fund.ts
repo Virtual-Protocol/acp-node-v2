@@ -173,16 +173,9 @@ export type FundInput<
   systemProgram?: Address<TAccountSystemProgram>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
-  /**
-   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
-   * present and budget > 0. The ACP program approves this PDA as delegate on
-   * client_token_account for budget_amount (F-25 fix).
-   */
+  /** Required when hook is present and budget > 0; approved on client_token_account for budget_amount. */
   hookDelegate?: Address<TAccountHookDelegate>;
-  /**
-   * using MultiHookRouter -- the delegate is owned by a sub-hook, not the router.
-   * Validated as ["hook_whitelist", delegate_owner] inside approve_hook_delegate.
-   */
+  /** is owned by a sub-hook (MultiHookRouter) rather than the job's hook program. */
   delegateWhitelist?: Address<TAccountDelegateWhitelist>;
   expectedBudget: FundInstructionDataArgs["expectedBudget"];
   optParams: FundInstructionDataArgs["optParams"];
@@ -331,16 +324,9 @@ export type ParsedFundInstruction<
     systemProgram: TAccountMetas[7];
     hookProgram?: TAccountMetas[8] | undefined;
     hookWhitelist?: TAccountMetas[9] | undefined;
-    /**
-     * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
-     * present and budget > 0. The ACP program approves this PDA as delegate on
-     * client_token_account for budget_amount (F-25 fix).
-     */
+    /** Required when hook is present and budget > 0; approved on client_token_account for budget_amount. */
     hookDelegate?: TAccountMetas[10] | undefined;
-    /**
-     * using MultiHookRouter -- the delegate is owned by a sub-hook, not the router.
-     * Validated as ["hook_whitelist", delegate_owner] inside approve_hook_delegate.
-     */
+    /** is owned by a sub-hook (MultiHookRouter) rather than the job's hook program. */
     delegateWhitelist?: TAccountMetas[11] | undefined;
   };
   data: FundInstructionData;

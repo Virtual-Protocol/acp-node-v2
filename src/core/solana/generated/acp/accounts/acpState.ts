@@ -67,8 +67,7 @@ export type AcpState = {
   evaluatorFeeBp: bigint;
   /**
    * Monotonically increasing counter storing the LAST issued job ID
-   * (F-87: EVM `jobCounter` parity — `jobId = ++jobCounter`). The next job
-   * receives `job_counter + 1`; 0 means no jobs issued yet.
+   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
    */
   jobCounter: bigint;
   /** PDA bump seed. */
@@ -90,8 +89,7 @@ export type AcpStateArgs = {
   evaluatorFeeBp: number | bigint;
   /**
    * Monotonically increasing counter storing the LAST issued job ID
-   * (F-87: EVM `jobCounter` parity — `jobId = ++jobCounter`). The next job
-   * receives `job_counter + 1`; 0 means no jobs issued yet.
+   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
    */
   jobCounter: number | bigint;
   /** PDA bump seed. */

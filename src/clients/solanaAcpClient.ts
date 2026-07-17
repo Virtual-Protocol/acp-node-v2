@@ -40,6 +40,7 @@ import {
   SOLANA_NO_EVALUATOR_ADDRESS,
   INTENT_KIND_FUND_REQUEST,
   INTENT_KIND_ESCROW,
+  SOLANA_CHAIN_ID_CLUSTERS,
 } from "../core/constants.js";
 
 import { buildJobStateRetryGuard } from "../core/solana/jobStateRetryGuard.js";
@@ -100,8 +101,9 @@ function encodeReasonBytes(reason: string): Uint8Array {
 
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
-  private readonly contractAddress: string;
-  private jobPdaCache: Map<bigint, Address> = new Map();
+  // Job PDAs are per-cluster: the same job id exists independently on devnet
+  // and mainnet, so cache entries are keyed `${chainId}:${jobId}`.
+  private jobPdaCache: Map<string, Address> = new Map();
 
   private constructor(
     contractAddresses: Record<number, string>,
@@ -109,12 +111,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   ) {
     super(contractAddresses);
     this.provider = provider;
-    // Use the first (and typically only) contract address
-    const addresses = Object.values(contractAddresses);
-    if (addresses.length === 0) {
+    if (Object.keys(contractAddresses).length === 0) {
       throw new Error("At least one contract address must be provided.");
     }
-    this.contractAddress = addresses[0]!;
+  }
+
+  /** The ACP program deployed on the given chain (500 devnet, 501 mainnet). */
+  private programAddress(chainId: number): Address {
+    return this.getContractAddress(chainId) as Address;
   }
 
   static async create(input: {
@@ -140,18 +144,19 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   async execute(
+    chainId: number,
     instructions: SolanaInstructionLike[]
   ): Promise<string | string[]> {
     // Lets sponsored adapters distinguish a WrongStatus caused by sponsor-node
     // simulation lag (retry) from a genuine one, e.g. an already-completed job
     // (fail fast). Non-sponsored adapters ignore it.
     const { guard, lastDiagnosis } = buildJobStateRetryGuard(
-      this.provider.getRpc(),
-      this.contractAddress as Address,
+      this.provider.getRpc(chainId),
+      this.programAddress(chainId),
       instructions
     );
     try {
-      return await this.provider.sendInstructions(instructions, {
+      return await this.provider.sendInstructions(chainId, instructions, {
         retryGuard: guard,
       });
     } catch (err) {
@@ -170,7 +175,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
    * OnlyACPContract), so the verdict is confirmed against the transaction's
    * own logs; an unreachable log fetch counts as inconclusive and retries.
    */
-  override async isStalePrepareError(err: unknown): Promise<boolean> {
+  override async isStalePrepareError(
+    chainId: number,
+    err: unknown
+  ): Promise<boolean> {
     if (!(err instanceof SolanaTransactionError) || err.phase !== "failed") {
       return false;
     }
@@ -179,7 +187,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
     try {
       const tx = await this.provider
-        .getRpc()
+        .getRpc(chainId)
         .getTransaction(err.signature as Signature, {
           encoding: "json",
           maxSupportedTransactionVersion: 0,
@@ -194,7 +202,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async submitPrepared(
-    _chainId: number,
+    chainId: number,
     prepared: PreparedTxInput
   ): Promise<string | string[]> {
     const instructions: SolanaInstructionLike[] = [];
@@ -208,27 +216,27 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       instructions.push(...item.tx);
     }
 
-    return this.execute(instructions);
+    return this.execute(chainId, instructions);
   }
 
   override async createJob(
-    _chainId: number,
+    chainId: number,
     params: CreateJobParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
 
-    const acpStatePda = await this.deriveAcpStatePda();
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
     // On-chain job_counter stores the LAST issued ID (EVM jobCounter
     // parity); the job we are about to create receives counter+1.
     const jobCounter = acpState.data.jobCounter + 1n;
 
-    const jobPda = await this.deriveJobPda(signer.address, jobCounter);
+    const jobPda = await this.deriveJobPda(chainId, signer.address, jobCounter);
 
     let hookWhitelist: Address | undefined;
     if (params.hookAddress) {
-      hookWhitelist = await this.deriveHookWhitelistPda(
+      hookWhitelist = await this.deriveHookWhitelistPda(chainId, 
         params.hookAddress as Address
       );
     }
@@ -242,16 +250,22 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ? DEFAULT_PUBKEY
         : (params.evaluatorAddress as Address);
 
-    const ix = await getCreateJobInstructionAsync({
-      client: signer,
-      job: jobPda,
-      provider: params.providerAddress as Address,
-      evaluator,
-      description: params.description,
-      expiredAt: params.expiredAt,
-      hookAddress: params.hookAddress ? (params.hookAddress as Address) : null,
-      ...(hookWhitelist ? { hookWhitelist } : {}),
-    });
+    const ix = await getCreateJobInstructionAsync(
+      {
+        client: signer,
+        job: jobPda,
+        acpState: acpStatePda,
+        provider: params.providerAddress as Address,
+        evaluator,
+        description: params.description,
+        expiredAt: params.expiredAt,
+        hookAddress: params.hookAddress
+          ? (params.hookAddress as Address)
+          : null,
+        ...(hookWhitelist ? { hookWhitelist } : {}),
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (params.hookAddress) {
@@ -261,9 +275,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       extraAccounts.push({ address: hookStatePda, role: AccountRole.READONLY });
     }
 
-    this.jobPdaCache.set(jobCounter, jobPda);
+    this.jobPdaCache.set(`${chainId}:${jobCounter}`, jobPda);
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       {
         programAddress: ix.programAddress,
         accounts: [...ix.accounts, ...extraAccounts],
@@ -273,19 +287,19 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async setBudget(
-    _chainId: number,
+    chainId: number,
     params: SetBudgetParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
+    const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     let mintAddress: Address;
     if (job.data.budgetMint.__option === "Some") {
       mintAddress = job.data.budgetMint.value;
     } else {
-      const acpStatePda = await this.deriveAcpStatePda();
+      const acpStatePda = await this.deriveAcpStatePda(chainId);
       const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
       mintAddress = acpState.data.paymentToken;
     }
@@ -305,17 +319,20 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ? hexToBytes(params.optParams)
         : EMPTY_OPT_PARAMS;
 
-    const ix = getSetBudgetInstruction({
-      caller: signer,
-      job: jobPda,
-      budgetMint: mintAddress,
-      amount: params.amount,
-      ...(hookAddress ? { hookProgram: hookAddress } : {}),
-      ...(hookAddress
-        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
-        : {}),
-      optParams: setBudgetOptParams,
-    });
+    const ix = getSetBudgetInstruction(
+      {
+        caller: signer,
+        job: jobPda,
+        budgetMint: mintAddress,
+        amount: params.amount,
+        ...(hookAddress ? { hookProgram: hookAddress } : {}),
+        ...(hookAddress
+          ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
+          : {}),
+        optParams: setBudgetOptParams,
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
     const extraAccounts: SolanaInstructionLike["accounts"] = [];
     if (hookAddress && setBudgetOptParams.length === 0) {
@@ -360,7 +377,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       );
     }
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       {
         programAddress: ix.programAddress,
         accounts: [...ix.accounts, ...extraAccounts],
@@ -370,7 +387,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async approveAllowance(
-    _chainId: number,
+    chainId: number,
     _params: ApproveAllowanceParams
   ): Promise<PreparedSolanaTx> {
     throw new Error(
@@ -379,21 +396,21 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async fund(
-    _chainId: number,
+    chainId: number,
     params: FundParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
+    const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
-    const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
+    const vaultAuthorityPda = await this.deriveVaultAuthorityPda(chainId, jobPda);
 
     let mintAddress: Address;
     if (job.data.budgetMint.__option === "Some") {
       mintAddress = job.data.budgetMint.value;
     } else {
-      const acpStatePda = await this.deriveAcpStatePda();
+      const acpStatePda = await this.deriveAcpStatePda(chainId);
       const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
       mintAddress = acpState.data.paymentToken;
     }
@@ -475,7 +492,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
       fundOptParams = hexToBytes(
         encodeFundTransferFundOptParams(
-          _chainId,
+          chainId,
           intent.data.token,
           intent.data.amount,
           intent.data.recipient
@@ -537,25 +554,28 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       }
     }
 
-    const ix = getFundInstruction({
-      client: signer,
-      job: jobPda,
-      clientTokenAccount: clientAta,
-      vault: vaultAta,
-      vaultAuthority: vaultAuthorityPda,
-      mint: mintAddress,
-      ...(hookAddress ? { hookProgram: hookAddress } : {}),
-      ...(hookAddress
-        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
-        : {}),
-      ...(hookAddress && passHookDelegate
-        ? { hookDelegate: await this.deriveHookDelegatePda(hookAddress) }
-        : {}),
-      expectedBudget: params.expectedBudget,
-      optParams: fundOptParams,
-    });
+    const ix = getFundInstruction(
+      {
+        client: signer,
+        job: jobPda,
+        clientTokenAccount: clientAta,
+        vault: vaultAta,
+        vaultAuthority: vaultAuthorityPda,
+        mint: mintAddress,
+        ...(hookAddress ? { hookProgram: hookAddress } : {}),
+        ...(hookAddress
+          ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
+          : {}),
+        ...(hookAddress && passHookDelegate
+          ? { hookDelegate: await this.deriveHookDelegatePda(hookAddress) }
+          : {}),
+        expectedBudget: params.expectedBudget,
+        optParams: fundOptParams,
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       createClientAtaIx,
       createVaultAtaIx,
       ...hookPreIxs,
@@ -569,12 +589,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async submit(
-    _chainId: number,
+    chainId: number,
     params: SubmitParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
+    const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     // Store a 32-byte keccak256 commitment of the deliverable on-chain, matching
@@ -602,8 +622,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       : EMPTY_OPT_PARAMS;
 
     if (isFunded) {
-      const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
-      const acpStatePda = await this.deriveAcpStatePda();
+      const vaultAuthorityPda = await this.deriveVaultAuthorityPda(chainId, jobPda);
+      const acpStatePda = await this.deriveAcpStatePda(chainId);
       const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
       let mintAddress: Address;
@@ -659,7 +679,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         if (params.optParams === undefined) {
           submitOptParams = hexToBytes(
             encodeFundTransferSubmitOptParams(
-              _chainId,
+              chainId,
               mintAddress,
               job.data.budgetAmount
             )
@@ -818,21 +838,25 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       });
     }
 
-    const ix = await getSubmitInstructionAsync({
-      provider: signer,
-      job: jobPda,
-      deliverable: deliverableBytes,
-      ...(hookAddress ? { hookProgram: hookAddress } : {}),
-      ...(hookAddress
-        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
-        : {}),
-      ...vaultAccounts,
-      ...hookNamedAccounts,
-      optParams: submitOptParams,
-      completeOptParams,
-    });
+    const ix = await getSubmitInstructionAsync(
+      {
+        provider: signer,
+        job: jobPda,
+        acpState: await this.deriveAcpStatePda(chainId),
+        deliverable: deliverableBytes,
+        ...(hookAddress ? { hookProgram: hookAddress } : {}),
+        ...(hookAddress
+          ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
+          : {}),
+        ...vaultAccounts,
+        ...hookNamedAccounts,
+        optParams: submitOptParams,
+        completeOptParams,
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       ...preIxs,
       {
         programAddress: ix.programAddress,
@@ -844,19 +868,19 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async complete(
-    _chainId: number,
+    chainId: number,
     params: CompleteParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
+    const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
     const reasonBytes = encodeReasonBytes(params.reason);
 
-    const vaultAuthorityPda = await this.deriveVaultAuthorityPda(jobPda);
+    const vaultAuthorityPda = await this.deriveVaultAuthorityPda(chainId, jobPda);
 
-    const acpStatePda = await this.deriveAcpStatePda();
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
     let mintAddress: Address;
@@ -973,26 +997,30 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       }
     }
 
-    const ix = await getCompleteInstructionAsync({
-      evaluator: signer,
-      job: jobPda,
-      vault: vaultAta,
-      vaultAuthority: vaultAuthorityPda,
-      providerTokenAccount: providerAta,
-      treasuryTokenAccount: treasuryAta,
-      ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
-      platformTreasury: acpState.data.platformTreasury,
-      ...(hookAddress ? { hookProgram: hookAddress } : {}),
-      ...(hookAddress
-        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
-        : {}),
-      reason: reasonBytes,
-      optParams: params.optParams
-        ? hexToBytes(params.optParams)
-        : EMPTY_OPT_PARAMS,
-    });
+    const ix = await getCompleteInstructionAsync(
+      {
+        evaluator: signer,
+        job: jobPda,
+        acpState: acpStatePda,
+        vault: vaultAta,
+        vaultAuthority: vaultAuthorityPda,
+        providerTokenAccount: providerAta,
+        treasuryTokenAccount: treasuryAta,
+        ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
+        platformTreasury: acpState.data.platformTreasury,
+        ...(hookAddress ? { hookProgram: hookAddress } : {}),
+        ...(hookAddress
+          ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
+          : {}),
+        reason: reasonBytes,
+        optParams: params.optParams
+          ? hexToBytes(params.optParams)
+          : EMPTY_OPT_PARAMS,
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       ...preIxs,
       {
         programAddress: ix.programAddress,
@@ -1003,14 +1031,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async reject(
-    _chainId: number,
+    chainId: number,
     params: RejectParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
-    const jobPda = await this.resolveJobPda(params.jobId, params.clientAddress);
+    const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
-    const acpStatePda = await this.deriveAcpStatePda();
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
     const acpState = await fetchAcpState(rpc, acpStatePda, {
       commitment: ACP_COMMITMENT,
     });
@@ -1026,7 +1054,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     let clientTokenAccount: Address | undefined;
 
     if (isFunded && job.data.budgetAmount > 0n) {
-      vaultAuthority = await this.deriveVaultAuthorityPda(jobPda);
+      vaultAuthority = await this.deriveVaultAuthorityPda(chainId, jobPda);
 
       let mintAddress: Address;
       if (job.data.budgetMint.__option === "Some") {
@@ -1100,24 +1128,28 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       }
     }
 
-    const ix = await getRejectInstructionAsync({
-      caller: signer,
-      job: jobPda,
-      ...(vault ? { vault } : {}),
-      ...(vaultAuthority ? { vaultAuthority } : {}),
-      ...(clientTokenAccount ? { clientTokenAccount } : {}),
-      platformTreasury: acpState.data.platformTreasury,
-      ...(hookAddress ? { hookProgram: hookAddress } : {}),
-      ...(hookAddress
-        ? { hookWhitelist: await this.deriveHookWhitelistPda(hookAddress) }
-        : {}),
-      reason: reasonBytes,
-      optParams: params.optParams
-        ? hexToBytes(params.optParams)
-        : EMPTY_OPT_PARAMS,
-    });
+    const ix = await getRejectInstructionAsync(
+      {
+        caller: signer,
+        job: jobPda,
+        acpState: acpStatePda,
+        ...(vault ? { vault } : {}),
+        ...(vaultAuthority ? { vaultAuthority } : {}),
+        ...(clientTokenAccount ? { clientTokenAccount } : {}),
+        platformTreasury: acpState.data.platformTreasury,
+        ...(hookAddress ? { hookProgram: hookAddress } : {}),
+        ...(hookAddress
+          ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
+          : {}),
+        reason: reasonBytes,
+        optParams: params.optParams
+          ? hexToBytes(params.optParams)
+          : EMPTY_OPT_PARAMS,
+      },
+      { programAddress: this.programAddress(chainId) }
+    );
 
-    return this.wrapMany([
+    return this.wrapMany(chainId, [
       {
         programAddress: ix.programAddress,
         accounts: [...ix.accounts, ...extraAccounts],
@@ -1127,10 +1159,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async getJobIdFromTxHash(
-    _chainId: number,
+    chainId: number,
     txHash: string
   ): Promise<bigint | null> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
 
     const tx = await rpc
       .getTransaction(txHash as Signature, {
@@ -1167,11 +1199,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
    * Read-side helper for scripts/observability; costs one RPC round-trip.
    */
   async getCreateSignature(
+    chainId: number,
     jobId: bigint,
     clientAddress?: string
   ): Promise<string | null> {
-    const rpc = this.provider.getRpc();
-    const jobPda = await this.resolveJobPda(jobId, clientAddress);
+    const rpc = this.provider.getRpc(chainId);
+    const jobPda = await this.resolveJobPda(chainId, jobId, clientAddress);
 
     // Newest-first; the job PDA's oldest signature is its creation tx.
     // Literal "confirmed" (= ACP_COMMITMENT's value): this RPC method's type
@@ -1185,12 +1218,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async getJob(
-    _chainId: number,
+    chainId: number,
     jobId: bigint,
     clientAddress?: string
   ): Promise<OnChainJob | null> {
-    const rpc = this.provider.getRpc();
-    const jobPda = await this.resolveJobPda(jobId, clientAddress);
+    const rpc = this.provider.getRpc(chainId);
+    const jobPda = await this.resolveJobPda(chainId, jobId, clientAddress);
 
     try {
       const jobAccount = await fetchJob(rpc, jobPda, {
@@ -1216,10 +1249,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async getTokenDecimals(
-    _chainId: number,
+    chainId: number,
     tokenAddress: string
   ): Promise<number> {
-    const rpc = this.provider.getRpc();
+    const rpc = this.provider.getRpc(chainId);
     const accountInfo = await rpc
       .getAccountInfo(tokenAddress as Address, { encoding: "base64" })
       .send();
@@ -1237,7 +1270,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   override async getTokenSymbol(
-    _chainId: number,
+    chainId: number,
     _tokenAddress: string
   ): Promise<string> {
     throw new Error(
@@ -1247,28 +1280,33 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
   // --- Private helpers ---
 
-  private wrapMany(instructions: SolanaInstructionLike[]): PreparedSolanaTx {
+  private wrapMany(
+    chainId: number,
+    instructions: SolanaInstructionLike[]
+  ): PreparedSolanaTx {
     return {
       tx: instructions,
       chain: "solana",
-      network: "devnet", // Will be overridden when we have network context
+      // Fallback keeps synthetic test chain ids (e.g. 901) working.
+      network: SOLANA_CHAIN_ID_CLUSTERS[chainId] ?? "devnet",
     };
   }
 
-  private async deriveAcpStatePda(): Promise<Address> {
+  private async deriveAcpStatePda(chainId: number): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
-      programAddress: this.contractAddress as Address,
+      programAddress: this.programAddress(chainId),
       seeds: [getUtf8Encoder().encode("acp_state")],
     });
     return pda;
   }
 
   private async deriveJobPda(
+    chainId: number,
     client: Address,
     jobCounter: bigint
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
-      programAddress: this.contractAddress as Address,
+      programAddress: this.programAddress(chainId),
       seeds: [
         getUtf8Encoder().encode("job"),
         getAddressEncoder().encode(client),
@@ -1286,9 +1324,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
-  private async deriveHookWhitelistPda(hookProgram: Address): Promise<Address> {
+  private async deriveHookWhitelistPda(
+    chainId: number,
+    hookProgram: Address
+  ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
-      programAddress: this.contractAddress as Address,
+      programAddress: this.programAddress(chainId),
       seeds: [
         getUtf8Encoder().encode("hook_whitelist"),
         getAddressEncoder().encode(hookProgram),
@@ -1369,9 +1410,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
-  private async deriveVaultAuthorityPda(jobPda: Address): Promise<Address> {
+  private async deriveVaultAuthorityPda(
+    chainId: number,
+    jobPda: Address
+  ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
-      programAddress: this.contractAddress as Address,
+      programAddress: this.programAddress(chainId),
       seeds: [
         getUtf8Encoder().encode("vault_authority"),
         getAddressEncoder().encode(jobPda),
@@ -1398,16 +1442,18 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   private async resolveJobPda(
+    chainId: number,
     jobId: bigint,
     clientAddress?: string
   ): Promise<Address> {
-    const cached = this.jobPdaCache.get(jobId);
+    const cacheKey = `${chainId}:${jobId}`;
+    const cached = this.jobPdaCache.get(cacheKey);
     if (cached) return cached;
 
     const client = (clientAddress ??
       this.provider.getSigner().address) as Address;
-    const pda = await this.deriveJobPda(client, jobId);
-    this.jobPdaCache.set(jobId, pda);
+    const pda = await this.deriveJobPda(chainId, client, jobId);
+    this.jobPdaCache.set(cacheKey, pda);
     return pda;
   }
 

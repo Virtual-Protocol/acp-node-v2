@@ -66,7 +66,6 @@
       "name": "ProviderEscrowIntentId"
     }
   ],
-  "address": "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq",
   "events": [
     {
       "discriminator": [
@@ -249,9 +248,7 @@
         73
       ],
       "docs": [
-        "Post-action hook callback. Routes to intent creation, signing, or escrow logic by action type.",
-        "`caller` is the acting party forwarded by the ACP core (EVM parity with",
-        "the Solidity hooks' `caller` parameter) — used for IntentSigned attribution."
+        "Post-action hook callback."
       ],
       "name": "after_action"
     },
@@ -301,7 +298,7 @@
         137
       ],
       "docs": [
-        "Pre-action hook callback. No-op for fund-transfer-hook; validates CPI caller only."
+        "Pre-action hook callback."
       ],
       "name": "before_action"
     },
@@ -379,9 +376,8 @@
         },
         {
           "docs": [
-            "The job-scoped escrow intent ([\"intent\", job_id, kind]). The map does",
-            "not participate in the address derivation, so the id equality is",
-            "asserted explicitly."
+            "The job-scoped escrow intent. The map is not part of the address",
+            "derivation, so the id equality is asserted explicitly."
           ],
           "name": "intent",
           "writable": true
@@ -471,29 +467,15 @@
         },
         {
           "docs": [
-            "The intent PDA to close. Must be unsigned and non-escrow (F-35).",
-            "Intent PDAs are job-scoped ([\"intent\", job_id, kind]) — the address",
-            "does not encode the intent id, so the id binding is asserted",
-            "explicitly (`intent.id == intent_id`); without it the active-intent",
-            "map guard below would compare against the caller's claimed id rather",
-            "than the account actually being closed."
+            "The intent PDA to close; must be unsigned and non-escrow. The address",
+            "does not encode the intent id, so `intent.id == intent_id` is asserted explicitly."
           ],
           "name": "intent",
           "writable": true
         },
         {
           "docs": [
-            "F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.",
-            "**Required** -- the constraint `!intent.is_escrow` above narrows this",
-            "instruction to fund-request intents, all of which are created in",
-            "`post_set_budget` alongside an entry in this map. The handler checks",
-            "that the intent being closed is NOT the one currently referenced by",
-            "the map -- closing the active intent would break the subsequent `fund`",
-            "call by leaving a dangling pointer. PDA seeds are bound to",
-            "`intent.job_id` so the caller cannot substitute a different job's",
-            "map to bypass the guard. Making this Required (not Optional) closes",
-            "the bypass where a malicious provider could simply omit the account",
-            "to skip the check."
+            "Per-job fund request intent map; prevents closing the currently active intent."
           ],
           "name": "fund_request_map",
           "pda": {
@@ -662,38 +644,38 @@
               {
                 "kind": "const",
                 "value": [
-                  49,
-                  188,
-                  226,
-                  2,
-                  44,
-                  82,
-                  88,
-                  185,
-                  130,
-                  89,
-                  92,
-                  194,
-                  39,
-                  118,
-                  57,
-                  126,
-                  47,
+                  235,
+                  233,
                   190,
-                  50,
-                  234,
-                  11,
-                  214,
+                  244,
+                  180,
+                  49,
+                  231,
                   139,
-                  33,
-                  125,
-                  174,
-                  60,
-                  255,
-                  134,
-                  138,
-                  214,
-                  154
+                  121,
+                  234,
+                  192,
+                  200,
+                  126,
+                  230,
+                  20,
+                  85,
+                  196,
+                  47,
+                  165,
+                  251,
+                  227,
+                  233,
+                  196,
+                  244,
+                  36,
+                  104,
+                  188,
+                  119,
+                  136,
+                  0,
+                  88,
+                  233
                 ]
               }
             ]
@@ -772,7 +754,7 @@
         18
       ],
       "docs": [
-        "Nominates a new authority (first step of two-step transfer)."
+        "Nominates a new authority for ownership transfer."
       ],
       "name": "nominate_authority"
     }
@@ -810,9 +792,8 @@
     },
     {
       "docs": [
-        "Hook self-declaration of which selectors this hook implements. Read by",
-        "multi-hook-router's `_validate_selector_completeness` (mirrors EVM",
-        "`IACPHookMetadata.requiredSelectors()`). PDA seeded by `[b\"hook_metadata\"]`.",
+        "Hook self-declaration of which selectors this hook implements; read by",
+        "multi-hook-router. Seeds: [\"hook_metadata\"].",
         "",
         "Bitmask layout: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
       ],
@@ -914,9 +895,7 @@
           },
           {
             "docs": [
-              "Cached escrow authority PDA bump (L-02). Set during post_submit;",
-              "0 for non-escrow intents. Avoids recomputing find_program_address",
-              "in auto_sign_escrow on every completion/rejection."
+              "Cached escrow authority PDA bump; 0 for non-escrow intents."
             ],
             "name": "escrow_bump",
             "type": "u8"

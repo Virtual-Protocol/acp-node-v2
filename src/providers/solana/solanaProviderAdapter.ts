@@ -8,6 +8,7 @@ import {
   createSolanaNetworkContext,
   type SolanaCluster,
 } from "../../core/chains.js";
+import { SOLANA_CHAIN_ID_CLUSTERS } from "../../core/constants.js";
 import type {
   ISolanaProviderAdapter,
   SendInstructionsOptions,
@@ -26,8 +27,12 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     throw new Error("getAddress() not implemented. Override in subclass.");
   }
 
-  async getCluster(): Promise<SolanaCluster> {
-    throw new Error("getCluster() not implemented. Override in subclass.");
+  async getCluster(chainId: number): Promise<SolanaCluster> {
+    const cluster = SOLANA_CHAIN_ID_CLUSTERS[chainId];
+    if (!cluster) {
+      throw new Error(`Unsupported Solana chainId: ${chainId}`);
+    }
+    return cluster;
   }
 
   async getSupportedChainIds(): Promise<number[]> {
@@ -36,7 +41,7 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     );
   }
 
-  getRpc(): Rpc<SolanaRpcApi> {
+  getRpc(_chainId: number): Rpc<SolanaRpcApi> {
     throw new Error("getRpc() not implemented. Override in subclass.");
   }
 
@@ -54,12 +59,13 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     return getBase58Decoder().decode(sig);
   }
 
-  async getNetworkContext(_chainId: number) {
-    const cluster = await this.getCluster();
+  async getNetworkContext(chainId: number) {
+    const cluster = await this.getCluster(chainId);
     return createSolanaNetworkContext(cluster);
   }
 
   async sendInstructions(
+    _chainId: number,
     _instructions: SolanaInstructionLike[],
     _options?: SendInstructionsOptions,
   ): Promise<string | string[]> {

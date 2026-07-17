@@ -304,13 +304,12 @@ export class AcpAgent {
 
     const providerChainIds: number[] = [];
     for (const [, client] of this.clients) {
-      if (client instanceof EvmAcpClient) {
-        providerChainIds.push(
-          ...(await client.getProvider().getSupportedChainIds()),
-        );
-      } else {
-        providerChainIds.push(...client.getSupportedChainIds());
-      }
+      // Ask the provider adapter, not the contract-address map: the address
+      // registries list every deployment (e.g. Solana 500 AND 501), but the
+      // adapter only serves the clusters it was configured with.
+      providerChainIds.push(
+        ...(await client.getProvider().getSupportedChainIds()),
+      );
     }
 
     return {
@@ -947,7 +946,7 @@ export class AcpAgent {
           optParams: params.optParams ?? "0x",
         }),
       (prepared) => client.submitPrepared(chainId, [prepared]),
-      (err) => client.isStalePrepareError(err),
+      (err) => client.isStalePrepareError(chainId, err),
     );
   }
 
@@ -997,7 +996,7 @@ export class AcpAgent {
     return withReprepare<PreparedTx, string | string[]>(
       () => client.submit(chainId, params),
       (prepared) => client.submitPrepared(chainId, [prepared]),
-      (err) => client.isStalePrepareError(err),
+      (err) => client.isStalePrepareError(chainId, err),
     );
   }
 
@@ -1327,7 +1326,7 @@ export class AcpAgent {
     return withReprepare<PreparedTx[], string | string[]>(
       prepare,
       (prepared) => client.submitPrepared(chainId, prepared),
-      (err) => client.isStalePrepareError(err),
+      (err) => client.isStalePrepareError(chainId, err),
     );
   }
 }

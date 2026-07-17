@@ -15,12 +15,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-/**
- * Job lifecycle states. Two valid paths exist (L-15):
- * Funded path:      Open -> Funded -> Submitted -> Completed | Rejected | Expired
- * Zero-budget path: Open -> Submitted -> Completed | Rejected  (budget_amount == 0)
- * Open jobs can also be Rejected directly by client or provider.
- */
+/** Job lifecycle states */
 export enum JobState {
   Open,
   Funded,

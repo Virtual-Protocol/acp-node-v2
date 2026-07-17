@@ -195,15 +195,13 @@ export type SubmitAsyncInput<
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
   /**
-   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
-   * present and budget > 0. The ACP program approves this PDA as delegate on
-   * provider_hook_token_account for budget_amount (F-25 fix).
+   * sub-hook program. Required when hook is present and budget > 0; approved as
+   * delegate on provider_hook_token_account for budget_amount.
    */
   hookDelegate?: Address<TAccountHookDelegate>;
   /**
    * Optional: provider's token account used by the hook for escrow transfer.
    * Required when hook is present and budget > 0 and evaluator is set.
-   * The ACP approves hook_delegate on this account for budget_amount.
    */
   providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
   /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */
@@ -391,15 +389,13 @@ export type SubmitInput<
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
   /**
-   * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
-   * present and budget > 0. The ACP program approves this PDA as delegate on
-   * provider_hook_token_account for budget_amount (F-25 fix).
+   * sub-hook program. Required when hook is present and budget > 0; approved as
+   * delegate on provider_hook_token_account for budget_amount.
    */
   hookDelegate?: Address<TAccountHookDelegate>;
   /**
    * Optional: provider's token account used by the hook for escrow transfer.
    * Required when hook is present and budget > 0 and evaluator is set.
-   * The ACP approves hook_delegate on this account for budget_amount.
    */
   providerHookTokenAccount?: Address<TAccountProviderHookTokenAccount>;
   /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */
@@ -572,15 +568,13 @@ export type ParsedSubmitInstruction<
     hookProgram?: TAccountMetas[9] | undefined;
     hookWhitelist?: TAccountMetas[10] | undefined;
     /**
-     * or by a whitelisted sub-hook program (multi-hook router). Required when hook is
-     * present and budget > 0. The ACP program approves this PDA as delegate on
-     * provider_hook_token_account for budget_amount (F-25 fix).
+     * sub-hook program. Required when hook is present and budget > 0; approved as
+     * delegate on provider_hook_token_account for budget_amount.
      */
     hookDelegate?: TAccountMetas[11] | undefined;
     /**
      * Optional: provider's token account used by the hook for escrow transfer.
      * Required when hook is present and budget > 0 and evaluator is set.
-     * The ACP approves hook_delegate on this account for budget_amount.
      */
     providerHookTokenAccount?: TAccountMetas[12] | undefined;
     /** using MultiHookRouter -- the delegate is owned by a sub-hook, not the router. */

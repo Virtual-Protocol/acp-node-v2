@@ -119,7 +119,7 @@ export abstract class BaseAcpClient<TTx> {
    * state may succeed. Chains without such prepare-time state dependencies
    * (EVM) never report stale prepares.
    */
-  async isStalePrepareError(_err: unknown): Promise<boolean> {
+  async isStalePrepareError(_chainId: number, _err: unknown): Promise<boolean> {
     return false;
   }
 

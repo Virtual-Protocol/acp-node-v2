@@ -124,7 +124,7 @@ export type ClaimRefundAsyncInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
-  /** Anyone can call — tokens always go to job.client (matches Solidity) */
+  /** Anyone can call — tokens always go to job.client */
   caller: TransactionSigner<TAccountCaller>;
   acpState?: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
@@ -244,7 +244,7 @@ export type ClaimRefundInput<
   TAccountPlatformTreasury extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
-  /** Anyone can call — tokens always go to job.client (matches Solidity) */
+  /** Anyone can call — tokens always go to job.client */
   caller: TransactionSigner<TAccountCaller>;
   acpState: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
@@ -355,7 +355,7 @@ export type ParsedClaimRefundInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Anyone can call — tokens always go to job.client (matches Solidity) */
+    /** Anyone can call — tokens always go to job.client */
     caller: TAccountMetas[0];
     acpState: TAccountMetas[1];
     job: TAccountMetas[2];

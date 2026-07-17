@@ -33,8 +33,7 @@ import {
   type ParsedNominateAuthorityInstruction,
 } from "../instructions/index.js";
 
-export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
-  "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq" as Address<"4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq">;
+export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum FundTransferHookAccount {
   FundRequestIntentId,
@@ -204,9 +203,7 @@ export function identifyFundTransferHookInstruction(
   );
 }
 
-export type ParsedFundTransferHookInstruction<
-  TProgram extends string = "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq",
-> =
+export type ParsedFundTransferHookInstruction<TProgram extends string = ""> =
   | ({
       instructionType: FundTransferHookInstruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)

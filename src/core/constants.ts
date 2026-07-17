@@ -1,6 +1,6 @@
 import { Address, toFunctionSelector } from "viem";
 import { base, baseSepolia, bscTestnet } from "viem/chains";
-import type { Address as SolanaAddress, Commitment } from "@solana/kit";
+import type { Commitment } from "@solana/kit";
 import type { ChainFamily, SolanaCluster } from "./chains.js";
 import { robinhood, robinhoodTestnet } from "./chains.js";
 

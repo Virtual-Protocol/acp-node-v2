@@ -59,6 +59,7 @@ export type SubscriptionTerms = { durationSecs: bigint; packageId: bigint };
 type Rpc = ReturnType<ISolanaProviderAdapter["getRpc"]>;
 
 export class SolanaMultiHookClient {
+  readonly chainId: number;
   readonly acp: Address;
   readonly router: Address;
   readonly fundHook: Address;
@@ -68,6 +69,7 @@ export class SolanaMultiHookClient {
 
   /** Build from a chainId (addresses sourced from constants) + an rpc. */
   constructor(chainId: number, rpc: Rpc) {
+    this.chainId = chainId;
     this.acp = ACP_CONTRACT_ADDRESSES[chainId]! as Address;
     this.router = MULTI_HOOK_ROUTER_ADDRESSES[chainId]! as Address;
     this.fundHook = FUND_TRANSFER_HOOK_ADDRESSES[chainId]! as Address;
@@ -91,17 +93,21 @@ export class SolanaMultiHookClient {
     // parity); the job we are about to create receives counter+1.
     const jobId = acpState.data.jobCounter + 1n;
     const jobPda = await mh.jobPda(this.acp, signer.address, jobId);
-    const ix = await getCreateJobInstructionAsync({
-      client: signer,
-      job: jobPda,
-      provider: p.provider,
-      evaluator: p.evaluator,
-      description: p.description,
-      expiredAt: p.expiredAt,
-      hookAddress: this.router,
-      hookWhitelist: await this.wl(this.router),
-    });
-    await client.sendInstructions([
+    const ix = await getCreateJobInstructionAsync(
+      {
+        client: signer,
+        job: jobPda,
+        acpState: await mh.acpStatePda(this.acp),
+        provider: p.provider,
+        evaluator: p.evaluator,
+        description: p.description,
+        expiredAt: p.expiredAt,
+        hookAddress: this.router,
+        hookWhitelist: await this.wl(this.router),
+      },
+      { programAddress: this.acp }
+    );
+    await client.sendInstructions(this.chainId, [
       {
         programAddress: ix.programAddress,
         accounts: [
@@ -121,21 +127,24 @@ export class SolanaMultiHookClient {
     const signer = client.getSigner();
     const jobPda = await mh.jobPda(this.acp, signer.address, jobId);
     const both: Address[] = [this.sub, this.fundHook];
-    const ix = await getBatchConfigureHooksInstructionAsync({
-      client: signer,
-      job: jobPda,
-      hookRouter: await mh.hookRouterPda(this.router, jobId),
-      routerState: await mh.routerStatePda(this.router),
-      systemProgram: SYSTEM,
-      jobId,
-      setBudget: both,
-      fund: both,
-      submit: [this.fundHook],
-      complete: both,
-      reject: both,
-    });
+    const ix = await getBatchConfigureHooksInstructionAsync(
+      {
+        client: signer,
+        job: jobPda,
+        hookRouter: await mh.hookRouterPda(this.router, jobId),
+        routerState: await mh.routerStatePda(this.router),
+        systemProgram: SYSTEM,
+        jobId,
+        setBudget: both,
+        fund: both,
+        submit: [this.fundHook],
+        complete: both,
+        reject: both,
+      },
+      { programAddress: this.router }
+    );
     return this.one(
-      await client.sendInstructions([
+      await client.sendInstructions(this.chainId, [
         {
           programAddress: ix.programAddress,
           accounts: [
@@ -171,15 +180,18 @@ export class SolanaMultiHookClient {
       { accountCount: 7, params: subParams },
       { accountCount: 7, params: mh.encodeFundConfirmation(paymentToken, p.amount, seller.address) },
     ]);
-    const ix = getSetBudgetInstruction({
-      caller: seller,
-      job: jobPda,
-      budgetMint: paymentToken,
-      hookProgram: this.router,
-      hookWhitelist: await this.wl(this.router),
-      amount: p.amount,
-      optParams: header,
-    });
+    const ix = getSetBudgetInstruction(
+      {
+        caller: seller,
+        job: jobPda,
+        budgetMint: paymentToken,
+        hookProgram: this.router,
+        hookWhitelist: await this.wl(this.router),
+        amount: p.amount,
+        optParams: header,
+      },
+      { programAddress: this.acp }
+    );
     const acc = [
       ...ix.accounts,
       ...(await this.routerPrefix(jobId)),
@@ -190,7 +202,7 @@ export class SolanaMultiHookClient {
       ws(seller.address), w(setBudgetIntent), w(await mh.fundRequestIntentIdPda(this.fundHook, jobId)), ro(jobPda), ro(SYSTEM),
     ];
     return this.one(
-      await provider.sendInstructions([cuLimitIx(1_400_000), { programAddress: ix.programAddress, accounts: acc, data: ix.data as Uint8Array }])
+      await provider.sendInstructions(this.chainId, [cuLimitIx(1_400_000), { programAddress: ix.programAddress, accounts: acc, data: ix.data as Uint8Array }])
     );
   }
 
@@ -216,20 +228,23 @@ export class SolanaMultiHookClient {
       { accountCount: 3, params: subParams },
       { accountCount: 7, params: fundConfirm },
     ]);
-    const ix = getFundInstruction({
-      client: buyer,
-      job: jobPda,
-      clientTokenAccount: clientAta,
-      vault: vaultAta,
-      vaultAuthority,
-      mint: paymentToken,
-      hookProgram: this.router,
-      hookWhitelist: await this.wl(this.router),
-      hookDelegate: fundHookState,
-      delegateWhitelist: await this.wl(this.fundHook),
-      expectedBudget: p.amount,
-      optParams: header,
-    });
+    const ix = getFundInstruction(
+      {
+        client: buyer,
+        job: jobPda,
+        clientTokenAccount: clientAta,
+        vault: vaultAta,
+        vaultAuthority,
+        mint: paymentToken,
+        hookProgram: this.router,
+        hookWhitelist: await this.wl(this.router),
+        hookDelegate: fundHookState,
+        delegateWhitelist: await this.wl(this.fundHook),
+        expectedBudget: p.amount,
+        optParams: header,
+      },
+      { programAddress: this.acp }
+    );
     const acc = [
       ...ix.accounts,
       ...(await this.routerPrefix(jobId)),
@@ -238,7 +253,7 @@ export class SolanaMultiHookClient {
       ro(await mh.fundRequestIntentIdPda(this.fundHook, jobId)), w(setBudgetIntent), w(clientAta), w(providerAta), ro(TOKEN_PROGRAM),
     ];
     return this.one(
-      await client.sendInstructions([
+      await client.sendInstructions(this.chainId, [
         cuLimitIx(1_400_000),
         createAtaIdempotentIx(buyer.address, clientAta, buyer.address, paymentToken),
         createAtaIdempotentIx(buyer.address, vaultAta, vaultAuthority, paymentToken),
@@ -275,23 +290,27 @@ export class SolanaMultiHookClient {
       { accountCount: 11, params: mh.encodeEscrowProposal(paymentToken, job.data.budgetAmount) },
     ]);
     const deliverable = fixed32(p.deliverable);
-    const ix = await getSubmitInstructionAsync({
-      provider: seller,
-      job: jobPda,
-      vault: vaultAta,
-      vaultAuthority,
-      providerTokenAccount: providerAta,
-      treasuryTokenAccount: treasuryAta,
-      platformTreasury: acpState.data.platformTreasury,
-      hookProgram: this.router,
-      hookWhitelist: await this.wl(this.router),
-      hookDelegate: fundHookState,
-      providerHookTokenAccount: providerAta,
-      delegateWhitelist: await this.wl(this.fundHook),
-      deliverable,
-      optParams: header,
-      completeOptParams: new Uint8Array(0),
-    });
+    const ix = await getSubmitInstructionAsync(
+      {
+        provider: seller,
+        job: jobPda,
+        acpState: await mh.acpStatePda(this.acp),
+        vault: vaultAta,
+        vaultAuthority,
+        providerTokenAccount: providerAta,
+        treasuryTokenAccount: treasuryAta,
+        platformTreasury: acpState.data.platformTreasury,
+        hookProgram: this.router,
+        hookWhitelist: await this.wl(this.router),
+        hookDelegate: fundHookState,
+        providerHookTokenAccount: providerAta,
+        delegateWhitelist: await this.wl(this.fundHook),
+        deliverable,
+        optParams: header,
+        completeOptParams: new Uint8Array(0),
+      },
+      { programAddress: this.acp }
+    );
     const acc = [
       ...ix.accounts,
       ...(await this.routerPrefix(jobId)),
@@ -300,7 +319,7 @@ export class SolanaMultiHookClient {
       w(escrowVault), ro(escrowAuth), ro(TOKEN_PROGRAM), ro(SYSTEM), ro(jobPda),
     ];
     return this.one(
-      await provider.sendInstructions([
+      await provider.sendInstructions(this.chainId, [
         cuLimitIx(1_400_000),
         createAtaIdempotentIx(seller.address, escrowVault, escrowAuth, paymentToken),
         createAtaIdempotentIx(seller.address, treasuryAta, acpState.data.platformTreasury, paymentToken),
@@ -340,20 +359,24 @@ export class SolanaMultiHookClient {
       { accountCount: 9, params: new Uint8Array(0) },
       { accountCount: 8, params: new Uint8Array(0) },
     ]);
-    const ix = await getCompleteInstructionAsync({
-      evaluator: evalSigner,
-      job: jobPda,
-      vault: vaultAta,
-      vaultAuthority,
-      providerTokenAccount: providerAta,
-      treasuryTokenAccount: treasuryAta,
-      evaluatorTokenAccount: evaluatorAta,
-      platformTreasury: acpState.data.platformTreasury,
-      hookProgram: this.router,
-      hookWhitelist: await this.wl(this.router),
-      reason: fixed32(p.reason ?? "approved"),
-      optParams: header,
-    });
+    const ix = await getCompleteInstructionAsync(
+      {
+        evaluator: evalSigner,
+        job: jobPda,
+        acpState: await mh.acpStatePda(this.acp),
+        vault: vaultAta,
+        vaultAuthority,
+        providerTokenAccount: providerAta,
+        treasuryTokenAccount: treasuryAta,
+        evaluatorTokenAccount: evaluatorAta,
+        platformTreasury: acpState.data.platformTreasury,
+        hookProgram: this.router,
+        hookWhitelist: await this.wl(this.router),
+        reason: fixed32(p.reason ?? "approved"),
+        optParams: header,
+      },
+      { programAddress: this.acp }
+    );
     const completeInstruction: SolanaInstructionLike = {
       programAddress: ix.programAddress,
       accounts: [
@@ -432,7 +455,7 @@ export class SolanaMultiHookClient {
     dv.setUint32(0, 0, true);
     dv.setBigUint64(4, recentSlot, true);
     create[12] = bump;
-    await actor.sendInstructions([{ programAddress: ALT_PROGRAM, accounts: accts, data: create }]);
+    await actor.sendInstructions(this.chainId, [{ programAddress: ALT_PROGRAM, accounts: accts, data: create }]);
     for (let i = 0; i < addresses.length; i += 20) {
       const chunk = addresses.slice(i, i + 20);
       const ext = new Uint8Array(12 + chunk.length * 32);
@@ -440,7 +463,7 @@ export class SolanaMultiHookClient {
       edv.setUint32(0, 2, true);
       edv.setBigUint64(4, BigInt(chunk.length), true);
       chunk.forEach((a, j) => ext.set(ae.encode(a), 12 + j * 32));
-      await actor.sendInstructions([{ programAddress: ALT_PROGRAM, accounts: accts, data: ext }]);
+      await actor.sendInstructions(this.chainId, [{ programAddress: ALT_PROGRAM, accounts: accts, data: ext }]);
     }
     // Read back the authoritative on-chain ordering so the caller compresses
     // against real indices (finding L-01). Poll instead of a fixed sleep so we

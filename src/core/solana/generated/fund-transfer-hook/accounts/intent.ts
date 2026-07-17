@@ -61,11 +61,7 @@ export type Intent = {
   amount: bigint;
   recipient: Address;
   bump: number;
-  /**
-   * Cached escrow authority PDA bump (L-02). Set during post_submit;
-   * 0 for non-escrow intents. Avoids recomputing find_program_address
-   * in auto_sign_escrow on every completion/rejection.
-   */
+  /** Cached escrow authority PDA bump; 0 for non-escrow intents. */
   escrowBump: number;
 };
 
@@ -80,11 +76,7 @@ export type IntentArgs = {
   amount: number | bigint;
   recipient: Address;
   bump: number;
-  /**
-   * Cached escrow authority PDA bump (L-02). Set during post_submit;
-   * 0 for non-escrow intents. Avoids recomputing find_program_address
-   * in auto_sign_escrow on every completion/rejection.
-   */
+  /** Cached escrow authority PDA bump; 0 for non-escrow intents. */
   escrowBump: number;
 };
 

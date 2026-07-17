@@ -67,10 +67,7 @@ export function getJobDiscriminatorBytes() {
 
 export type Job = {
   discriminator: ReadonlyUint8Array;
-  /**
-   * Unique identifier: `AcpState.job_counter` after its increment at
-   * creation (F-87 EVM parity — first job is 1; 0 is never issued).
-   */
+  /** Unique identifier: `AcpState.job_counter` after its increment at creation. */
   jobId: bigint;
   /** The party that created and funds the job. */
   client: Address;
@@ -103,10 +100,7 @@ export type Job = {
 };
 
 export type JobArgs = {
-  /**
-   * Unique identifier: `AcpState.job_counter` after its increment at
-   * creation (F-87 EVM parity — first job is 1; 0 is never issued).
-   */
+  /** Unique identifier: `AcpState.job_counter` after its increment at creation. */
   jobId: number | bigint;
   /** The party that created and funds the job. */
   client: Address;

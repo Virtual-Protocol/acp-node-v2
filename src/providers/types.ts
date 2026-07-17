@@ -72,13 +72,18 @@ export type SendInstructionsOptions = {
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
 };
 
+// Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),
+// mirroring IEvmProviderAdapter — one adapter can serve several clusters.
+// getSigner/signMessage stay chainId-free: the signer is one keypair valid on
+// every cluster and Solana message signing has no chain binding.
 export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
-  getCluster(): Promise<SolanaCluster>;
-  getRpc(): Rpc<SolanaRpcApi>;
+  getCluster(chainId: number): Promise<SolanaCluster>;
+  getRpc(chainId: number): Rpc<SolanaRpcApi>;
   getSigner(): SolanaSigner;
   signMessage(message: string): Promise<string>;
   sendInstructions(
+    chainId: number,
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string | string[]>;

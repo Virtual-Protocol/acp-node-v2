@@ -120,27 +120,11 @@ export type CloseIntentInput<
    */
   actor: TransactionSigner<TAccountActor>;
   /**
-   * The intent PDA to close. Must be unsigned and non-escrow (F-35).
-   * Intent PDAs are job-scoped (["intent", job_id, kind]) — the address
-   * does not encode the intent id, so the id binding is asserted
-   * explicitly (`intent.id == intent_id`); without it the active-intent
-   * map guard below would compare against the caller's claimed id rather
-   * than the account actually being closed.
+   * The intent PDA to close; must be unsigned and non-escrow. The address
+   * does not encode the intent id, so `intent.id == intent_id` is asserted explicitly.
    */
   intent: Address<TAccountIntent>;
-  /**
-   * F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.
-   * **Required** -- the constraint `!intent.is_escrow` above narrows this
-   * instruction to fund-request intents, all of which are created in
-   * `post_set_budget` alongside an entry in this map. The handler checks
-   * that the intent being closed is NOT the one currently referenced by
-   * the map -- closing the active intent would break the subsequent `fund`
-   * call by leaving a dangling pointer. PDA seeds are bound to
-   * `intent.job_id` so the caller cannot substitute a different job's
-   * map to bypass the guard. Making this Required (not Optional) closes
-   * the bypass where a malicious provider could simply omit the account
-   * to skip the check.
-   */
+  /** Per-job fund request intent map; prevents closing the currently active intent. */
   fundRequestMap: Address<TAccountFundRequestMap>;
   systemProgram?: Address<TAccountSystemProgram>;
   intentId: CloseIntentInstructionDataArgs["intentId"];
@@ -225,27 +209,11 @@ export type ParsedCloseIntentInstruction<
      */
     actor: TAccountMetas[0];
     /**
-     * The intent PDA to close. Must be unsigned and non-escrow (F-35).
-     * Intent PDAs are job-scoped (["intent", job_id, kind]) — the address
-     * does not encode the intent id, so the id binding is asserted
-     * explicitly (`intent.id == intent_id`); without it the active-intent
-     * map guard below would compare against the caller's claimed id rather
-     * than the account actually being closed.
+     * The intent PDA to close; must be unsigned and non-escrow. The address
+     * does not encode the intent id, so `intent.id == intent_id` is asserted explicitly.
      */
     intent: TAccountMetas[1];
-    /**
-     * F-75 (closes auditor Finding 30): the per-job FundRequestIntentId map.
-     * **Required** -- the constraint `!intent.is_escrow` above narrows this
-     * instruction to fund-request intents, all of which are created in
-     * `post_set_budget` alongside an entry in this map. The handler checks
-     * that the intent being closed is NOT the one currently referenced by
-     * the map -- closing the active intent would break the subsequent `fund`
-     * call by leaving a dangling pointer. PDA seeds are bound to
-     * `intent.job_id` so the caller cannot substitute a different job's
-     * map to bypass the guard. Making this Required (not Optional) closes
-     * the bypass where a malicious provider could simply omit the account
-     * to skip the check.
-     */
+    /** Per-job fund request intent map; prevents closing the currently active intent. */
     fundRequestMap: TAccountMetas[2];
     systemProgram: TAccountMetas[3];
   };

@@ -38,7 +38,6 @@ import {
   SOLANA_CHAIN_ID_CLUSTERS,
   ACP_CONTRACT_ADDRESSES,
   FUND_TRANSFER_HOOK_ADDRESSES,
-  SOLANA_MAINNET_CHAIN_ID,
 } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 import {
@@ -49,12 +48,23 @@ import { withFeePayerRetry } from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
 
-const SPONSORABLE_PROGRAM_IDS: ReadonlySet<string> = new Set([
-  ACP_CONTRACT_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]!,
-  ACP_CONTRACT_ADDRESSES[SOLANA_MAINNET_CHAIN_ID]!,
-  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_DEVNET_CHAIN_ID]!,
-  FUND_TRANSFER_HOOK_ADDRESSES[SOLANA_MAINNET_CHAIN_ID]!,
-]);
+// Sponsorship covers ACP actions only: batches touching the cluster's ACP
+// program or fund-transfer hook. Derived per chainId so devnet and mainnet
+// each recognize their own deployments.
+const sponsorableCache = new Map<number, ReadonlySet<string>>();
+function sponsorableProgramIds(chainId: number): ReadonlySet<string> {
+  let set = sponsorableCache.get(chainId);
+  if (!set) {
+    set = new Set(
+      [
+        ACP_CONTRACT_ADDRESSES[chainId],
+        FUND_TRANSFER_HOOK_ADDRESSES[chainId],
+      ].filter((a): a is string => a !== undefined),
+    );
+    sponsorableCache.set(chainId, set);
+  }
+  return set;
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -67,10 +77,26 @@ export interface PrivySolanaConfig {
   walletId: string;
   signerPrivateKey?: string;
   signFn?: SignFn;
-  /** Solana chain ID (500 = devnet, 501 = mainnet). Defaults to devnet. */
+  /**
+   * @deprecated Use `chainIds`. Single Solana chain ID (500 = devnet,
+   * 501 = mainnet). Defaults to devnet when neither field is set.
+   */
   chainId?: number;
-  /** Explicit RPC URL. When set, bypasses the ACP server proxy. */
+  /**
+   * Solana chain IDs served simultaneously (500 = devnet, 501 = mainnet).
+   * Takes precedence over `chainId`. Defaults to `[chainId]`, else devnet.
+   */
+  chainIds?: number[];
+  /**
+   * @deprecated Use `rpcUrls`. Explicit RPC URL; only valid when exactly one
+   * chain is configured. When set, bypasses the ACP server proxy.
+   */
   rpcUrl?: string;
+  /**
+   * Explicit RPC URL per chainId. Chains listed here bypass the ACP server
+   * proxy (and thus gas sponsorship); chains not listed use the proxy.
+   */
+  rpcUrls?: Record<number, string>;
   serverUrl?: string;
   privyAppId?: string;
   sponsored?: boolean;
@@ -409,8 +435,7 @@ function createPrivySolanaSigner(params: {
 
 export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _address: string;
-  private readonly _rpc: Rpc<SolanaRpcApi>;
-  private readonly _cluster: SolanaCluster;
+  private readonly _rpcs: Map<number, Rpc<SolanaRpcApi>>;
   private readonly _signer: SolanaSigner;
 
   // Privy signing params (stored for direct signTransaction calls)
@@ -420,41 +445,42 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _serverUrl: string;
   private readonly _privyAppId: string;
 
-  // Gas sponsorship (policy injected server-side)
-  private readonly _rpcProxyUrl: string | null;
+  // Gas sponsorship (policy injected server-side). Chains served through the
+  // ACP server proxy have an entry in _rpcProxyUrls; explicit-rpcUrl chains
+  // do not and are never sponsored.
+  private readonly _rpcProxyUrls: Map<number, string>;
   private _getAuthToken: (() => Promise<string>) | null = null;
   private readonly _sponsored: boolean;
   private readonly _onSponsoredRetry: PrivySolanaConfig["onSponsoredRetry"];
-  // Slot of the most recently confirmed transaction sent through this
-  // adapter — the slot the sponsor node must reach to see account state
-  // created by the previous step (e.g. createJob before setBudget).
-  private _lastConfirmedSlot: bigint | null = null;
+  // Slot of the most recently confirmed transaction per chain — the slot the
+  // sponsor node must reach to see account state created by the previous
+  // step (e.g. createJob before setBudget). Per-chain because devnet and
+  // mainnet slot numbers are unrelated streams.
+  private readonly _lastConfirmedSlot = new Map<number, bigint>();
 
   private constructor(params: {
     address: string;
-    rpc: Rpc<SolanaRpcApi>;
-    cluster: SolanaCluster;
+    rpcs: Map<number, Rpc<SolanaRpcApi>>;
     signer: SolanaSigner;
     walletId: string;
     signerPrivateKey?: string;
     signFn?: SignFn;
     serverUrl: string;
     privyAppId: string;
-    rpcProxyUrl: string | null;
+    rpcProxyUrls: Map<number, string>;
     sponsored: boolean;
     onSponsoredRetry?: PrivySolanaConfig["onSponsoredRetry"];
   }) {
     super("privy-solana");
     this._address = params.address;
-    this._rpc = params.rpc;
-    this._cluster = params.cluster;
+    this._rpcs = params.rpcs;
     this._signer = params.signer;
     this._walletId = params.walletId;
     this._signerPrivateKey = params.signerPrivateKey;
     this._signFn = params.signFn;
     this._serverUrl = params.serverUrl;
     this._privyAppId = params.privyAppId;
-    this._rpcProxyUrl = params.rpcProxyUrl;
+    this._rpcProxyUrls = params.rpcProxyUrls;
     this._sponsored = params.sponsored;
     this._onSponsoredRetry = params.onSponsoredRetry;
   }
@@ -470,13 +496,28 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
     const privyAppId = params.privyAppId ?? PRIVY_APP_ID;
-    const chainId = params.chainId ?? SOLANA_DEVNET_CHAIN_ID;
-    const cluster = SOLANA_CHAIN_ID_CLUSTERS[chainId] as
-      | SolanaCluster
-      | undefined;
-    if (!cluster) {
-      throw new Error(`Unsupported Solana chainId: ${chainId}`);
+    const chainIds =
+      params.chainIds ??
+      (params.chainId != null ? [params.chainId] : [SOLANA_DEVNET_CHAIN_ID]);
+    if (chainIds.length === 0) {
+      throw new Error(
+        "PrivySolanaProviderAdapter: chainIds must not be empty",
+      );
     }
+    for (const chainId of chainIds) {
+      if (!SOLANA_CHAIN_ID_CLUSTERS[chainId]) {
+        throw new Error(`Unsupported Solana chainId: ${chainId}`);
+      }
+    }
+    if (params.rpcUrl && chainIds.length > 1) {
+      throw new Error(
+        "PrivySolanaProviderAdapter: rpcUrl is single-chain; use rpcUrls with multiple chainIds",
+      );
+    }
+    const rpcUrls: Record<number, string> = {
+      ...(params.rpcUrl ? { [chainIds[0]!]: params.rpcUrl } : {}),
+      ...params.rpcUrls,
+    };
     const address = params.walletAddress as Address;
 
     const signer = createPrivySolanaSigner({
@@ -490,51 +531,60 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       privyAppId,
     });
 
-    let rpc: Rpc<SolanaRpcApi>;
-    let rpcProxyUrl: string | null = null;
+    const rpcs = new Map<number, Rpc<SolanaRpcApi>>();
+    const rpcProxyUrls = new Map<number, string>();
     let getToken: (() => Promise<string>) | null = null;
 
-    if (params.rpcUrl) {
-      rpc = createSolanaRpc(params.rpcUrl) as Rpc<SolanaRpcApi>;
-    } else {
-      rpcProxyUrl = `${serverUrl}/wallets/solana-rpc/${chainId}`;
+    // One auth client serves every proxied chain (auth is wallet-scoped, keyed
+    // to the first chain — same pattern as the EVM adapter).
+    const ensureToken = (): (() => Promise<string>) => {
+      if (!getToken) {
+        const authClient = new ProviderAuthClient({
+          serverUrl,
+          walletAddress: params.walletAddress,
+          signMessage: async (msg: string) => {
+            const signable = createSignableMessage(msg);
+            const [sigs] = await signer.signMessages([signable]);
+            const sigBytes = sigs![address];
+            if (!sigBytes) throw new Error("Solana message signing failed");
+            return getBase58Decoder().decode(sigBytes);
+          },
+          chainId: chainIds[0]!,
+        });
+        getToken = () => authClient.getAuthToken();
+      }
+      return getToken;
+    };
 
-      const authClient = new ProviderAuthClient({
-        serverUrl,
-        walletAddress: params.walletAddress,
-        signMessage: async (msg: string) => {
-          const signable = createSignableMessage(msg);
-          const [sigs] = await signer.signMessages([signable]);
-          const sigBytes = sigs![address];
-          if (!sigBytes) throw new Error("Solana message signing failed");
-          return getBase58Decoder().decode(sigBytes);
-        },
-        chainId,
-      });
-
-      getToken = () => authClient.getAuthToken();
-
-      const proxyUrl = rpcProxyUrl;
+    for (const chainId of chainIds) {
+      const explicitUrl = rpcUrls[chainId];
+      if (explicitUrl) {
+        rpcs.set(chainId, createSolanaRpc(explicitUrl) as Rpc<SolanaRpcApi>);
+        continue;
+      }
+      const proxyUrl = `${serverUrl}/wallets/solana-rpc/${chainId}`;
+      rpcProxyUrls.set(chainId, proxyUrl);
+      const token = ensureToken();
       const transport = async (config: { payload: unknown }): Promise<any> => {
-        const token = await getToken!();
         const res = await fetch(proxyUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${await token()}`,
           },
           body: JSON.stringify(config.payload),
         });
         return await res.json();
       };
-
-      rpc = createSolanaRpcFromTransport(transport as any) as Rpc<SolanaRpcApi>;
+      rpcs.set(
+        chainId,
+        createSolanaRpcFromTransport(transport as any) as Rpc<SolanaRpcApi>,
+      );
     }
 
     const adapter = new PrivySolanaProviderAdapter({
       address: params.walletAddress,
-      rpc,
-      cluster,
+      rpcs,
       signer,
       walletId: params.walletId,
       ...(params.signerPrivateKey
@@ -543,7 +593,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       ...(params.signFn ? { signFn: params.signFn } : {}),
       serverUrl,
       privyAppId,
-      rpcProxyUrl,
+      rpcProxyUrls,
       sponsored: params.sponsored ?? true,
       ...(params.onSponsoredRetry
         ? { onSponsoredRetry: params.onSponsoredRetry }
@@ -557,12 +607,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     return this._address;
   }
 
-  async getCluster(): Promise<SolanaCluster> {
-    return this._cluster;
+  override async getSupportedChainIds(): Promise<number[]> {
+    return [...this._rpcs.keys()];
   }
 
-  getRpc(): Rpc<SolanaRpcApi> {
-    return this._rpc;
+  getRpc(chainId: number): Rpc<SolanaRpcApi> {
+    const rpc = this._rpcs.get(chainId);
+    if (!rpc) {
+      throw new Error(
+        `PrivySolanaProviderAdapter: no RPC configured for chainId ${chainId}`,
+      );
+    }
+    return rpc;
   }
 
   getSigner(): SolanaSigner {
@@ -573,16 +629,20 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // Gas sponsorship: alchemy_requestFeePayer
   // -------------------------------------------------------------------------
 
-  private async requestFeePayer(serializedTransaction: string): Promise<{
+  private async requestFeePayer(
+    chainId: number,
+    serializedTransaction: string,
+  ): Promise<{
     serializedTransaction: string;
     simulationSlot: bigint | null;
   }> {
-    if (!this._rpcProxyUrl || !this._getAuthToken) {
+    const rpcProxyUrl = this._rpcProxyUrls.get(chainId);
+    if (!rpcProxyUrl || !this._getAuthToken) {
       throw new Error("Gas sponsorship requires a proxied RPC connection");
     }
 
     const token = await this._getAuthToken();
-    const res = await fetch(this._rpcProxyUrl, {
+    const res = await fetch(rpcProxyUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -653,41 +713,39 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   async sendInstructions(
+    chainId: number,
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // Sponsorship applies only to ACP actions (batches touching an ACP
-    // program). Everything else — generic transfers, unrelated instructions —
-    // is self-paid.
+    // Sponsorship applies only to ACP actions (batches touching this chain's
+    // ACP program or hook). Everything else — generic transfers, unrelated
+    // instructions — is self-paid.
+    const sponsorable = sponsorableProgramIds(chainId);
     const isAcpAction = instructions.some((ix) =>
-      SPONSORABLE_PROGRAM_IDS.has(ix.programAddress as string),
+      sponsorable.has(ix.programAddress as string),
     );
     const useSponsorship =
       this._sponsored &&
-      !!this._rpcProxyUrl &&
+      this._rpcProxyUrls.has(chainId) &&
       !!this._getAuthToken &&
       isAcpAction;
 
     if (useSponsorship) {
-      return this.sendSponsoredTransaction(instructions, options);
+      return this.sendSponsoredTransaction(chainId, instructions, options);
     }
 
-    const { value: latestBlockhash } = await this._rpc
+    const { value: latestBlockhash } = await this.getRpc(chainId)
       .getLatestBlockhash()
       .send();
 
-    // const useSponsorship = this._rpcProxyUrl && this._getAuthToken;
-
-    // if (useSponsorship) {
-    //   return this.sendSponsoredTransaction(instructions, latestBlockhash);
-    // }
-    return this.sendSelfPayTransaction(instructions, latestBlockhash);
+    return this.sendSelfPayTransaction(chainId, instructions, latestBlockhash);
   }
 
   /**
    * Standard flow: user pays own fees.
    */
   private async sendSelfPayTransaction(
+    chainId: number,
     instructions: SolanaInstructionLike[],
     latestBlockhash: any,
   ): Promise<string> {
@@ -703,6 +761,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const signedTx = await signTransactionMessageWithSigners(message);
     const encodedTx = getBase64EncodedWireTransaction(signedTx);
     return this.broadcastAndConfirm(
+      chainId,
       encodedTx,
       latestBlockhash.lastValidBlockHeight,
     );
@@ -730,6 +789,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * the sponsor simulated; a lagging node returns a retryable -32016 instead.
    */
   private async sendSponsoredTransaction(
+    chainId: number,
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
@@ -748,7 +808,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         lastMinContextSlot = null;
         // 1. Fresh blockhash + build tx with user as placeholder fee payer
         //    (Alchemy replaces it + prefunds CPI rent).
-        const { context, value: latestBlockhash } = await this._rpc
+        const { context, value: latestBlockhash } = await this.getRpc(chainId)
           .getLatestBlockhash()
           .send();
         lastSeenSlot = context.slot;
@@ -767,7 +827,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
         // 2. Request gas sponsorship.
         const { serializedTransaction: sponsoredBase64, simulationSlot } =
-          await this.requestFeePayer(unsignedBase64);
+          await this.requestFeePayer(chainId, unsignedBase64);
 
         // 3. Sign with Privy (user's signature).
         const signedBase64 =
@@ -779,9 +839,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         //    previous confirmed step (_lastConfirmedSlot) — a lagging node
         //    returns an explicit, retryable -32016 instead of a misleading
         //    simulation failure.
-        const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
+        const minContextSlot = maxSlot(
+          simulationSlot,
+          this._lastConfirmedSlot.get(chainId) ?? null,
+        );
         lastMinContextSlot = minContextSlot;
         return this.broadcastAndConfirm(
+          chainId,
           signedBase64,
           latestBlockhash.lastValidBlockHeight,
           minContextSlot,
@@ -792,7 +856,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastMinContextSlot,
-            lastConfirmedSlot: this._lastConfirmedSlot,
+            lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
             lastSeenSlot,
           });
           if (this._onSponsoredRetry) {
@@ -852,10 +916,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * by roughly the tx's pre-submission age.
    */
   public async sendSponsoredSignedTransaction(
+    chainId: number,
     serializedTransaction: string,
     options?: SendInstructionsOptions & { lastValidBlockHeight?: bigint },
   ): Promise<string> {
-    if (!this._sponsored || !this._rpcProxyUrl || !this._getAuthToken) {
+    if (
+      !this._sponsored ||
+      !this._rpcProxyUrls.has(chainId) ||
+      !this._getAuthToken
+    ) {
       throw new Error(
         "sendSponsoredSignedTransaction requires sponsorship (a proxied RPC + auth token) — no self-pay fallback",
       );
@@ -875,7 +944,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
         // error) + the first-attempt fallback confirmation bound. The tx
         // carries its OWN blockhash — we do not rebuild it here.
-        const { context, value: latest } = await this._rpc
+        const { context, value: latest } = await this.getRpc(chainId)
           .getLatestBlockhash()
           .send();
         lastSeenSlot = context.slot;
@@ -883,7 +952,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
         // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
         const { serializedTransaction: sponsoredBase64, simulationSlot } =
-          await this.requestFeePayer(serializedTransaction);
+          await this.requestFeePayer(chainId, serializedTransaction);
 
         // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
         //    the user's sig (two required signers, distinct slots).
@@ -892,9 +961,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
         // 3. Broadcast + confirm. minContextSlot keeps the broadcast node's
         //    preflight at least as fresh as Alchemy's sponsorship simulation.
-        const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
+        const minContextSlot = maxSlot(
+          simulationSlot,
+          this._lastConfirmedSlot.get(chainId) ?? null,
+        );
         lastMinContextSlot = minContextSlot;
         return this.broadcastAndConfirm(
+          chainId,
           signedBase64,
           confirmUntilHeight,
           minContextSlot,
@@ -907,7 +980,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastMinContextSlot,
-            lastConfirmedSlot: this._lastConfirmedSlot,
+            lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
             lastSeenSlot,
           });
           if (this._onSponsoredRetry) {
@@ -939,13 +1012,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   private async broadcastAndConfirm(
+    chainId: number,
     encodedTx: string,
     lastValidBlockHeight: bigint,
     minContextSlot?: bigint | null,
   ): Promise<string> {
     let signature: Signature;
     try {
-      signature = await this._rpc
+      signature = await this.getRpc(chainId)
         .sendTransaction(encodedTx as any, {
           encoding: "base64",
           ...(minContextSlot != null
@@ -968,12 +1042,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     }
 
     const { slot } = await confirmTransaction(
-      this._rpc,
+      this.getRpc(chainId),
       signature,
       lastValidBlockHeight,
       { stringifyErr: stringifyBigIntSafe },
     );
-    this._lastConfirmedSlot = slot;
+    this._lastConfirmedSlot.set(chainId, slot);
     return signature;
   }
 }

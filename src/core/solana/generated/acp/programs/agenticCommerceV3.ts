@@ -49,8 +49,7 @@ import {
   type ParsedSubmitInstruction,
 } from "../instructions/index.js";
 
-export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS =
-  "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">;
+export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum AgenticCommerceV3Account {
   AcpState,
@@ -292,9 +291,7 @@ export function identifyAgenticCommerceV3Instruction(
   );
 }
 
-export type ParsedAgenticCommerceV3Instruction<
-  TProgram extends string = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
-> =
+export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)

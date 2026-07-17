@@ -820,6 +820,121 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   // -------------------------------------------------------------------------
+  // sendSponsoredSignedTransaction — EVM-paymaster parity for a SERVER-BUILT tx
+  // -------------------------------------------------------------------------
+
+  /**
+   * Sponsor + sign + broadcast a transaction the CALLER already built. This is
+   * the Solana analog of the EVM adapter attaching the Alchemy paymaster on
+   * sendCalls: the caller (the trading planner) builds the swap tx with the
+   * user as a PLACEHOLDER fee payer and a fresh blockhash, and here we swap
+   * Alchemy in as the fee payer (alchemy_requestFeePayer — its sig + CPI-rent
+   * prefund), add the user's Privy signature, and broadcast. A zero-SOL wallet
+   * trades gasless; the CLI is a pure signer/submitter, the planner never
+   * touches sponsorship.
+   *
+   * SPONSORSHIP-ONLY: there is no self-pay fallback. If the proxy/policy is
+   * absent or the sponsor refuses after retries, this throws — the caller
+   * re-quotes rather than silently billing the user's SOL.
+   *
+   * Unlike sendSponsoredTransaction(instructions), the tx is prebuilt so its
+   * blockhash is fixed: a retry re-runs requestFeePayer→sign→broadcast on the
+   * SAME bytes (valid within the blockhash's ~60s window) to ride out sponsor
+   * simulation / broadcast slot lag. Because no retry can refresh the
+   * blockhash, an "expired" confirmation is terminal (retryExpired: false) —
+   * the caller rebuilds the tx instead.
+   *
+   * options.lastValidBlockHeight is the expiry height of the blockhash baked
+   * into the tx — pass it whenever the builder has it. When omitted, expiry
+   * polling is bounded by the validity window of the CURRENT tip at the first
+   * attempt: a strict upper bound (the tx's blockhash is older than the tip),
+   * so "expired" stays definitive, at the cost of over-polling a dropped tx
+   * by roughly the tx's pre-submission age.
+   */
+  public async sendSponsoredSignedTransaction(
+    serializedTransaction: string,
+    options?: SendInstructionsOptions & { lastValidBlockHeight?: bigint },
+  ): Promise<string> {
+    if (!this._sponsored || !this._rpcProxyUrl || !this._getAuthToken) {
+      throw new Error(
+        "sendSponsoredSignedTransaction requires sponsorship (a proxied RPC + auth token) — no self-pay fallback",
+      );
+    }
+
+    let lastSeenSlot: bigint | null = null;
+    let lastMinContextSlot: bigint | null = null;
+    // Confirmation bound for the tx's FIXED blockhash — resolved once and
+    // held across retries. Re-reading the tip's lastValidBlockHeight on every
+    // attempt would slide the expiry window forward each retry and keep
+    // polling a transaction that is already provably dropped.
+    let confirmUntilHeight: bigint | undefined = options?.lastValidBlockHeight;
+
+    return withFeePayerRetry(
+      async () => {
+        lastMinContextSlot = null;
+        // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
+        // error) + the first-attempt fallback confirmation bound. The tx
+        // carries its OWN blockhash — we do not rebuild it here.
+        const { context, value: latest } = await this._rpc
+          .getLatestBlockhash()
+          .send();
+        lastSeenSlot = context.slot;
+        confirmUntilHeight ??= latest.lastValidBlockHeight;
+
+        // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
+        const { serializedTransaction: sponsoredBase64, simulationSlot } =
+          await this.requestFeePayer(serializedTransaction);
+
+        // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
+        //    the user's sig (two required signers, distinct slots).
+        const signedBase64 =
+          await this.signTransactionViaPrivy(sponsoredBase64);
+
+        // 3. Broadcast + confirm. minContextSlot keeps the broadcast node's
+        //    preflight at least as fresh as Alchemy's sponsorship simulation.
+        const minContextSlot = maxSlot(simulationSlot, this._lastConfirmedSlot);
+        lastMinContextSlot = minContextSlot;
+        return this.broadcastAndConfirm(
+          signedBase64,
+          confirmUntilHeight,
+          minContextSlot,
+        );
+      },
+      {
+        // Fixed bytes: an expired blockhash can never land on a retry.
+        retryExpired: false,
+        ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        onRetry: (attempt, maxAttempts, message, error) => {
+          const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
+            lastMinContextSlot,
+            lastConfirmedSlot: this._lastConfirmedSlot,
+            lastSeenSlot,
+          });
+          if (this._onSponsoredRetry) {
+            this._onSponsoredRetry({
+              attempt,
+              maxAttempts,
+              slot: lastSeenSlot,
+              requiredSlot,
+              nodeSlot,
+              rawError: message,
+            });
+            return;
+          }
+          console.warn(
+            formatSponsoredRetryWarning(
+              requiredSlot,
+              nodeSlot,
+              attempt,
+              maxAttempts,
+            ),
+          );
+        },
+      },
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Broadcast + confirm
   // -------------------------------------------------------------------------
 

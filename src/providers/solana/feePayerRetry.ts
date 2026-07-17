@@ -67,8 +67,10 @@ function collectErrorText(err: unknown): string {
 
 export function isRetryableFeePayerError(err: unknown): boolean {
   // An expired transaction is provably dropped (blockhash validity ended
-  // without inclusion) and every sponsored attempt rebuilds with a fresh
-  // blockhash, so retrying cannot double-apply. The "timeout" phase (stalled
+  // without inclusion), so retrying cannot double-apply. Whether a retry can
+  // SUCCEED depends on the caller: attempts that rebuild with a fresh
+  // blockhash recover; fixed-bytes senders cannot and must opt out via
+  // FeePayerRetryOptions.retryExpired = false. The "timeout" phase (stalled
   // RPC, outcome unknown) is deliberately NOT retryable.
   if (err instanceof SolanaTransactionError && err.phase === "expired") {
     return true;
@@ -113,6 +115,14 @@ export interface FeePayerRetryOptions {
    * cannot abort an otherwise recoverable send.
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+  /**
+   * Set false when every attempt rebroadcasts the SAME transaction bytes
+   * (fixed blockhash): an "expired" confirmation is then terminal — the
+   * blockhash's validity window has provably closed, so no retry can land it.
+   * Default true, which is only correct for attempts that rebuild the
+   * transaction with a fresh blockhash (the instruction-based sponsored path).
+   */
+  retryExpired?: boolean;
 }
 
 /**
@@ -158,6 +168,14 @@ export async function withFeePayerRetry<T>(
     } catch (err) {
       lastError = err;
       let retryable = isRetryableFeePayerError(err);
+      if (
+        retryable &&
+        options.retryExpired === false &&
+        err instanceof SolanaTransactionError &&
+        err.phase === "expired"
+      ) {
+        retryable = false;
+      }
       if (!retryable && options.retryGuard && isGuardedFeePayerError(err)) {
         guardedFailures++;
         if (guardedFailures === 1) {

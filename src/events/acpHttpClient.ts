@@ -1,7 +1,5 @@
-import type { Address } from "viem";
 import type { TransportContext } from "./types.js";
-import { ACP_SERVER_URL } from "../core/constants.js";
-import { buildAgentAuthTypedData } from "../core/agentAuth.js";
+import { ACP_SERVER_URL, getChainFamily } from "../core/constants.js";
 
 export type AcpHttpClientOptions = {
   serverUrl?: string;
@@ -38,31 +36,26 @@ export class AcpHttpClient {
       throw new Error("No provider-supported chain available for auth");
     }
 
-    const issuedAt = Date.now();
-    const typedData = buildAgentAuthTypedData({
-      wallet: this.ctx.agentAddress as Address,
-      chainId,
-      issuedAt,
-    });
-    const signature = await this.ctx.signTypedData(chainId, typedData);
+    const walletAddress =
+      this.ctx.agentAddresses[getChainFamily(chainId)] ??
+      Object.values(this.ctx.agentAddresses)[0] ??
+      "";
+
+    const message = `acp-auth:${Date.now()}`;
+    const signature = await this.ctx.signMessage(chainId, message);
 
     const res = await fetch(`${this.serverUrl}/auth/agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        walletAddress: this.ctx.agentAddress,
-        signature,
-        issuedAt,
-        chainId,
-      }),
+      body: JSON.stringify({ walletAddress, signature, message, chainId }),
     });
 
     if (!res.ok) {
       throw new Error(`Agent auth failed: ${res.status} ${res.statusText}`);
     }
 
-    const body = (await res.json()) as { data: { token: string } };
-    return body.data.token;
+    const responseBody = (await res.json()) as { data: { token: string } };
+    return responseBody.data.token;
   }
 
   /** Returns true if the token expiry is within 60 s (or unparseable). */

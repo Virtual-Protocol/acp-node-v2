@@ -51,7 +51,7 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
   sendCalls(chainId: number, calls: Call[]): Promise<Address | Address[]>;
   getTransactionReceipt(
     chainId: number,
-    hash: Address
+    hash: Address,
   ): Promise<TransactionReceipt>;
   readContract(chainId: number, params: ReadContractParams): Promise<unknown>;
   getLogs(chainId: number, params: GetLogsParams): Promise<Log[]>;
@@ -60,13 +60,31 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
   signTypedData(chainId: number, typedData: unknown): Promise<string>;
 }
 
+export type SendInstructionsOptions = {
+  /**
+   * Consulted by sponsored (fee-payer) retry logic for guarded errors such
+   * as WrongStatus: return true when the caller's own read RPC confirms the
+   * transaction's state precondition is met (sponsor-node lag — retry), false
+   * when the error is genuine (fail fast). See
+   * providers/solana/feePayerRetry.ts. Adapters without sponsored retry may
+   * ignore it.
+   */
+  retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+};
+
+// Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),
+// mirroring IEvmProviderAdapter — one adapter can serve several clusters.
+// getSigner/signMessage stay chainId-free: the signer is one keypair valid on
+// every cluster and Solana message signing has no chain binding.
 export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
-  getCluster(): Promise<SolanaCluster>;
-  getRpc(): Rpc<SolanaRpcApi>;
+  getCluster(chainId: number): Promise<SolanaCluster>;
+  getRpc(chainId: number): Rpc<SolanaRpcApi>;
   getSigner(): SolanaSigner;
   signMessage(message: string): Promise<string>;
   sendInstructions(
-    instructions: SolanaInstructionLike[]
+    chainId: number,
+    instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
   ): Promise<string | string[]>;
 }

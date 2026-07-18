@@ -23,8 +23,7 @@ import type { SolanaInstructionLike } from "../../providers/types.js";
 // Program ids
 // ---------------------------------------------------------------------------
 
-export const SYSTEM_PROGRAM_ID =
-  "11111111111111111111111111111111" as Address;
+export const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
 export const TOKEN_PROGRAM_ID =
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 export const ATA_PROGRAM_ID =
@@ -37,7 +36,7 @@ export const ATA_PROGRAM_ID =
 /** Derive the Associated Token Account address for (owner, mint). */
 export async function deriveAta(
   owner: Address,
-  mint: Address
+  mint: Address,
 ): Promise<Address> {
   const enc = getAddressEncoder();
   const [pda] = await getProgramDerivedAddress({
@@ -55,7 +54,7 @@ export function buildCreateAtaIdempotentIx(
   payer: Address,
   ata: Address,
   owner: Address,
-  mint: Address
+  mint: Address,
 ): SolanaInstructionLike {
   return {
     programAddress: ATA_PROGRAM_ID,
@@ -79,7 +78,7 @@ export function buildCreateAtaIdempotentIx(
 export function buildSolTransferIx(
   from: Address,
   to: Address,
-  lamports: bigint
+  lamports: bigint,
 ): SolanaInstructionLike {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
@@ -99,27 +98,32 @@ export function buildSolTransferIx(
  * Build the instructions to send an SPL token from `owner` to `recipient`:
  * an idempotent create of the recipient's ATA (no EVM analog — a token account
  * must exist before it can receive) followed by the SPL Token transfer.
- * `amount` is token base units. `payer` funds the recipient-ATA rent.
+ * Uses TransferChecked so the program verifies `mint` and `decimals` against the
+ * token accounts; `amount` is token base units. `payer` funds the recipient-ATA
+ * rent.
  */
 export async function buildSplTransferInstructions(params: {
   owner: Address;
   recipient: Address;
   mint: Address;
   amount: bigint;
+  decimals: number;
   payer: Address;
 }): Promise<SolanaInstructionLike[]> {
-  const { owner, recipient, mint, amount, payer } = params;
+  const { owner, recipient, mint, amount, decimals, payer } = params;
   const source = await deriveAta(owner, mint);
   const dest = await deriveAta(recipient, mint);
 
-  const data = new Uint8Array(9);
-  data[0] = 3; // SPL Token Transfer instruction index
+  const data = new Uint8Array(10);
+  data[0] = 12; // SPL Token TransferChecked instruction index
   new DataView(data.buffer).setBigUint64(1, amount, true);
+  data[9] = decimals;
 
   const transferIx: SolanaInstructionLike = {
     programAddress: TOKEN_PROGRAM_ID,
     accounts: [
       { address: source, role: AccountRole.WRITABLE },
+      { address: mint, role: AccountRole.READONLY },
       { address: dest, role: AccountRole.WRITABLE },
       { address: owner, role: AccountRole.READONLY_SIGNER },
     ],
@@ -136,7 +140,7 @@ export async function buildSplTransferInstructions(params: {
 /** Native SOL balance in lamports. */
 export async function getSolBalance(
   rpc: Rpc<SolanaRpcApi>,
-  address: Address
+  address: Address,
 ): Promise<bigint> {
   const { value } = await rpc.getBalance(address).send();
   return BigInt(value);
@@ -149,7 +153,7 @@ export async function getSolBalance(
 export async function getSplTokenBalance(
   rpc: Rpc<SolanaRpcApi>,
   owner: Address,
-  mint: Address
+  mint: Address,
 ): Promise<{ amount: bigint; decimals: number }> {
   const ata = await deriveAta(owner, mint);
   try {

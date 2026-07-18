@@ -189,6 +189,7 @@ const agent = await AcpAgent.create({
 agent.on("entry", async (session, entry) => {
   /* ... */
 });
+
 await agent.start();
 
 // When done:

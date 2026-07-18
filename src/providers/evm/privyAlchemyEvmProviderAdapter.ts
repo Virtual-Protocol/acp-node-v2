@@ -89,7 +89,7 @@ function encodeSignableMessage(message: SignableMessage): {
 function buildSignInput(
   walletId: string,
   body: Record<string, unknown>,
-  privyAppId: string = PRIVY_APP_ID
+  privyAppId: string = PRIVY_APP_ID,
 ): WalletApiRequestSignatureInput {
   return {
     version: 1,
@@ -103,7 +103,7 @@ function buildSignInput(
 async function serverPost<T>(
   path: string,
   body: unknown,
-  serverUrl: string
+  serverUrl: string,
 ): Promise<T> {
   const base = serverUrl.replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -122,7 +122,7 @@ async function serverPost<T>(
         `[PrivyAlchemy] Manual approval required.\n` +
           `  Approve at: ${approvalUrl}\n` +
           `  Approval ID: ${approvalId}\n` +
-          `  Reason: ${detail}`
+          `  Reason: ${detail}`,
       );
       throw new ApprovalRequiredError(approvalId, approvalUrl, detail);
     }
@@ -148,7 +148,7 @@ async function signedServerCall<T>(
   signerPrivateKey: string | undefined,
   serverUrl: string,
   privyAppId: string = PRIVY_APP_ID,
-  signFn?: SignFn
+  signFn?: SignFn,
 ): Promise<T> {
   const input = buildSignInput(walletId, rpcBody, privyAppId);
   let authorizationSignature: string;
@@ -162,7 +162,7 @@ async function signedServerCall<T>(
     });
   } else {
     throw new Error(
-      "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
+      "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided",
     );
   }
 
@@ -170,14 +170,14 @@ async function signedServerCall<T>(
     return await serverPost<T>(
       executePath,
       { ...payload, authorizationSignature },
-      serverUrl
+      serverUrl,
     );
   } catch (err) {
     if (err instanceof ApprovalRequiredError) {
       const result = await awaitApproval<T>(err.approvalId);
       if (result === undefined) {
         throw new Error(
-          `Approval ${err.approvalId} resolved as approved but no result payload was provided`
+          `Approval ${err.approvalId} resolved as approved but no result payload was provided`,
         );
       }
       return result;
@@ -192,7 +192,7 @@ function replaceBigInts<T>(obj: T, replacer: (v: bigint) => unknown): T {
     return obj.map((x) => replaceBigInts(x, replacer)) as T;
   if (obj && typeof obj === "object")
     return Object.fromEntries(
-      Object.entries(obj).map(([k, v]) => [k, replaceBigInts(v, replacer)])
+      Object.entries(obj).map(([k, v]) => [k, replaceBigInts(v, replacer)]),
     ) as T;
   return obj;
 }
@@ -229,7 +229,7 @@ function createRemoteSigner(params: {
         signerPrivateKey,
         serverUrl,
         privyAppId,
-        signFn
+        signFn,
       );
       return result.signature;
     },
@@ -238,13 +238,13 @@ function createRemoteSigner(params: {
       const TTypedData extends
         | Record<string, unknown>
         | Record<string, unknown>,
-      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData
+      TPrimaryType extends keyof TTypedData | "EIP712Domain" = keyof TTypedData,
     >(
-      typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>
+      typedDataDef: TypedDataDefinition<TTypedData, TPrimaryType>,
     ) => {
       const { domain, types, primaryType, message } = replaceBigInts(
         typedDataDef as any,
-        toHex
+        toHex,
       );
       const typedData = {
         domain: domain ?? {},
@@ -265,7 +265,7 @@ function createRemoteSigner(params: {
         signerPrivateKey,
         serverUrl,
         privyAppId,
-        signFn
+        signFn,
       );
       return result.signature;
     },
@@ -299,7 +299,7 @@ function createRemoteSigner(params: {
       if (raw.type != null) {
         privyTx.type =
           typeof raw.type === "string"
-            ? TX_TYPE_MAP[raw.type] ?? Number(raw.type)
+            ? (TX_TYPE_MAP[raw.type] ?? Number(raw.type))
             : raw.type;
       }
 
@@ -316,7 +316,7 @@ function createRemoteSigner(params: {
         signerPrivateKey,
         serverUrl,
         privyAppId,
-        signFn
+        signFn,
       );
       return result.signedTransaction;
     },
@@ -338,12 +338,12 @@ function createRemoteSigner(params: {
             call_data: userOperation.callData,
             call_gas_limit: numberToHex(userOperation.callGasLimit),
             verification_gas_limit: numberToHex(
-              userOperation.verificationGasLimit
+              userOperation.verificationGasLimit,
             ),
             pre_verification_gas: numberToHex(userOperation.preVerificationGas),
             max_fee_per_gas: numberToHex(userOperation.maxFeePerGas),
             max_priority_fee_per_gas: numberToHex(
-              userOperation.maxPriorityFeePerGas
+              userOperation.maxPriorityFeePerGas,
             ),
             paymaster: userOperation.paymaster,
             paymaster_data: userOperation.paymasterData,
@@ -375,7 +375,7 @@ function createRemoteSigner(params: {
         signerPrivateKey,
         serverUrl,
         privyAppId,
-        signFn
+        signFn,
       );
       return result.signature;
     },
@@ -417,7 +417,7 @@ function createRemoteSigner(params: {
         signerPrivateKey,
         serverUrl,
         privyAppId,
-        signFn
+        signFn,
       );
       return result.authorization;
     },
@@ -493,7 +493,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     walletClients: Map<number, WalletClient>,
     signer: RemoteSigner,
     signConfig: SignConfig,
-    builderCode?: string
+    builderCode?: string,
   ) {
     this.address = address;
     this.acpClients = acpClients;
@@ -507,11 +507,11 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   }
 
   static async create(
-    params: PrivyAlchemyChainConfig
+    params: PrivyAlchemyChainConfig,
   ): Promise<PrivyAlchemyEvmProviderAdapter> {
     if (!params.signerPrivateKey && !params.signFn) {
       throw new Error(
-        "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided"
+        "PrivyAlchemyEvmProviderAdapter: either signerPrivateKey or signFn must be provided",
       );
     }
 
@@ -559,7 +559,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     for (const chain of chains) {
       acpClients.set(
         chain.id,
-        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc`)
+        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc`),
       );
     }
 
@@ -567,7 +567,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     for (const chain of ERC20_SPONSORED_CHAINS) {
       erc20Clients.set(
         chain.id,
-        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc-erc20`)
+        makeSmartClient(chain, `${serverUrl}/wallets/alchemy-rpc-erc20`),
       );
     }
 
@@ -582,7 +582,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
           transport: http(`${serverUrl}/wallets/alchemy-rpc/${chain.id}`, {
             fetchFn: authedFetch,
           }),
-        })
+        }),
       );
     }
 
@@ -599,19 +599,19 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         serverUrl,
         privyAppId: params.privyAppId ?? PRIVY_APP_ID,
       },
-      params.builderCode
+      params.builderCode,
     );
   }
 
   private getClientOrThrow<T>(
     map: Map<number, T>,
     chainId: number,
-    label: string
+    label: string,
   ): T {
     const c = map.get(chainId);
     if (!c)
       throw new Error(
-        `PrivyAlchemyEvmProviderAdapter: ${label} for chainId ${chainId}`
+        `PrivyAlchemyEvmProviderAdapter: ${label} for chainId ${chainId}`,
       );
     return c;
   }
@@ -620,7 +620,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return this.getClientOrThrow(
       this.acpClients,
       chainId,
-      "ACP not configured"
+      "ACP not configured",
     );
   }
 
@@ -628,7 +628,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return this.getClientOrThrow(
       this.erc20Clients,
       chainId,
-      "sendTransaction not supported"
+      "sendTransaction not supported",
     );
   }
 
@@ -636,7 +636,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     return this.getClientOrThrow(
       this.walletClients,
       chainId,
-      "No client configured"
+      "No client configured",
     );
   }
 
@@ -658,7 +658,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     crypto.getRandomValues(array);
 
     const hex = Array.from(array, (b) => b.toString(16).padStart(2, "0")).join(
-      ""
+      "",
     );
     return `0x${hex}`;
   }
@@ -666,7 +666,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   private async signUserOperation(
     chainId: number,
     contract: Address,
-    userOp: any
+    userOp: any,
   ): Promise<Hex> {
     const userOperation: PrivyUserOperation = {
       sender: userOp.sender as Address,
@@ -713,7 +713,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       this.signConfig.signerPrivateKey,
       this.signConfig.serverUrl,
       this.signConfig.privyAppId,
-      this.signConfig.signFn
+      this.signConfig.signFn,
     );
 
     const sig = result.signature;
@@ -722,7 +722,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   private async signPreparedViaPrivy(
     chainId: number,
-    prepared: any
+    prepared: any,
   ): Promise<any> {
     const contract = ALCHEMY_SIGNING_CONTRACT as Address;
 
@@ -731,7 +731,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       const signature = await this.signUserOperation(
         chainId,
         contract,
-        entry.data
+        entry.data,
       );
       return { ...rest, signature: { type: "secp256k1", data: signature } };
     };
@@ -763,8 +763,8 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
         prepared.data.map((entry: any) =>
           entry.type === "authorization"
             ? signAuthEntry(entry)
-            : signUserOpEntry(entry)
-        )
+            : signUserOpEntry(entry),
+        ),
       );
       return { type: "array", data };
     }
@@ -777,14 +777,14 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       to: call.to,
       data: this.builderCodeSuffix
         ? appendBuilderCodeData(call.data ?? "0x", this.builderCodeSuffix)
-        : call.data ?? "0x",
+        : (call.data ?? "0x"),
       ...(value !== 0n ? { value } : {}),
     };
   }
 
   private async waitForTransactionHash(
     client: SmartWalletClient,
-    id: Hex
+    id: Hex,
   ): Promise<Address> {
     const status = await client.waitForCallsStatus({ id });
     if (!status.receipts?.[0]?.transactionHash) {
@@ -795,13 +795,13 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async sendTransaction(
     chainId: number,
-    call: Call | Call[]
+    call: Call | Call[],
   ): Promise<Address> {
     const smartWalletClientErc20 = this.getErc20Client(chainId);
 
     const prepared = await smartWalletClientErc20.prepareCalls({
       calls: (Array.isArray(call) ? call : [call]).map((call) =>
-        this.toSmartWalletCall(call)
+        this.toSmartWalletCall(call),
       ),
     });
 
@@ -814,7 +814,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async sendCalls(
     chainId: number,
-    _calls: Call[]
+    _calls: Call[],
   ): Promise<Address | Address[]> {
     const smartWalletClient = this.getAcpClient(chainId);
     const { id } = await smartWalletClient.sendCalls({
@@ -831,7 +831,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async getTransactionReceipt(
     chainId: number,
-    hash: Address
+    hash: Address,
   ): Promise<TransactionReceipt> {
     return getTransactionReceipt(this.getWalletClient(chainId), {
       hash,
@@ -840,7 +840,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
   async readContract(
     chainId: number,
-    params: ReadContractParams
+    params: ReadContractParams,
   ): Promise<unknown> {
     return readContract(this.getWalletClient(chainId), params);
   }
@@ -859,7 +859,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     });
   }
 
-  async signTypedData(chainId: number, typedData: unknown): Promise<string> {
-    return this.signer.signTypedData(typedData as any);
+  async signTypedData(_chainId: number, typedData: unknown): Promise<string> {
+    return this.signer.signTypedData(typedData as TypedDataDefinition);
   }
 }

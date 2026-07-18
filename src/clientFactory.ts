@@ -1,54 +1,70 @@
 import { EvmAcpClient } from "./clients/evmAcpClient.js";
-import { ACP_CONTRACT_ADDRESSES } from "./core/constants.js";
+import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
+import { ACP_CONTRACT_ADDRESSES, getChainFamily } from "./core/constants.js";
+import { type ChainFamily } from "./core/chains.js";
 import type {
   IEvmProviderAdapter,
-  IProviderAdapter,
   ISolanaProviderAdapter,
 } from "./providers/types.js";
 
-export type AcpClient = EvmAcpClient;
+export type AcpClient = EvmAcpClient | SolanaAcpClient;
 
 export type CreateAcpClientInput = {
   contractAddresses?: Record<number, string>;
-  provider: IProviderAdapter;
+  evmProvider?: IEvmProviderAdapter;
+  solanaProvider?: ISolanaProviderAdapter;
 };
 
-export async function createAcpClient(
-  input: CreateAcpClientInput
-): Promise<AcpClient> {
-  if (isEvmProvider(input.provider)) {
-    return EvmAcpClient.create({
-      contractAddresses: input.contractAddresses ?? ACP_CONTRACT_ADDRESSES,
-      provider: input.provider,
-    });
-  }
-
-  if (isSolanaProvider(input.provider)) {
+export async function createAcpClients(
+  input: CreateAcpClientInput,
+): Promise<Map<ChainFamily, AcpClient>> {
+  const { evmProvider, solanaProvider } = input;
+  if (!evmProvider && !solanaProvider) {
     throw new Error(
-      "Solana ACP client is not available in this build. Use the Solana provider adapter directly for wallet operations (balances, transfers)."
+      "At least one provider (evmProvider or solanaProvider) must be provided.",
     );
   }
 
-  throw new Error(
-    `Provider "${input.provider.providerName}" does not implement a known adapter interface.`
-  );
-}
+  const allAddresses = input.contractAddresses ?? ACP_CONTRACT_ADDRESSES;
 
-function isEvmProvider(
-  provider: IProviderAdapter
-): provider is IEvmProviderAdapter {
-  return (
-    "sendCalls" in provider && typeof (provider as any).sendCalls === "function"
-  );
-}
+  const evmAddresses: Record<number, string> = {};
+  const solanaAddresses: Record<number, string> = {};
+  for (const [chainIdStr, addr] of Object.entries(allAddresses)) {
+    const chainId = Number(chainIdStr);
+    if (getChainFamily(chainId) === "solana") {
+      solanaAddresses[chainId] = addr;
+    } else {
+      evmAddresses[chainId] = addr;
+    }
+  }
 
-function isSolanaProvider(
-  provider: IProviderAdapter
-): provider is ISolanaProviderAdapter {
-  return (
-    "getCluster" in provider &&
-    typeof (provider as any).getCluster === "function" &&
-    "sendInstructions" in provider &&
-    typeof (provider as any).sendInstructions === "function"
-  );
+  const clients = new Map<ChainFamily, AcpClient>();
+
+  if (evmProvider && Object.keys(evmAddresses).length > 0) {
+    clients.set(
+      "evm",
+      await EvmAcpClient.create({
+        contractAddresses: evmAddresses,
+        provider: evmProvider,
+      }),
+    );
+  }
+
+  if (solanaProvider && Object.keys(solanaAddresses).length > 0) {
+    clients.set(
+      "solana",
+      await SolanaAcpClient.create({
+        contractAddresses: solanaAddresses,
+        provider: solanaProvider,
+      }),
+    );
+  }
+
+  if (clients.size === 0) {
+    throw new Error(
+      "No clients could be created. Check that contractAddresses match the provided providers.",
+    );
+  }
+
+  return clients;
 }

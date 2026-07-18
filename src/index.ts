@@ -7,6 +7,9 @@ export * from "./jobSession.js";
 export * from "./clientFactory.js";
 export * from "./clients/baseAcpClient.js";
 export * from "./clients/evmAcpClient.js";
+export * from "./clients/solanaAcpClient.js";
+export * from "./clients/solanaMultiHookClient.js";
+export * as solanaMultiHook from "./core/solana/multiHook.js";
 
 // Core types
 export * from "./core/acpAbi.js";
@@ -20,12 +23,17 @@ export * from "./providers/types.js";
 export * from "./providers/evm/viemProviderAdapter.js";
 export * from "./providers/evm/privyAlchemyEvmProviderAdapter.js";
 export * from "./providers/solana/solanaProviderAdapter.js";
-export * from "./providers/solana/keypairSolanaProviderAdapter.js";
+export * from "./providers/solana/txConfirmation.js";
 export * from "./providers/solana/privySolanaProviderAdapter.js";
+
 export * from "./providers/providerAuthClient.js";
 
 // Solana wallet helpers (balances + transfer instruction builders)
 export * from "./core/solana/wallet.js";
+
+// Solana send errors (typed, message = node error formatted one log per line)
+export * from "./core/solana/programErrors.js";
+export type { JobStateDiagnosis } from "./core/solana/jobStateRetryGuard.js";
 
 // Transport & API
 export { AcpHttpClient } from "./events/acpHttpClient.js";
@@ -37,6 +45,7 @@ export { AcpJobStatus } from "./events/types.js";
 
 // Event / room types (public)
 export type {
+  TransportContext,
   AcpJobEvent,
   AcpJobEventType,
   JobCreatedEvent,

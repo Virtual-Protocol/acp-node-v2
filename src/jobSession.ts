@@ -15,7 +15,7 @@ import {
   MULTI_HOOK_ROUTER_ADDRESSES,
   SUBSCRIPTION_HOOK_ADDRESSES,
 } from "./core/constants.js";
-import { Address, type Hex } from "viem";
+import { type Hex } from "viem";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -174,18 +174,18 @@ export class JobSession {
 
   private _job: AcpJob | null = null;
   private readonly agent: AcpAgent;
-  private readonly agentAddress: string;
+  private readonly agentAddresses: Set<string>;
 
   constructor(
     agent: AcpAgent,
-    agentAddress: string,
+    agentAddresses: string[],
     jobId: string,
     chainId: number,
     roles: AgentRole[],
     initialEntries: JobRoomEntry[] = []
   ) {
     this.agent = agent;
-    this.agentAddress = agentAddress.toLowerCase();
+    this.agentAddresses = new Set(agentAddresses.map((a) => a.toLowerCase()));
     this.jobId = jobId;
     this.chainId = chainId;
     this.roles = roles;
@@ -240,7 +240,7 @@ export class JobSession {
 
   shouldRespond(entry: JobRoomEntry): boolean {
     if (entry.kind === "message") {
-      return entry.from.toLowerCase() !== this.agentAddress;
+      return !this.agentAddresses.has(entry.from.toLowerCase());
     }
 
     // Terminal events (job.completed / job.rejected / job.expired) are
@@ -401,13 +401,14 @@ export class JobSession {
     await this.agent.internalSetBudget(this.chainId, {
       jobId: BigInt(this.jobId),
       amount,
+      ...(this._job && { clientAddress: this._job.clientAddress }),
     });
   }
 
   async setBudgetWithFundRequest(
     amount: AssetToken,
     transferAmount: AssetToken,
-    destination: Address
+    destination: string
   ): Promise<void> {
     const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
@@ -432,6 +433,7 @@ export class JobSession {
       amount,
       transferAmount,
       destination,
+      ...(this._job && { clientAddress: this._job.clientAddress }),
     });
   }
 
@@ -469,7 +471,7 @@ export class JobSession {
     duration: bigint,
     packageId: bigint,
     transferAmount: AssetToken,
-    destination: Address
+    destination: string
   ): Promise<void> {
     const { hasSub, hasFund } = this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
@@ -525,7 +527,7 @@ export class JobSession {
         | { duration: bigint; packageId: bigint }
         | undefined;
       let transferAmount: AssetToken | undefined;
-      let destination: Address | undefined;
+      let destination: string | undefined;
 
       if (hasSub) {
         subscriptionTerms = await this.agent.getProposedSubscriptionTerms(
@@ -543,11 +545,11 @@ export class JobSession {
         }
         const resolved = await intent.resolveAmount(
           this.chainId,
-          this.agent.getClient()
+          this.agent.getClient(this.chainId)
         );
         if (!resolved) throw new Error("Could not resolve intent amount");
         transferAmount = resolved;
-        destination = intent.recipientAddress as Address;
+        destination = intent.recipientAddress;
       }
 
       await this.agent.internalFundViaRouter(this.chainId, {
@@ -581,14 +583,15 @@ export class JobSession {
     if (intent && hasFund) {
       const transferAmount = await intent.resolveAmount(
         this.chainId,
-        this.agent.getClient()
+        this.agent.getClient(this.chainId)
       );
       if (!transferAmount) throw new Error("Could not resolve intent amount");
       await this.agent.internalFundWithTransfer(this.chainId, {
         jobId,
         amount: effectiveAmount,
         transferAmount,
-        destination: intent.recipientAddress as Address,
+        destination: intent.recipientAddress,
+        clientAddress: this._job.clientAddress,
       });
       return;
     }
@@ -596,6 +599,7 @@ export class JobSession {
     await this.agent.internalFund(this.chainId, {
       jobId,
       amount: effectiveAmount,
+      clientAddress: this._job.clientAddress,
     });
   }
 
@@ -610,11 +614,13 @@ export class JobSession {
         jobId: BigInt(this.jobId),
         deliverable,
         transferAmount,
+        clientAddress: this._job.clientAddress,
       });
     } else {
       await this.agent.internalSubmit(this.chainId, {
         jobId: BigInt(this.jobId),
         deliverable,
+        clientAddress: this._job.clientAddress,
       });
     }
   }
@@ -623,6 +629,7 @@ export class JobSession {
     await this.agent.internalComplete(this.chainId, {
       jobId: BigInt(this.jobId),
       reason,
+      ...(this._job && { clientAddress: this._job.clientAddress }),
     });
   }
 
@@ -630,6 +637,7 @@ export class JobSession {
     await this.agent.internalReject(this.chainId, {
       jobId: BigInt(this.jobId),
       reason,
+      ...(this._job && { clientAddress: this._job.clientAddress }),
     });
   }
 
@@ -647,7 +655,7 @@ export class JobSession {
           if (fundRequest) {
             const resolved = await fundRequest.resolveAmount(
               this.chainId,
-              this.agent.getClient()
+              this.agent.getClient(this.chainId)
             );
             if (resolved) {
               line += ` | fund request: ${resolved.amount} ${resolved.symbol} to ${fundRequest.recipientAddress}`;
@@ -664,7 +672,7 @@ export class JobSession {
             if (fundTransfer) {
               const resolved = await fundTransfer.resolveAmount(
                 this.chainId,
-                this.agent.getClient()
+                this.agent.getClient(this.chainId)
               );
               if (resolved) {
                 line += ` | fund transfer: ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress}`;
@@ -701,7 +709,7 @@ export class JobSession {
             if (fundRequest) {
               const resolved = await fundRequest.resolveAmount(
                 this.chainId,
-                this.agent.getClient()
+                this.agent.getClient(this.chainId)
               );
               if (resolved) {
                 content += ` A fund transfer of ${resolved.amount} ${resolved.symbol} to ${fundRequest.recipientAddress} is requested.`;
@@ -718,7 +726,7 @@ export class JobSession {
             if (fundTransfer) {
               const resolved = await fundTransfer.resolveAmount(
                 this.chainId,
-                this.agent.getClient()
+                this.agent.getClient(this.chainId)
               );
               if (resolved) {
                 content += ` A fund transfer of ${resolved.amount} ${resolved.symbol} to ${fundTransfer.recipientAddress} will be executed on completion.`;
@@ -733,7 +741,7 @@ export class JobSession {
           });
         }
       } else {
-        const isOwnMessage = e.from.toLowerCase() === this.agentAddress;
+        const isOwnMessage = this.agentAddresses.has(e.from.toLowerCase());
         result.push({
           role: isOwnMessage ? "assistant" : "user",
           content: isOwnMessage ? e.content : `[${e.from}]: ${e.content}`,

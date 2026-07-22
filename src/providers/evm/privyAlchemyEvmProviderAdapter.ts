@@ -803,6 +803,9 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       calls: (Array.isArray(call) ? call : [call]).map((call) =>
         this.toSmartWalletCall(call),
       ),
+      capabilities: {
+        nonceOverride: { nonceKey: this.getRandomNonce() },
+      },
     });
 
     const signed = await this.signPreparedViaPrivy(chainId, prepared);

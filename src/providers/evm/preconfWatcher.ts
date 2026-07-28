@@ -9,7 +9,6 @@ const POLL_MS = 200;
 interface PendingTx {
   hash?: string;
   to?: string | null;
-  input?: string;
 }
 
 export function preconfRpcFor(chainId: number): string | undefined {
@@ -38,11 +37,10 @@ async function rpc<T>(
 
 export async function watchPreconfUserOp(
   url: string,
-  sender: string,
+  userOpHash: string,
   signal: AbortSignal,
 ): Promise<`0x${string}`> {
-  const senderWord = sender.slice(2).toLowerCase();
-  const senderTopic = `0x${senderWord.padStart(64, "0")}`;
+  const userOpHashTopic = userOpHash.toLowerCase();
   const checked = new Set<string>();
 
   while (!signal.aborted) {
@@ -56,7 +54,6 @@ export async function watchPreconfUserOp(
       if (signal.aborted) break;
       if (!tx.hash || checked.has(tx.hash)) continue;
       if (tx.to?.toLowerCase() !== ENTRYPOINT_V07) continue;
-      if (!tx.input?.toLowerCase().includes(senderWord)) continue;
 
       checked.add(tx.hash);
 
@@ -68,7 +65,7 @@ export async function watchPreconfUserOp(
         (l) =>
           l.address?.toLowerCase() === ENTRYPOINT_V07 &&
           l.topics?.[0] === USER_OPERATION_EVENT_TOPIC &&
-          l.topics?.[2]?.toLowerCase() === senderTopic,
+          l.topics?.[1]?.toLowerCase() === userOpHashTopic,
       );
 
       if (matched) {

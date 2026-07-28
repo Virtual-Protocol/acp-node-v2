@@ -792,6 +792,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     client: SmartWalletClient,
     id: Hex,
     chainId?: number,
+    userOpHash?: Hex,
   ): Promise<Address> {
     const statusPromise = client
       .waitForCallsStatus({ id, pollingInterval: 500 })
@@ -802,9 +803,11 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       });
 
     const preconfUrl =
-      chainId !== undefined ? preconfRpcFor(chainId) : undefined;
+      chainId !== undefined && userOpHash
+        ? preconfRpcFor(chainId)
+        : undefined;
 
-    if (!preconfUrl) {
+    if (!preconfUrl || !userOpHash) {
       const hash = await statusPromise;
       return hash;
     }
@@ -817,7 +820,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
           source: "getCallsStatus",
           hash,
         })),
-        watchPreconfUserOp(preconfUrl, this.address, abort.signal).then(
+        watchPreconfUserOp(preconfUrl, userOpHash, abort.signal).then(
           (hash) => ({ source: "preconf", hash: hash as Address }),
         ),
       ]);
@@ -826,6 +829,18 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       abort.abort();
       statusPromise.catch(() => {});
     }
+  }
+
+  private userOpHashFromSendResult(result: {
+    details?: { type?: string; data?: { hash?: Hex } };
+  }): Hex | undefined {
+    if (
+      result.details?.type === "user-operation" &&
+      result.details.data?.hash
+    ) {
+      return result.details.data.hash;
+    }
+    return undefined;
   }
 
   async sendTransaction(
@@ -845,9 +860,14 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const signed = await this.signPreparedViaPrivy(chainId, prepared);
 
-    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+    const sent = await smartWalletClientErc20.sendPreparedCalls(signed);
 
-    return this.waitForTransactionHash(smartWalletClientErc20, id, chainId);
+    return this.waitForTransactionHash(
+      smartWalletClientErc20,
+      sent.id,
+      chainId,
+      this.userOpHashFromSendResult(sent),
+    );
   }
 
   async sendCalls(
@@ -855,7 +875,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[],
   ): Promise<Address | Address[]> {
     const smartWalletClient = this.getAcpClient(chainId);
-    const { id } = await smartWalletClient.sendCalls({
+    const sent = await smartWalletClient.sendCalls({
       calls: _calls.map((call) => this.toSmartWalletCall(call)),
       capabilities: {
         nonceOverride: {
@@ -864,7 +884,12 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    return this.waitForTransactionHash(smartWalletClient, id, chainId);
+    return this.waitForTransactionHash(
+      smartWalletClient,
+      sent.id,
+      chainId,
+      this.userOpHashFromSendResult(sent),
+    );
   }
 
   async getTransactionReceipt(

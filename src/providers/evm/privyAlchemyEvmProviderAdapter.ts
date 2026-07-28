@@ -20,10 +20,10 @@ import {
 } from "viem";
 import { Attribution } from "ox/erc8021";
 import {
-  getTransactionReceipt,
   readContract,
   getLogs,
   getBlockNumber,
+  waitForTransactionReceipt,
 } from "viem/actions";
 import {
   createEvmNetworkContext,
@@ -51,7 +51,11 @@ import {
   ALCHEMY_SIGNING_CONTRACT,
   PRIVY_APP_ID,
 } from "../../core/constants.js";
-import { ProviderAuthClient } from "../providerAuthClient.js";
+import {
+  ProviderAuthClient,
+  type AuthTokenStore,
+} from "../providerAuthClient.js";
+import { preconfRpcFor, watchPreconfUserOp } from "./preconfWatcher.js";
 import {
   ApprovalRequiredError,
   awaitApproval,
@@ -68,6 +72,7 @@ export interface PrivyAlchemyChainConfig {
   serverUrl?: string;
   privyAppId?: string;
   builderCode?: string;
+  tokenStore?: AuthTokenStore | undefined;
 }
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -532,6 +537,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       walletAddress: params.walletAddress,
       signMessage: (message) => signer.signMessage({ message }),
       chainId: chains[0]!.id,
+      tokenStore: params.tokenStore,
     });
 
     const getToken = () => authClient.getAuthToken();
@@ -785,12 +791,58 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   private async waitForTransactionHash(
     client: SmartWalletClient,
     id: Hex,
+    chainId?: number,
+    userOpHash?: Hex,
   ): Promise<Address> {
-    const status = await client.waitForCallsStatus({ id });
-    if (!status.receipts?.[0]?.transactionHash) {
-      throw new Error("Transaction failed");
+    const statusPromise = client
+      .waitForCallsStatus({ id, pollingInterval: 500 })
+      .then((status: { receipts?: { transactionHash?: Address }[] }) => {
+        const hash = status.receipts?.[0]?.transactionHash;
+        if (!hash) throw new Error("Transaction failed");
+        return hash;
+      });
+
+    const preconfUrl =
+      chainId !== undefined && userOpHash ? preconfRpcFor(chainId) : undefined;
+
+    if (!preconfUrl || !userOpHash) {
+      const hash = await statusPromise;
+      return hash;
     }
-    return status.receipts[0].transactionHash;
+
+    const abort = new AbortController();
+    const preconfPromise = watchPreconfUserOp(
+      preconfUrl,
+      userOpHash,
+      abort.signal,
+    ).then((hash) => ({ source: "preconf" as const, hash: hash as Address }));
+
+    try {
+      const { hash } = await Promise.race([
+        statusPromise.then((hash: Address) => ({
+          source: "getCallsStatus" as const,
+          hash,
+        })),
+        preconfPromise,
+      ]);
+      return hash;
+    } finally {
+      abort.abort();
+      statusPromise.catch(() => {});
+      preconfPromise.catch(() => {});
+    }
+  }
+
+  private userOpHashFromSendResult(result: {
+    details?: { type?: string; data?: { hash?: Hex } };
+  }): Hex | undefined {
+    if (
+      result.details?.type === "user-operation" &&
+      result.details.data?.hash
+    ) {
+      return result.details.data.hash;
+    }
+    return undefined;
   }
 
   async sendTransaction(
@@ -810,9 +862,14 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const signed = await this.signPreparedViaPrivy(chainId, prepared);
 
-    const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
+    const sent = await smartWalletClientErc20.sendPreparedCalls(signed);
 
-    return this.waitForTransactionHash(smartWalletClientErc20, id);
+    return this.waitForTransactionHash(
+      smartWalletClientErc20,
+      sent.id,
+      chainId,
+      this.userOpHashFromSendResult(sent),
+    );
   }
 
   async sendCalls(
@@ -820,7 +877,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     _calls: Call[],
   ): Promise<Address | Address[]> {
     const smartWalletClient = this.getAcpClient(chainId);
-    const { id } = await smartWalletClient.sendCalls({
+    const sent = await smartWalletClient.sendCalls({
       calls: _calls.map((call) => this.toSmartWalletCall(call)),
       capabilities: {
         nonceOverride: {
@@ -829,14 +886,19 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    return this.waitForTransactionHash(smartWalletClient, id);
+    return this.waitForTransactionHash(
+      smartWalletClient,
+      sent.id,
+      chainId,
+      this.userOpHashFromSendResult(sent),
+    );
   }
 
   async getTransactionReceipt(
     chainId: number,
     hash: Address,
   ): Promise<TransactionReceipt> {
-    return getTransactionReceipt(this.getWalletClient(chainId), {
+    return waitForTransactionReceipt(this.getWalletClient(chainId), {
       hash,
     });
   }

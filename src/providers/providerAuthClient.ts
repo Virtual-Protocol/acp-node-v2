@@ -6,11 +6,17 @@ import { ACP_SERVER_URL } from "../core/constants.js";
  * the server picks the verification primitive by chain (ECDSA/EIP-7702 for EVM,
  * Ed25519 for Solana).
  */
+export interface AuthTokenStore {
+  get(): string | undefined;
+  set(token: string): void;
+}
+
 export interface ProviderAuthClientOptions {
   serverUrl?: string;
   walletAddress: string;
   chainId: number;
   signMessage: (message: string) => Promise<string>;
+  tokenStore?: AuthTokenStore | undefined;
 }
 
 export class ProviderAuthClient {
@@ -19,17 +25,31 @@ export class ProviderAuthClient {
   private readonly walletAddress: string;
   private readonly chainId: number;
   private readonly _signMessage: (message: string) => Promise<string>;
+  private readonly tokenStore: AuthTokenStore | undefined;
 
   constructor(opts: ProviderAuthClientOptions) {
     this.serverUrl = (opts.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
     this.walletAddress = opts.walletAddress;
     this.chainId = opts.chainId;
     this._signMessage = opts.signMessage;
+    this.tokenStore = opts.tokenStore;
   }
 
   async getAuthToken(): Promise<string> {
+    if (!this.token && this.tokenStore) {
+      try {
+        this.token = this.tokenStore.get() ?? "";
+      } catch {
+        this.token = "";
+      }
+    }
     if (!this.token || this.isTokenExpiring()) {
       this.token = await this.authenticate();
+      try {
+        this.tokenStore?.set(this.token);
+      } catch {
+        // skip upon failure
+      }
     }
     return this.token;
   }

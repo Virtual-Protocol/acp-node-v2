@@ -51,7 +51,11 @@ import {
   ALCHEMY_SIGNING_CONTRACT,
   PRIVY_APP_ID,
 } from "../../core/constants.js";
-import { ProviderAuthClient } from "../providerAuthClient.js";
+import {
+  ProviderAuthClient,
+  type AuthTokenStore,
+} from "../providerAuthClient.js";
+import { preconfRpcFor, watchPreconfUserOp } from "./preconfWatcher.js";
 import {
   ApprovalRequiredError,
   awaitApproval,
@@ -68,6 +72,7 @@ export interface PrivyAlchemyChainConfig {
   serverUrl?: string;
   privyAppId?: string;
   builderCode?: string;
+  tokenStore?: AuthTokenStore | undefined;
 }
 
 function encodeSignableMessage(message: SignableMessage): {
@@ -532,6 +537,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       walletAddress: params.walletAddress,
       signMessage: (message) => signer.signMessage({ message }),
       chainId: chains[0]!.id,
+      tokenStore: params.tokenStore,
     });
 
     const getToken = () => authClient.getAuthToken();
@@ -785,12 +791,41 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
   private async waitForTransactionHash(
     client: SmartWalletClient,
     id: Hex,
+    chainId?: number,
   ): Promise<Address> {
-    const status = await client.waitForCallsStatus({ id });
-    if (!status.receipts?.[0]?.transactionHash) {
-      throw new Error("Transaction failed");
+    const statusPromise = client
+      .waitForCallsStatus({ id, pollingInterval: 500 })
+      .then((status: { receipts?: { transactionHash?: Address }[] }) => {
+        const hash = status.receipts?.[0]?.transactionHash;
+        if (!hash) throw new Error("Transaction failed");
+        return hash;
+      });
+
+    const preconfUrl =
+      chainId !== undefined ? preconfRpcFor(chainId) : undefined;
+
+    if (!preconfUrl) {
+      const hash = await statusPromise;
+      return hash;
     }
-    return status.receipts[0].transactionHash;
+
+    const abort = new AbortController();
+
+    try {
+      const { hash } = await Promise.race([
+        statusPromise.then((hash: Address) => ({
+          source: "getCallsStatus",
+          hash,
+        })),
+        watchPreconfUserOp(preconfUrl, this.address, abort.signal).then(
+          (hash) => ({ source: "preconf", hash: hash as Address }),
+        ),
+      ]);
+      return hash;
+    } finally {
+      abort.abort();
+      statusPromise.catch(() => {});
+    }
   }
 
   async sendTransaction(
@@ -812,7 +847,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
 
     const { id } = await smartWalletClientErc20.sendPreparedCalls(signed);
 
-    return this.waitForTransactionHash(smartWalletClientErc20, id);
+    return this.waitForTransactionHash(smartWalletClientErc20, id, chainId);
   }
 
   async sendCalls(
@@ -829,7 +864,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       },
     });
 
-    return this.waitForTransactionHash(smartWalletClient, id);
+    return this.waitForTransactionHash(smartWalletClient, id, chainId);
   }
 
   async getTransactionReceipt(

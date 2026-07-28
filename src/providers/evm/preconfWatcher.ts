@@ -35,6 +35,24 @@ async function rpc<T>(
   }
 }
 
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
 export async function watchPreconfUserOp(
   url: string,
   userOpHash: string,
@@ -43,7 +61,9 @@ export async function watchPreconfUserOp(
   const userOpHashTopic = userOpHash.toLowerCase();
   const checked = new Set<string>();
 
-  while (!signal.aborted) {
+  while (true) {
+    signal.throwIfAborted();
+
     const block = await rpc<{ transactions?: PendingTx[] }>(
       url,
       "eth_getBlockByNumber",
@@ -51,7 +71,7 @@ export async function watchPreconfUserOp(
     );
 
     for (const tx of block?.transactions ?? []) {
-      if (signal.aborted) break;
+      signal.throwIfAborted();
       if (!tx.hash || checked.has(tx.hash)) continue;
       if (tx.to?.toLowerCase() !== ENTRYPOINT_V07) continue;
 
@@ -73,8 +93,6 @@ export async function watchPreconfUserOp(
       }
     }
 
-    await new Promise((r) => setTimeout(r, POLL_MS));
+    await sleep(POLL_MS, signal);
   }
-
-  return new Promise<never>(() => {});
 }

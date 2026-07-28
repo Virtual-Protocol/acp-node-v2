@@ -20,10 +20,10 @@ import {
 } from "viem";
 import { Attribution } from "ox/erc8021";
 import {
-  getTransactionReceipt,
   readContract,
   getLogs,
   getBlockNumber,
+  waitForTransactionReceipt,
 } from "viem/actions";
 import {
   createEvmNetworkContext,
@@ -803,9 +803,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
       });
 
     const preconfUrl =
-      chainId !== undefined && userOpHash
-        ? preconfRpcFor(chainId)
-        : undefined;
+      chainId !== undefined && userOpHash ? preconfRpcFor(chainId) : undefined;
 
     if (!preconfUrl || !userOpHash) {
       const hash = await statusPromise;
@@ -813,21 +811,25 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     }
 
     const abort = new AbortController();
+    const preconfPromise = watchPreconfUserOp(
+      preconfUrl,
+      userOpHash,
+      abort.signal,
+    ).then((hash) => ({ source: "preconf" as const, hash: hash as Address }));
 
     try {
       const { hash } = await Promise.race([
         statusPromise.then((hash: Address) => ({
-          source: "getCallsStatus",
+          source: "getCallsStatus" as const,
           hash,
         })),
-        watchPreconfUserOp(preconfUrl, userOpHash, abort.signal).then(
-          (hash) => ({ source: "preconf", hash: hash as Address }),
-        ),
+        preconfPromise,
       ]);
       return hash;
     } finally {
       abort.abort();
       statusPromise.catch(() => {});
+      preconfPromise.catch(() => {});
     }
   }
 
@@ -896,7 +898,7 @@ export class PrivyAlchemyEvmProviderAdapter implements IEvmProviderAdapter {
     chainId: number,
     hash: Address,
   ): Promise<TransactionReceipt> {
-    return getTransactionReceipt(this.getWalletClient(chainId), {
+    return waitForTransactionReceipt(this.getWalletClient(chainId), {
       hash,
     });
   }

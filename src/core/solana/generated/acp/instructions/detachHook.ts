@@ -10,8 +10,6 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressDecoder,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -36,19 +34,17 @@ import { findAcpStatePda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
-export const SET_PROVIDER_DISCRIMINATOR = new Uint8Array([
-  42, 159, 3, 191, 52, 175, 112, 88,
+export const DETACH_HOOK_DISCRIMINATOR = new Uint8Array([
+  142, 76, 153, 126, 252, 12, 56, 231,
 ]);
 
-export function getSetProviderDiscriminatorBytes() {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    SET_PROVIDER_DISCRIMINATOR,
-  );
+export function getDetachHookDiscriminatorBytes() {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(DETACH_HOOK_DISCRIMINATOR);
 }
 
-export type SetProviderInstruction<
+export type DetachHookInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
-  TAccountClient extends string | AccountMeta<string> = string,
+  TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -56,10 +52,10 @@ export type SetProviderInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountClient extends string
-        ? ReadonlySignerAccount<TAccountClient> &
-            AccountSignerMeta<TAccountClient>
-        : TAccountClient,
+      TAccountAuthority extends string
+        ? ReadonlySignerAccount<TAccountAuthority> &
+            AccountSignerMeta<TAccountAuthority>
+        : TAccountAuthority,
       TAccountAcpState extends string
         ? ReadonlyAccount<TAccountAcpState>
         : TAccountAcpState,
@@ -68,63 +64,55 @@ export type SetProviderInstruction<
     ]
   >;
 
-export type SetProviderInstructionData = {
-  discriminator: ReadonlyUint8Array;
-  provider: Address;
-};
+export type DetachHookInstructionData = { discriminator: ReadonlyUint8Array };
 
-export type SetProviderInstructionDataArgs = { provider: Address };
+export type DetachHookInstructionDataArgs = {};
 
-export function getSetProviderInstructionDataEncoder(): FixedSizeEncoder<SetProviderInstructionDataArgs> {
+export function getDetachHookInstructionDataEncoder(): FixedSizeEncoder<DetachHookInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["provider", getAddressEncoder()],
-    ]),
-    (value) => ({ ...value, discriminator: SET_PROVIDER_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: DETACH_HOOK_DISCRIMINATOR }),
   );
 }
 
-export function getSetProviderInstructionDataDecoder(): FixedSizeDecoder<SetProviderInstructionData> {
+export function getDetachHookInstructionDataDecoder(): FixedSizeDecoder<DetachHookInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["provider", getAddressDecoder()],
   ]);
 }
 
-export function getSetProviderInstructionDataCodec(): FixedSizeCodec<
-  SetProviderInstructionDataArgs,
-  SetProviderInstructionData
+export function getDetachHookInstructionDataCodec(): FixedSizeCodec<
+  DetachHookInstructionDataArgs,
+  DetachHookInstructionData
 > {
   return combineCodec(
-    getSetProviderInstructionDataEncoder(),
-    getSetProviderInstructionDataDecoder(),
+    getDetachHookInstructionDataEncoder(),
+    getDetachHookInstructionDataDecoder(),
   );
 }
 
-export type SetProviderAsyncInput<
-  TAccountClient extends string = string,
+export type DetachHookAsyncInput<
+  TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
   TAccountJob extends string = string,
 > = {
-  client: TransactionSigner<TAccountClient>;
+  authority: TransactionSigner<TAccountAuthority>;
   acpState?: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
-  provider: SetProviderInstructionDataArgs["provider"];
 };
 
-export async function getSetProviderInstructionAsync<
-  TAccountClient extends string,
+export async function getDetachHookInstructionAsync<
+  TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountJob extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: SetProviderAsyncInput<TAccountClient, TAccountAcpState, TAccountJob>,
+  input: DetachHookAsyncInput<TAccountAuthority, TAccountAcpState, TAccountJob>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  SetProviderInstruction<
+  DetachHookInstruction<
     TProgramAddress,
-    TAccountClient,
+    TAccountAuthority,
     TAccountAcpState,
     TAccountJob
   >
@@ -135,7 +123,7 @@ export async function getSetProviderInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    client: { value: input.client ?? null, isWritable: false },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
   };
@@ -143,9 +131,6 @@ export async function getSetProviderInstructionAsync<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.acpState.value) {
@@ -155,44 +140,41 @@ export async function getSetProviderInstructionAsync<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.client),
+      getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.job),
     ],
-    data: getSetProviderInstructionDataEncoder().encode(
-      args as SetProviderInstructionDataArgs,
-    ),
+    data: getDetachHookInstructionDataEncoder().encode({}),
     programAddress,
-  } as SetProviderInstruction<
+  } as DetachHookInstruction<
     TProgramAddress,
-    TAccountClient,
+    TAccountAuthority,
     TAccountAcpState,
     TAccountJob
   >);
 }
 
-export type SetProviderInput<
-  TAccountClient extends string = string,
+export type DetachHookInput<
+  TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
   TAccountJob extends string = string,
 > = {
-  client: TransactionSigner<TAccountClient>;
+  authority: TransactionSigner<TAccountAuthority>;
   acpState: Address<TAccountAcpState>;
   job: Address<TAccountJob>;
-  provider: SetProviderInstructionDataArgs["provider"];
 };
 
-export function getSetProviderInstruction<
-  TAccountClient extends string,
+export function getDetachHookInstruction<
+  TAccountAuthority extends string,
   TAccountAcpState extends string,
   TAccountJob extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: SetProviderInput<TAccountClient, TAccountAcpState, TAccountJob>,
+  input: DetachHookInput<TAccountAuthority, TAccountAcpState, TAccountJob>,
   config?: { programAddress?: TProgramAddress },
-): SetProviderInstruction<
+): DetachHookInstruction<
   TProgramAddress,
-  TAccountClient,
+  TAccountAuthority,
   TAccountAcpState,
   TAccountJob
 > {
@@ -202,7 +184,7 @@ export function getSetProviderInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    client: { value: input.client ?? null, isWritable: false },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
   };
@@ -211,49 +193,44 @@ export function getSetProviderInstruction<
     ResolvedAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta(accounts.client),
+      getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.job),
     ],
-    data: getSetProviderInstructionDataEncoder().encode(
-      args as SetProviderInstructionDataArgs,
-    ),
+    data: getDetachHookInstructionDataEncoder().encode({}),
     programAddress,
-  } as SetProviderInstruction<
+  } as DetachHookInstruction<
     TProgramAddress,
-    TAccountClient,
+    TAccountAuthority,
     TAccountAcpState,
     TAccountJob
   >);
 }
 
-export type ParsedSetProviderInstruction<
+export type ParsedDetachHookInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    client: TAccountMetas[0];
+    authority: TAccountMetas[0];
     acpState: TAccountMetas[1];
     job: TAccountMetas[2];
   };
-  data: SetProviderInstructionData;
+  data: DetachHookInstructionData;
 };
 
-export function parseSetProviderInstruction<
+export function parseDetachHookInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedSetProviderInstruction<TProgram, TAccountMetas> {
+): ParsedDetachHookInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 3) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -267,10 +244,10 @@ export function parseSetProviderInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      client: getNextAccount(),
+      authority: getNextAccount(),
       acpState: getNextAccount(),
       job: getNextAccount(),
     },
-    data: getSetProviderInstructionDataDecoder().decode(instruction.data),
+    data: getDetachHookInstructionDataDecoder().decode(instruction.data),
   };
 }

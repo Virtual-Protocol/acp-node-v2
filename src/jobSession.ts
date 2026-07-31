@@ -16,6 +16,7 @@ import {
   SUBSCRIPTION_HOOK_ADDRESSES,
 } from "./core/constants.js";
 import { type Hex } from "viem";
+import type { SolanaSigner } from "./providers/types.js";
 
 // ---------------------------------------------------------------------------
 // Derived job status from the room entry stream
@@ -625,7 +626,23 @@ export class JobSession {
     }
   }
 
-  async complete(reason: string): Promise<void> {
+  async complete(
+    reason: string,
+    opts?: { providerSigner?: SolanaSigner },
+  ): Promise<void> {
+    // Solana subscription-activating jobs (router or standalone sub hook)
+    // need the provider's co-signature; a single-process orchestrator
+    // holding both signers passes it here. Without it, such a job fails with
+    // the client's instructive error pointing at completeSubscriptionJob.
+    if (opts?.providerSigner) {
+      await this.agent.completeSubscriptionJob(this.chainId, {
+        jobId: BigInt(this.jobId),
+        reason,
+        providerSigner: opts.providerSigner,
+        ...(this._job && { clientAddress: this._job.clientAddress }),
+      });
+      return;
+    }
     await this.agent.internalComplete(this.chainId, {
       jobId: BigInt(this.jobId),
       reason,

@@ -11,5 +11,6 @@ export * from "./activateSubscription.js";
 export * from "./addWriter.js";
 export * from "./initialize.js";
 export * from "./nominateAuthority.js";
+export * from "./preCreateSubExpiry.js";
 export * from "./reactivateWriter.js";
 export * from "./removeWriter.js";

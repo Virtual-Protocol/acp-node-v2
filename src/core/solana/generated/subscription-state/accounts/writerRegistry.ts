@@ -53,7 +53,7 @@ export type WriterRegistry = {
   discriminator: ReadonlyUint8Array;
   /** The authorized program ID. */
   writer: Address;
-  /** Whether this writer is currently active. Deactivated writers are kept alive (F-34). */
+  /** Whether this writer is currently active; deactivated writers are kept alive. */
   isActive: boolean;
   /** PDA bump seed. */
   bump: number;
@@ -62,7 +62,7 @@ export type WriterRegistry = {
 export type WriterRegistryArgs = {
   /** The authorized program ID. */
   writer: Address;
-  /** Whether this writer is currently active. Deactivated writers are kept alive (F-34). */
+  /** Whether this writer is currently active; deactivated writers are kept alive. */
   isActive: boolean;
   /** PDA bump seed. */
   bump: number;

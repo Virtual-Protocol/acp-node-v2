@@ -1,5 +1,6 @@
 import type {
   ApproveAllowanceParams,
+  BatchConfigureHooksParams,
   CapabilityFlags,
   CompleteParams,
   CreateJobParams,
@@ -106,6 +107,11 @@ export abstract class BaseAcpClient<TTx> {
   abstract reject(
     chainId: number,
     params: RejectParams
+  ): Promise<OperationResult<TTx>>;
+
+  abstract batchConfigureHooks(
+    chainId: number,
+    params: BatchConfigureHooksParams
   ): Promise<OperationResult<TTx>>;
 
   abstract submitPrepared(

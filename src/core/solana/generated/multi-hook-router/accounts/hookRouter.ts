@@ -63,10 +63,7 @@ export type HookRouter = {
   submitHooks: Array<Address>;
   completeHooks: Array<Address>;
   rejectHooks: Array<Address>;
-  /**
-   * Cached metadata for unique configured sub-hooks. Used by
-   * `validate_completeness` and fund-time re-validation.
-   */
+  /** Cached metadata for unique configured sub-hooks. */
   hookMetadataCache: Array<CachedHookMetadata>;
   bump: number;
 };
@@ -78,10 +75,7 @@ export type HookRouterArgs = {
   submitHooks: Array<Address>;
   completeHooks: Array<Address>;
   rejectHooks: Array<Address>;
-  /**
-   * Cached metadata for unique configured sub-hooks. Used by
-   * `validate_completeness` and fund-time re-validation.
-   */
+  /** Cached metadata for unique configured sub-hooks. */
   hookMetadataCache: Array<CachedHookMetadataArgs>;
   bump: number;
 };

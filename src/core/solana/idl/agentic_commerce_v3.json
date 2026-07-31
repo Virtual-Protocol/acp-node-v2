@@ -208,8 +208,8 @@
     },
     {
       "code": 6033,
-      "msg": "Hook program must be immutable (upgrade authority must be None)",
-      "name": "HookProgramIsUpgradeable"
+      "msg": "Hook program upgrade authority must be None or the ACP authority",
+      "name": "UntrustedHookUpgradeAuthority"
     },
     {
       "code": 6034,
@@ -220,6 +220,11 @@
       "code": 6035,
       "msg": "Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len()",
       "name": "InvalidAutoCompleteParams"
+    },
+    {
+      "code": 6036,
+      "msg": "Protocol is paused",
+      "name": "ProtocolPaused"
     }
   ],
   "events": [
@@ -287,6 +292,19 @@
         182
       ],
       "name": "EvaluatorFeeUpdated"
+    },
+    {
+      "discriminator": [
+        44,
+        210,
+        252,
+        233,
+        231,
+        88,
+        168,
+        1
+      ],
+      "name": "HookDetached"
     },
     {
       "discriminator": [
@@ -378,6 +396,19 @@
         248
       ],
       "name": "JobSubmitted"
+    },
+    {
+      "discriminator": [
+        175,
+        57,
+        198,
+        136,
+        192,
+        66,
+        204,
+        73
+      ],
+      "name": "PauseSet"
     },
     {
       "discriminator": [
@@ -938,6 +969,76 @@
     {
       "accounts": [
         {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "account": "Job",
+                "kind": "account",
+                "path": "job.client"
+              },
+              {
+                "account": "Job",
+                "kind": "account",
+                "path": "job.job_id"
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        142,
+        76,
+        153,
+        126,
+        252,
+        12,
+        56,
+        231
+      ],
+      "docs": [
+        "Detaches a misbehaving hook from an in-flight job so escrow keeps flowing. Authority-only."
+      ],
+      "name": "detach_hook"
+    },
+    {
+      "accounts": [
+        {
           "name": "client",
           "signer": true,
           "writable": true
@@ -945,6 +1046,27 @@
         {
           "name": "job",
           "writable": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
         },
         {
           "docs": [
@@ -1100,38 +1222,38 @@
               {
                 "kind": "const",
                 "value": [
-                  25,
+                  215,
+                  88,
+                  164,
+                  37,
+                  37,
+                  167,
+                  35,
+                  155,
+                  134,
+                  215,
                   69,
-                  59,
-                  250,
-                  126,
-                  247,
-                  101,
-                  29,
-                  57,
-                  115,
-                  121,
-                  143,
-                  227,
-                  237,
-                  189,
                   245,
-                  50,
-                  248,
-                  32,
-                  171,
-                  202,
-                  62,
-                  48,
-                  228,
-                  214,
-                  65,
-                  20,
-                  9,
-                  81,
-                  89,
-                  140,
-                  41
+                  181,
+                  35,
+                  244,
+                  68,
+                  27,
+                  66,
+                  252,
+                  90,
+                  229,
+                  167,
+                  231,
+                  185,
+                  212,
+                  144,
+                  134,
+                  15,
+                  14,
+                  60,
+                  203,
+                  45
                 ]
               }
             ]
@@ -1177,6 +1299,59 @@
         "Initializes the global `AcpState` PDA. Caller must be the program's upgrade authority."
       ],
       "name": "initialize"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "docs": [
+            "field (offset [8..40]) against the signer in the handler."
+          ],
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [],
+      "discriminator": [
+        34,
+        189,
+        226,
+        222,
+        218,
+        156,
+        19,
+        213
+      ],
+      "docs": [
+        "One-time realloc of the live `AcpState` account to the current layout (adds `paused`). Authority-only."
+      ],
+      "name": "migrate_state"
     },
     {
       "accounts": [
@@ -1439,6 +1614,27 @@
           "name": "budget_mint"
         },
         {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "hook_program",
           "optional": true
         },
@@ -1553,6 +1749,56 @@
       ],
       "args": [
         {
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "discriminator": [
+        63,
+        32,
+        154,
+        2,
+        56,
+        103,
+        79,
+        45
+      ],
+      "docs": [
+        "Toggles the global pause flag. When paused, all lifecycle instructions revert. Authority-only."
+      ],
+      "name": "set_pause"
+    },
+    {
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          },
+          "writable": true
+        }
+      ],
+      "args": [
+        {
           "name": "fee_bp",
           "type": "u64"
         },
@@ -1583,16 +1829,29 @@
           "signer": true
         },
         {
+          "name": "acp_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  99,
+                  112,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "job",
           "writable": true
-        },
-        {
-          "name": "hook_program",
-          "optional": true
-        },
-        {
-          "name": "hook_whitelist",
-          "optional": true
         }
       ],
       "args": [
@@ -1825,6 +2084,14 @@
             ],
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "docs": [
+              "When true, all user-facing lifecycle instructions revert. Admin-toggled.",
+              "Appended after `bump` so the existing on-chain layout only grows by one byte."
+            ],
+            "name": "paused",
+            "type": "bool"
           }
         ],
         "kind": "struct"
@@ -1920,6 +2187,30 @@
           {
             "name": "fee_bp",
             "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when an admin detaches a hook from an in-flight job via `detach_hook`."
+      ],
+      "name": "HookDetached",
+      "type": {
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "The hook address that was detached, captured before it is cleared to None."
+            ],
+            "name": "hook_address",
+            "type": {
+              "option": "pubkey"
+            }
           }
         ],
         "kind": "struct"
@@ -2284,6 +2575,21 @@
                 32
               ]
             }
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted when the protocol pause flag is toggled via `set_pause`."
+      ],
+      "name": "PauseSet",
+      "type": {
+        "fields": [
+          {
+            "name": "paused",
+            "type": "bool"
           }
         ],
         "kind": "struct"

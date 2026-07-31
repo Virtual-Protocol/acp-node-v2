@@ -19,8 +19,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getOptionDecoder,
-  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -30,16 +28,14 @@ import {
   transformEncoder,
   type Account,
   type Address,
-  type Codec,
-  type Decoder,
   type EncodedAccount,
-  type Encoder,
   type FetchAccountConfig,
   type FetchAccountsConfig,
+  type FixedSizeCodec,
+  type FixedSizeDecoder,
+  type FixedSizeEncoder,
   type MaybeAccount,
   type MaybeEncodedAccount,
-  type Option,
-  type OptionOrNullable,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
@@ -54,28 +50,22 @@ export function getHookStateDiscriminatorBytes() {
 export type HookState = {
   discriminator: ReadonlyUint8Array;
   acpProgram: Address;
-  authority: Address;
-  pendingAuthority: Option<Address>;
   intentCounter: bigint;
   bump: number;
 };
 
 export type HookStateArgs = {
   acpProgram: Address;
-  authority: Address;
-  pendingAuthority: OptionOrNullable<Address>;
   intentCounter: number | bigint;
   bump: number;
 };
 
 /** Gets the encoder for {@link HookStateArgs} account data. */
-export function getHookStateEncoder(): Encoder<HookStateArgs> {
+export function getHookStateEncoder(): FixedSizeEncoder<HookStateArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["acpProgram", getAddressEncoder()],
-      ["authority", getAddressEncoder()],
-      ["pendingAuthority", getOptionEncoder(getAddressEncoder())],
       ["intentCounter", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
@@ -84,19 +74,17 @@ export function getHookStateEncoder(): Encoder<HookStateArgs> {
 }
 
 /** Gets the decoder for {@link HookState} account data. */
-export function getHookStateDecoder(): Decoder<HookState> {
+export function getHookStateDecoder(): FixedSizeDecoder<HookState> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["acpProgram", getAddressDecoder()],
-    ["authority", getAddressDecoder()],
-    ["pendingAuthority", getOptionDecoder(getAddressDecoder())],
     ["intentCounter", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
 
 /** Gets the codec for {@link HookState} account data. */
-export function getHookStateCodec(): Codec<HookStateArgs, HookState> {
+export function getHookStateCodec(): FixedSizeCodec<HookStateArgs, HookState> {
   return combineCodec(getHookStateEncoder(), getHookStateDecoder());
 }
 
@@ -151,4 +139,8 @@ export async function fetchAllMaybeHookState(
 ): Promise<MaybeAccount<HookState>[]> {
   const maybeAccounts = await fetchEncodedAccounts(rpc, addresses, config);
   return maybeAccounts.map((maybeAccount) => decodeHookState(maybeAccount));
+}
+
+export function getHookStateSize(): number {
+  return 49;
 }

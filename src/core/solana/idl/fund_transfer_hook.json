@@ -150,52 +150,6 @@
     {
       "accounts": [
         {
-          "name": "new_authority",
-          "signer": true
-        },
-        {
-          "name": "hook_state",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  111,
-                  107,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          },
-          "writable": true
-        }
-      ],
-      "args": [],
-      "discriminator": [
-        107,
-        86,
-        198,
-        91,
-        33,
-        12,
-        107,
-        160
-      ],
-      "docs": [
-        "Accepts a pending authority nomination, completing ownership transfer."
-      ],
-      "name": "accept_authority"
-    },
-    {
-      "accounts": [
-        {
           "name": "hook_state",
           "pda": {
             "seeds": [
@@ -235,6 +189,10 @@
         {
           "name": "caller",
           "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -285,6 +243,18 @@
         {
           "name": "action",
           "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        },
+        {
+          "name": "caller",
+          "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -644,38 +614,38 @@
               {
                 "kind": "const",
                 "value": [
+                  99,
+                  80,
+                  179,
+                  118,
+                  113,
+                  157,
+                  172,
+                  156,
+                  120,
                   235,
-                  233,
-                  190,
-                  244,
-                  180,
-                  49,
-                  231,
-                  139,
-                  121,
-                  234,
-                  192,
-                  200,
-                  126,
-                  230,
-                  20,
-                  85,
-                  196,
-                  47,
-                  165,
-                  251,
+                  172,
+                  99,
+                  23,
+                  155,
+                  108,
                   227,
-                  233,
-                  196,
-                  244,
-                  36,
-                  104,
-                  188,
-                  119,
-                  136,
+                  80,
+                  135,
+                  184,
+                  199,
+                  34,
+                  228,
+                  170,
+                  203,
                   0,
-                  88,
-                  233
+                  150,
+                  10,
+                  8,
+                  205,
+                  195,
+                  225,
+                  17
                 ]
               }
             ]
@@ -710,8 +680,13 @@
     {
       "accounts": [
         {
-          "name": "authority",
-          "signer": true
+          "docs": [
+            "Rent payer; must be the job's provider (the wallet the lifecycle",
+            "handlers debit, and the wallet the paymaster prefunds)."
+          ],
+          "name": "payer",
+          "signer": true,
+          "writable": true
         },
         {
           "name": "hook_state",
@@ -733,30 +708,56 @@
                 ]
               }
             ]
-          },
+          }
+        },
+        {
+          "docs": [
+            "via `deserialize_job` against `hook_state.acp_program`."
+          ],
+          "name": "job"
+        },
+        {
+          "name": "intent",
           "writable": true
+        },
+        {
+          "docs": [
+            "(seed prefix depends on `kind`)."
+          ],
+          "name": "intent_map",
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
         }
       ],
       "args": [
         {
-          "name": "new_authority",
-          "type": "pubkey"
+          "name": "job_id",
+          "type": "u64"
+        },
+        {
+          "name": "kind",
+          "type": "u8"
         }
       ],
       "discriminator": [
-        148,
-        182,
-        144,
-        91,
-        186,
-        12,
-        118,
-        18
+        157,
+        244,
+        37,
+        181,
+        86,
+        92,
+        73,
+        162
       ],
       "docs": [
-        "Nominates a new authority for ownership transfer."
+        "Pre-creates the intent + intent-id map PDAs for a job, zeroed, rent",
+        "paid by the job's provider at a CPI depth the paymaster can prefund.",
+        "Idempotent: no-op when the accounts already exist."
       ],
-      "name": "nominate_authority"
+      "name": "pre_create_intent"
     }
   ],
   "metadata": {
@@ -822,16 +823,6 @@
           {
             "name": "acp_program",
             "type": "pubkey"
-          },
-          {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "type": {
-              "option": "pubkey"
-            }
           },
           {
             "name": "intent_counter",

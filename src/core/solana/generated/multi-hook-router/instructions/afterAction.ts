@@ -84,6 +84,7 @@ export type AfterActionInstructionData = {
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
 export type AfterActionInstructionDataArgs = {
@@ -91,6 +92,7 @@ export type AfterActionInstructionDataArgs = {
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
 export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstructionDataArgs> {
@@ -101,6 +103,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
       ["caller", getAddressEncoder()],
+      ["variant", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: AFTER_ACTION_DISCRIMINATOR }),
   );
@@ -113,6 +116,7 @@ export function getAfterActionInstructionDataDecoder(): Decoder<AfterActionInstr
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
     ["caller", getAddressDecoder()],
+    ["variant", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
 
@@ -139,6 +143,7 @@ export type AfterActionAsyncInput<
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];
+  variant: AfterActionInstructionDataArgs["variant"];
 };
 
 export async function getAfterActionInstructionAsync<
@@ -228,6 +233,7 @@ export type AfterActionInput<
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];
+  variant: AfterActionInstructionDataArgs["variant"];
 };
 
 export function getAfterActionInstruction<

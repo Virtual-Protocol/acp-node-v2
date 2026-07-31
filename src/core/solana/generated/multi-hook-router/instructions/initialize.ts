@@ -126,10 +126,7 @@ export type InitializeAsyncInput<
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   routerState?: Address<TAccountRouterState>;
-  /**
-   * Self-declared metadata. Read by other multi-hook-routers if this is
-   * ever nested as a sub-hook (defensive completeness coverage).
-   */
+  /** Self-declared hook metadata, read when this router is nested as a sub-hook. */
   hookMetadata?: Address<TAccountHookMetadata>;
   acpProgram: Address<TAccountAcpProgram>;
   programData?: Address<TAccountProgramData>;
@@ -201,9 +198,9 @@ export async function getInitializeInstructionAsync<
       seeds: [
         getBytesEncoder().encode(
           new Uint8Array([
-            241, 11, 48, 76, 211, 51, 201, 10, 4, 54, 76, 150, 27, 210, 216,
-            249, 20, 99, 15, 73, 12, 166, 140, 184, 55, 245, 200, 155, 254, 104,
-            13, 96,
+            39, 92, 81, 151, 240, 84, 54, 168, 218, 152, 52, 47, 154, 197, 170,
+            241, 51, 103, 195, 132, 43, 55, 221, 33, 38, 56, 190, 33, 142, 233,
+            87, 232,
           ]),
         ),
       ],
@@ -249,10 +246,7 @@ export type InitializeInput<
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   routerState: Address<TAccountRouterState>;
-  /**
-   * Self-declared metadata. Read by other multi-hook-routers if this is
-   * ever nested as a sub-hook (defensive completeness coverage).
-   */
+  /** Self-declared hook metadata, read when this router is nested as a sub-hook. */
   hookMetadata: Address<TAccountHookMetadata>;
   acpProgram: Address<TAccountAcpProgram>;
   programData: Address<TAccountProgramData>;
@@ -347,10 +341,7 @@ export type ParsedInitializeInstruction<
   accounts: {
     authority: TAccountMetas[0];
     routerState: TAccountMetas[1];
-    /**
-     * Self-declared metadata. Read by other multi-hook-routers if this is
-     * ever nested as a sub-hook (defensive completeness coverage).
-     */
+    /** Self-declared hook metadata, read when this router is nested as a sub-hook. */
     hookMetadata: TAccountMetas[2];
     acpProgram: TAccountMetas[3];
     programData: TAccountMetas[4];

@@ -6,14 +6,12 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./acceptAuthority.js";
 export * from "./addHook.js";
 export * from "./afterAction.js";
 export * from "./batchConfigureHooks.js";
 export * from "./beforeAction.js";
 export * from "./configureHooks.js";
 export * from "./initialize.js";
-export * from "./nominateAuthority.js";
 export * from "./removeHook.js";
 export * from "./reorderHooks.js";
 export * from "./setMaxHooksPerJob.js";

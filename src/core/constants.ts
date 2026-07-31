@@ -74,7 +74,7 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
-  [SOLANA_DEVNET_CHAIN_ID]: "4MA2WvYqaWAUWVszyan9YH1s7mxiFg9pNRcWRCsZzikq",
+  [SOLANA_DEVNET_CHAIN_ID]: "",
   [SOLANA_MAINNET_CHAIN_ID]: "GsuY2v1a7eeAHdx45c5VpBYFhrMuyjCN1cgxGkdBDD5J",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
@@ -86,7 +86,7 @@ export const INTENT_KIND_ESCROW = 1;
 export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
-  [SOLANA_DEVNET_CHAIN_ID]: "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q",
+  [SOLANA_DEVNET_CHAIN_ID]: "3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs",
   [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
@@ -95,7 +95,7 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
 export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
-  [SOLANA_DEVNET_CHAIN_ID]: "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT",
+  [SOLANA_DEVNET_CHAIN_ID]: "2M5jFkDnM3RxZTciJ3aPY785Emzk4g4E6yAfP9U9P5zz",
   [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
@@ -108,6 +108,11 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
+};
+
+export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "HtY8KvvMF5fJ6G1AYHgdga1JSveQyymUKgYwgpHh79Zo",
+  [SOLANA_MAINNET_CHAIN_ID]: "",
 };
 
 export const ACP_SELECTORS = {

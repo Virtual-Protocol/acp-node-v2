@@ -14,8 +14,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getI64Decoder,
-  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -31,7 +29,6 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
-  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
@@ -45,21 +42,19 @@ import {
   type ResolvedAccount,
 } from "../shared/index.js";
 
-export const ACTIVATE_SUBSCRIPTION_DISCRIMINATOR = new Uint8Array([
-  101, 41, 57, 61, 203, 67, 214, 17,
+export const PRE_CREATE_SUB_EXPIRY_DISCRIMINATOR = new Uint8Array([
+  31, 24, 156, 205, 9, 176, 248, 34,
 ]);
 
-export function getActivateSubscriptionDiscriminatorBytes() {
+export function getPreCreateSubExpiryDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    ACTIVATE_SUBSCRIPTION_DISCRIMINATOR,
+    PRE_CREATE_SUB_EXPIRY_DISCRIMINATOR,
   );
 }
 
-export type ActivateSubscriptionInstruction<
+export type PreCreateSubExpiryInstruction<
   TProgram extends string = typeof SUBSCRIPTION_STATE_PROGRAM_ADDRESS,
   TAccountPayer extends string | AccountMeta<string> = string,
-  TAccountWriterRegistry extends string | AccountMeta<string> = string,
-  TAccountWriterSigner extends string | AccountMeta<string> = string,
   TAccountSubscriptionExpiry extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
@@ -72,13 +67,6 @@ export type ActivateSubscriptionInstruction<
         ? WritableSignerAccount<TAccountPayer> &
             AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
-      TAccountWriterRegistry extends string
-        ? ReadonlyAccount<TAccountWriterRegistry>
-        : TAccountWriterRegistry,
-      TAccountWriterSigner extends string
-        ? ReadonlySignerAccount<TAccountWriterSigner> &
-            AccountSignerMeta<TAccountWriterSigner>
-        : TAccountWriterSigner,
       TAccountSubscriptionExpiry extends string
         ? WritableAccount<TAccountSubscriptionExpiry>
         : TAccountSubscriptionExpiry,
@@ -89,109 +77,86 @@ export type ActivateSubscriptionInstruction<
     ]
   >;
 
-export type ActivateSubscriptionInstructionData = {
+export type PreCreateSubExpiryInstructionData = {
   discriminator: ReadonlyUint8Array;
   client: Address;
   provider: Address;
   packageId: bigint;
-  expiry: bigint;
 };
 
-export type ActivateSubscriptionInstructionDataArgs = {
+export type PreCreateSubExpiryInstructionDataArgs = {
   client: Address;
   provider: Address;
   packageId: number | bigint;
-  expiry: number | bigint;
 };
 
-export function getActivateSubscriptionInstructionDataEncoder(): FixedSizeEncoder<ActivateSubscriptionInstructionDataArgs> {
+export function getPreCreateSubExpiryInstructionDataEncoder(): FixedSizeEncoder<PreCreateSubExpiryInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["client", getAddressEncoder()],
       ["provider", getAddressEncoder()],
       ["packageId", getU64Encoder()],
-      ["expiry", getI64Encoder()],
     ]),
     (value) => ({
       ...value,
-      discriminator: ACTIVATE_SUBSCRIPTION_DISCRIMINATOR,
+      discriminator: PRE_CREATE_SUB_EXPIRY_DISCRIMINATOR,
     }),
   );
 }
 
-export function getActivateSubscriptionInstructionDataDecoder(): FixedSizeDecoder<ActivateSubscriptionInstructionData> {
+export function getPreCreateSubExpiryInstructionDataDecoder(): FixedSizeDecoder<PreCreateSubExpiryInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["client", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["packageId", getU64Decoder()],
-    ["expiry", getI64Decoder()],
   ]);
 }
 
-export function getActivateSubscriptionInstructionDataCodec(): FixedSizeCodec<
-  ActivateSubscriptionInstructionDataArgs,
-  ActivateSubscriptionInstructionData
+export function getPreCreateSubExpiryInstructionDataCodec(): FixedSizeCodec<
+  PreCreateSubExpiryInstructionDataArgs,
+  PreCreateSubExpiryInstructionData
 > {
   return combineCodec(
-    getActivateSubscriptionInstructionDataEncoder(),
-    getActivateSubscriptionInstructionDataDecoder(),
+    getPreCreateSubExpiryInstructionDataEncoder(),
+    getPreCreateSubExpiryInstructionDataDecoder(),
   );
 }
 
-export type ActivateSubscriptionAsyncInput<
+export type PreCreateSubExpiryAsyncInput<
   TAccountPayer extends string = string,
-  TAccountWriterRegistry extends string = string,
-  TAccountWriterSigner extends string = string,
   TAccountSubscriptionExpiry extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Rent payer; must be the provider named in the PDA seeds (the wallet
+   * activation debits, and the wallet the paymaster prefunds).
+   */
   payer: TransactionSigner<TAccountPayer>;
-  /**
-   * The calling program must be a registered writer.
-   * PDA seeded by the writer's program ID. Writer identity validated in handler.
-   */
-  writerRegistry: Address<TAccountWriterRegistry>;
-  /**
-   * The writer program's hook_state PDA — proves CPI origin.
-   * Only the registered writer program can produce a valid signature for this PDA.
-   */
-  writerSigner: TransactionSigner<TAccountWriterSigner>;
-  /**
-   * init_if_needed is safe: the monotonic expiry check prevents backward
-   * reinitialization and no close path exists for this PDA.
-   */
   subscriptionExpiry?: Address<TAccountSubscriptionExpiry>;
   systemProgram?: Address<TAccountSystemProgram>;
-  client: ActivateSubscriptionInstructionDataArgs["client"];
-  provider: ActivateSubscriptionInstructionDataArgs["provider"];
-  packageId: ActivateSubscriptionInstructionDataArgs["packageId"];
-  expiry: ActivateSubscriptionInstructionDataArgs["expiry"];
+  client: PreCreateSubExpiryInstructionDataArgs["client"];
+  provider: PreCreateSubExpiryInstructionDataArgs["provider"];
+  packageId: PreCreateSubExpiryInstructionDataArgs["packageId"];
 };
 
-export async function getActivateSubscriptionInstructionAsync<
+export async function getPreCreateSubExpiryInstructionAsync<
   TAccountPayer extends string,
-  TAccountWriterRegistry extends string,
-  TAccountWriterSigner extends string,
   TAccountSubscriptionExpiry extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof SUBSCRIPTION_STATE_PROGRAM_ADDRESS,
 >(
-  input: ActivateSubscriptionAsyncInput<
+  input: PreCreateSubExpiryAsyncInput<
     TAccountPayer,
-    TAccountWriterRegistry,
-    TAccountWriterSigner,
     TAccountSubscriptionExpiry,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  ActivateSubscriptionInstruction<
+  PreCreateSubExpiryInstruction<
     TProgramAddress,
     TAccountPayer,
-    TAccountWriterRegistry,
-    TAccountWriterSigner,
     TAccountSubscriptionExpiry,
     TAccountSystemProgram
   >
@@ -203,8 +168,6 @@ export async function getActivateSubscriptionInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
-    writerRegistry: { value: input.writerRegistry ?? null, isWritable: false },
-    writerSigner: { value: input.writerSigner ?? null, isWritable: false },
     subscriptionExpiry: {
       value: input.subscriptionExpiry ?? null,
       isWritable: true,
@@ -236,76 +199,53 @@ export async function getActivateSubscriptionInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.payer),
-      getAccountMeta(accounts.writerRegistry),
-      getAccountMeta(accounts.writerSigner),
       getAccountMeta(accounts.subscriptionExpiry),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getActivateSubscriptionInstructionDataEncoder().encode(
-      args as ActivateSubscriptionInstructionDataArgs,
+    data: getPreCreateSubExpiryInstructionDataEncoder().encode(
+      args as PreCreateSubExpiryInstructionDataArgs,
     ),
     programAddress,
-  } as ActivateSubscriptionInstruction<
+  } as PreCreateSubExpiryInstruction<
     TProgramAddress,
     TAccountPayer,
-    TAccountWriterRegistry,
-    TAccountWriterSigner,
     TAccountSubscriptionExpiry,
     TAccountSystemProgram
   >);
 }
 
-export type ActivateSubscriptionInput<
+export type PreCreateSubExpiryInput<
   TAccountPayer extends string = string,
-  TAccountWriterRegistry extends string = string,
-  TAccountWriterSigner extends string = string,
   TAccountSubscriptionExpiry extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Rent payer; must be the provider named in the PDA seeds (the wallet
+   * activation debits, and the wallet the paymaster prefunds).
+   */
   payer: TransactionSigner<TAccountPayer>;
-  /**
-   * The calling program must be a registered writer.
-   * PDA seeded by the writer's program ID. Writer identity validated in handler.
-   */
-  writerRegistry: Address<TAccountWriterRegistry>;
-  /**
-   * The writer program's hook_state PDA — proves CPI origin.
-   * Only the registered writer program can produce a valid signature for this PDA.
-   */
-  writerSigner: TransactionSigner<TAccountWriterSigner>;
-  /**
-   * init_if_needed is safe: the monotonic expiry check prevents backward
-   * reinitialization and no close path exists for this PDA.
-   */
   subscriptionExpiry: Address<TAccountSubscriptionExpiry>;
   systemProgram?: Address<TAccountSystemProgram>;
-  client: ActivateSubscriptionInstructionDataArgs["client"];
-  provider: ActivateSubscriptionInstructionDataArgs["provider"];
-  packageId: ActivateSubscriptionInstructionDataArgs["packageId"];
-  expiry: ActivateSubscriptionInstructionDataArgs["expiry"];
+  client: PreCreateSubExpiryInstructionDataArgs["client"];
+  provider: PreCreateSubExpiryInstructionDataArgs["provider"];
+  packageId: PreCreateSubExpiryInstructionDataArgs["packageId"];
 };
 
-export function getActivateSubscriptionInstruction<
+export function getPreCreateSubExpiryInstruction<
   TAccountPayer extends string,
-  TAccountWriterRegistry extends string,
-  TAccountWriterSigner extends string,
   TAccountSubscriptionExpiry extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof SUBSCRIPTION_STATE_PROGRAM_ADDRESS,
 >(
-  input: ActivateSubscriptionInput<
+  input: PreCreateSubExpiryInput<
     TAccountPayer,
-    TAccountWriterRegistry,
-    TAccountWriterSigner,
     TAccountSubscriptionExpiry,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): ActivateSubscriptionInstruction<
+): PreCreateSubExpiryInstruction<
   TProgramAddress,
   TAccountPayer,
-  TAccountWriterRegistry,
-  TAccountWriterSigner,
   TAccountSubscriptionExpiry,
   TAccountSystemProgram
 > {
@@ -316,8 +256,6 @@ export function getActivateSubscriptionInstruction<
   // Original accounts.
   const originalAccounts = {
     payer: { value: input.payer ?? null, isWritable: true },
-    writerRegistry: { value: input.writerRegistry ?? null, isWritable: false },
-    writerSigner: { value: input.writerSigner ?? null, isWritable: false },
     subscriptionExpiry: {
       value: input.subscriptionExpiry ?? null,
       isWritable: true,
@@ -342,61 +280,47 @@ export function getActivateSubscriptionInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.payer),
-      getAccountMeta(accounts.writerRegistry),
-      getAccountMeta(accounts.writerSigner),
       getAccountMeta(accounts.subscriptionExpiry),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getActivateSubscriptionInstructionDataEncoder().encode(
-      args as ActivateSubscriptionInstructionDataArgs,
+    data: getPreCreateSubExpiryInstructionDataEncoder().encode(
+      args as PreCreateSubExpiryInstructionDataArgs,
     ),
     programAddress,
-  } as ActivateSubscriptionInstruction<
+  } as PreCreateSubExpiryInstruction<
     TProgramAddress,
     TAccountPayer,
-    TAccountWriterRegistry,
-    TAccountWriterSigner,
     TAccountSubscriptionExpiry,
     TAccountSystemProgram
   >);
 }
 
-export type ParsedActivateSubscriptionInstruction<
+export type ParsedPreCreateSubExpiryInstruction<
   TProgram extends string = typeof SUBSCRIPTION_STATE_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * Rent payer; must be the provider named in the PDA seeds (the wallet
+     * activation debits, and the wallet the paymaster prefunds).
+     */
     payer: TAccountMetas[0];
-    /**
-     * The calling program must be a registered writer.
-     * PDA seeded by the writer's program ID. Writer identity validated in handler.
-     */
-    writerRegistry: TAccountMetas[1];
-    /**
-     * The writer program's hook_state PDA — proves CPI origin.
-     * Only the registered writer program can produce a valid signature for this PDA.
-     */
-    writerSigner: TAccountMetas[2];
-    /**
-     * init_if_needed is safe: the monotonic expiry check prevents backward
-     * reinitialization and no close path exists for this PDA.
-     */
-    subscriptionExpiry: TAccountMetas[3];
-    systemProgram: TAccountMetas[4];
+    subscriptionExpiry: TAccountMetas[1];
+    systemProgram: TAccountMetas[2];
   };
-  data: ActivateSubscriptionInstructionData;
+  data: PreCreateSubExpiryInstructionData;
 };
 
-export function parseActivateSubscriptionInstruction<
+export function parsePreCreateSubExpiryInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedActivateSubscriptionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+): ParsedPreCreateSubExpiryInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 3) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -410,12 +334,10 @@ export function parseActivateSubscriptionInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       payer: getNextAccount(),
-      writerRegistry: getNextAccount(),
-      writerSigner: getNextAccount(),
       subscriptionExpiry: getNextAccount(),
       systemProgram: getNextAccount(),
     },
-    data: getActivateSubscriptionInstructionDataDecoder().decode(
+    data: getPreCreateSubExpiryInstructionDataDecoder().decode(
       instruction.data,
     ),
   };

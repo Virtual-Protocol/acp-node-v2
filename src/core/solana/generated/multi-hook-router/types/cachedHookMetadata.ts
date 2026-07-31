@@ -21,10 +21,13 @@ import {
 } from "@solana/kit";
 
 /**
- * Cached required-selectors bitmask for one configured sub-hook. Populated
- * from the sub-hook's `HookMetadata` PDA at mutation time so that
- * `validate_completeness` and fund-time re-validation can run from
- * HookRouter alone (no metadata account reads needed at fan-out).
+ * Cached required-selectors bitmask for one configured sub-hook.
+ *
+ * Read via `validate_sub_hook` at config time and cached. Safe because
+ * `HookMetadata.required_selectors` is write-once (set only in each hook's
+ * `initialize`, no setter), so the cache can never diverge from the source.
+ * If `HookMetadata` ever becomes mutable, `validate_completeness` must re-read
+ * it live instead of trusting this cache.
  */
 export type CachedHookMetadata = { hook: Address; requiredSelectors: number };
 

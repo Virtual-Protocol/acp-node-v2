@@ -19,8 +19,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getOptionDecoder,
-  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   getU8Decoder,
@@ -28,16 +26,14 @@ import {
   transformEncoder,
   type Account,
   type Address,
-  type Codec,
-  type Decoder,
   type EncodedAccount,
-  type Encoder,
   type FetchAccountConfig,
   type FetchAccountsConfig,
+  type FixedSizeCodec,
+  type FixedSizeDecoder,
+  type FixedSizeEncoder,
   type MaybeAccount,
   type MaybeEncodedAccount,
-  type Option,
-  type OptionOrNullable,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
@@ -54,13 +50,9 @@ export function getRouterStateDiscriminatorBytes() {
 export type RouterState = {
   discriminator: ReadonlyUint8Array;
   acpProgram: Address;
-  authority: Address;
-  pendingAuthority: Option<Address>;
   /**
-   * Admin-configurable max sub-hooks per job, per selector. Range: 1..=255.
-   * No logical upper bound (mirrors EVM `MultiHookRouter.maxHooksPerJob`).
-   * Practical limit governed by Solana tx-size at runtime (~5-8 hooks per
-   * call without Address Lookup Tables).
+   * Max sub-hooks per job, per selector. Tunable only by the ACP core
+   * authority (`AcpState.authority`); the router has no admin of its own.
    */
   maxHooksPerJob: number;
   bump: number;
@@ -68,26 +60,20 @@ export type RouterState = {
 
 export type RouterStateArgs = {
   acpProgram: Address;
-  authority: Address;
-  pendingAuthority: OptionOrNullable<Address>;
   /**
-   * Admin-configurable max sub-hooks per job, per selector. Range: 1..=255.
-   * No logical upper bound (mirrors EVM `MultiHookRouter.maxHooksPerJob`).
-   * Practical limit governed by Solana tx-size at runtime (~5-8 hooks per
-   * call without Address Lookup Tables).
+   * Max sub-hooks per job, per selector. Tunable only by the ACP core
+   * authority (`AcpState.authority`); the router has no admin of its own.
    */
   maxHooksPerJob: number;
   bump: number;
 };
 
 /** Gets the encoder for {@link RouterStateArgs} account data. */
-export function getRouterStateEncoder(): Encoder<RouterStateArgs> {
+export function getRouterStateEncoder(): FixedSizeEncoder<RouterStateArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["acpProgram", getAddressEncoder()],
-      ["authority", getAddressEncoder()],
-      ["pendingAuthority", getOptionEncoder(getAddressEncoder())],
       ["maxHooksPerJob", getU8Encoder()],
       ["bump", getU8Encoder()],
     ]),
@@ -96,19 +82,20 @@ export function getRouterStateEncoder(): Encoder<RouterStateArgs> {
 }
 
 /** Gets the decoder for {@link RouterState} account data. */
-export function getRouterStateDecoder(): Decoder<RouterState> {
+export function getRouterStateDecoder(): FixedSizeDecoder<RouterState> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["acpProgram", getAddressDecoder()],
-    ["authority", getAddressDecoder()],
-    ["pendingAuthority", getOptionDecoder(getAddressDecoder())],
     ["maxHooksPerJob", getU8Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
 
 /** Gets the codec for {@link RouterState} account data. */
-export function getRouterStateCodec(): Codec<RouterStateArgs, RouterState> {
+export function getRouterStateCodec(): FixedSizeCodec<
+  RouterStateArgs,
+  RouterState
+> {
   return combineCodec(getRouterStateEncoder(), getRouterStateDecoder());
 }
 
@@ -163,4 +150,8 @@ export async function fetchAllMaybeRouterState(
 ): Promise<MaybeAccount<RouterState>[]> {
   const maybeAccounts = await fetchEncodedAccounts(rpc, addresses, config);
   return maybeAccounts.map((maybeAccount) => decodeRouterState(maybeAccount));
+}
+
+export function getRouterStateSize(): number {
+  return 42;
 }

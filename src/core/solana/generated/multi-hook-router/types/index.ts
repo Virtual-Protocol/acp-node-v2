@@ -6,8 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./authorityNominated.js";
-export * from "./authorityTransferred.js";
 export * from "./cachedHookMetadata.js";
 export * from "./dewhitelistedHookSkipped.js";
 export * from "./hookAdded.js";

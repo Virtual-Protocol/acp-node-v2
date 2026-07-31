@@ -1,7 +1,6 @@
 /**
  * Solana multi-hook-router + subscription-hook support: PDA derivations and
- * opt-params encoders, ported from sol-acp-contracts (scripts/lib/router-core.ts
- * + tests/helpers/multi-hook.ts) into @solana/kit style.
+ * opt-params encoders in @solana/kit style.
  *
  * These are the building blocks the router CPI fan-out needs. The router routes
  * a job's lifecycle action (setBudget/fund/submit/complete/reject) to a
@@ -12,12 +11,15 @@
  */
 import {
   getProgramDerivedAddress,
+  getAddressDecoder,
   getAddressEncoder,
   getUtf8Encoder,
   getU8Encoder,
   getU32Encoder,
   getU64Encoder,
   getI64Encoder,
+  getU64Decoder,
+  getI64Decoder,
   type Address,
   type ReadonlyUint8Array,
 } from "@solana/kit";
@@ -32,7 +34,7 @@ async function pda(programAddress: Address, seeds: ReadonlyUint8Array[]): Promis
 }
 
 // ---------------------------------------------------------------------------
-// PDA derivations (mirror router-core.ts; program id is passed in per call)
+// PDA derivations (program id is passed in per call)
 // ---------------------------------------------------------------------------
 
 export const acpStatePda = (acp: Address) => pda(acp, [utf8.encode("acp_state")]);
@@ -74,14 +76,14 @@ export const escrowAuthorityPda = (fundHook: Address, jobId: bigint) =>
   pda(fundHook, [utf8.encode("escrow_authority"), u64le(jobId)]);
 
 // ---------------------------------------------------------------------------
-// Opt-params encoders (byte-for-byte compatible with sol-acp-contracts'
-// tests/helpers/multi-hook.ts).
+// Opt-params encoders (byte-for-byte compatible with what the deployed
+// programs decode).
 // ---------------------------------------------------------------------------
 
 export type HookEntry = { accountCount: number; params: Uint8Array };
 
 /**
- * Multi-hook PerHook header (F-69 mode byte 0x01):
+ * Multi-hook PerHook header (mode byte 0x01):
  *   [u8 0x01][u32 entryCount]( [u32 accountCount][u32 paramsLen][params] )*
  * One entry per configured sub-hook, in fan-out order.
  */
@@ -107,6 +109,17 @@ export function encodeSubParams(durationSecs: bigint, packageId: bigint): Uint8A
   return buf;
 }
 
+/** Inverse of encodeSubParams. Returns null unless the buffer is >= 16 bytes. */
+export function decodeSubParams(
+  bytes: Uint8Array,
+): { durationSecs: bigint; packageId: bigint } | null {
+  if (bytes.length < 16) return null;
+  return {
+    durationSecs: getI64Decoder().decode(bytes.subarray(0, 8)),
+    packageId: getU64Decoder().decode(bytes.subarray(8, 16)),
+  };
+}
+
 /** Fund-hook post_fund confirmation (72 bytes): [token:32][u64 amount][recipient:32]. */
 export function encodeFundConfirmation(token: Address, amount: bigint, recipient: Address): Uint8Array {
   const buf = new Uint8Array(72);
@@ -122,4 +135,70 @@ export function encodeEscrowProposal(token: Address, amount: bigint): Uint8Array
   buf.set(addr.encode(token), 0);
   buf.set(getU64Encoder().encode(amount), 32);
   return buf;
+}
+
+// ---------------------------------------------------------------------------
+// ProposedTerms raw reader
+// ---------------------------------------------------------------------------
+
+/**
+ * Anchor discriminator for the subscription hook's ProposedTerms account:
+ * sha256("account:ProposedTerms")[0..8]. The account type is not exposed in
+ * the hook's IDL, so no Codama fetcher exists — this module reads it raw.
+ */
+const PROPOSED_TERMS_DISCRIMINATOR = new Uint8Array([
+  0xf3, 0xa5, 0xca, 0x36, 0x04, 0x40, 0x3d, 0x6e,
+]);
+
+// On-chain ProposedTerms layout: 8-byte discriminator,
+// job_id u64 LE, provider Pubkey, duration i64 LE, package_id u64 LE, bump u8.
+const PROPOSED_TERMS_SIZE = 8 + 8 + 32 + 8 + 8 + 1;
+
+export type ProposedTerms = {
+  jobId: bigint;
+  provider: Address;
+  /** Subscription duration in seconds (i64; the hook rejects non-positive). */
+  duration: bigint;
+  packageId: bigint;
+};
+
+/**
+ * Read and decode the subscription hook's proposed_terms PDA for a job.
+ * Returns null when the account does not exist, was closed, or does not
+ * decode as ProposedTerms for this jobId (defensive: length, discriminator,
+ * and job-id echo are all checked, so a layout drift in the on-chain program
+ * surfaces as null rather than as garbage terms).
+ */
+export async function fetchProposedTerms(
+  rpc: {
+    getAccountInfo: (
+      address: Address,
+      config: { encoding: "base64"; commitment: "confirmed" | "finalized" | "processed" }
+    ) => { send: () => Promise<{ value: { data: unknown } | null }> };
+  },
+  subHook: Address,
+  jobId: bigint,
+  commitment: "confirmed" | "finalized" | "processed" = "confirmed"
+): Promise<ProposedTerms | null> {
+  const pdaAddress = await proposedTermsPda(subHook, jobId);
+  const info = await rpc
+    .getAccountInfo(pdaAddress, { encoding: "base64", commitment })
+    .send();
+  const raw = info.value?.data;
+  const b64 = Array.isArray(raw) ? raw[0] : undefined;
+  if (typeof b64 !== "string" || b64.length === 0) return null;
+  const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  if (data.length < PROPOSED_TERMS_SIZE) return null;
+  for (let i = 0; i < 8; i++) {
+    if (data[i] !== PROPOSED_TERMS_DISCRIMINATOR[i]) return null;
+  }
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const storedJobId = view.getBigUint64(8, true);
+  if (storedJobId !== jobId) return null;
+  return {
+    jobId: storedJobId,
+    provider: getAddressDecoder().decode(data.subarray(16, 48)),
+    duration: view.getBigInt64(48, true),
+    packageId: view.getBigUint64(56, true),
+  };
 }

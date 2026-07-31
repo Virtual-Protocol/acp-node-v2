@@ -22,13 +22,16 @@ import {
   parseClaimRefundInstruction,
   parseCompleteInstruction,
   parseCreateJobInstruction,
+  parseDetachHookInstruction,
   parseFundInstruction,
   parseInitializeInstruction,
+  parseMigrateStateInstruction,
   parseNominateAuthorityInstruction,
   parseRejectInstruction,
   parseRemoveHookWhitelistInstruction,
   parseSetBudgetInstruction,
   parseSetEvaluatorFeeInstruction,
+  parseSetPauseInstruction,
   parseSetPlatformFeeInstruction,
   parseSetProviderInstruction,
   parseSubmitInstruction,
@@ -37,13 +40,16 @@ import {
   type ParsedClaimRefundInstruction,
   type ParsedCompleteInstruction,
   type ParsedCreateJobInstruction,
+  type ParsedDetachHookInstruction,
   type ParsedFundInstruction,
   type ParsedInitializeInstruction,
+  type ParsedMigrateStateInstruction,
   type ParsedNominateAuthorityInstruction,
   type ParsedRejectInstruction,
   type ParsedRemoveHookWhitelistInstruction,
   type ParsedSetBudgetInstruction,
   type ParsedSetEvaluatorFeeInstruction,
+  type ParsedSetPauseInstruction,
   type ParsedSetPlatformFeeInstruction,
   type ParsedSetProviderInstruction,
   type ParsedSubmitInstruction,
@@ -105,13 +111,16 @@ export enum AgenticCommerceV3Instruction {
   ClaimRefund,
   Complete,
   CreateJob,
+  DetachHook,
   Fund,
   Initialize,
+  MigrateState,
   NominateAuthority,
   Reject,
   RemoveHookWhitelist,
   SetBudget,
   SetEvaluatorFee,
+  SetPause,
   SetPlatformFee,
   SetProvider,
   Submit,
@@ -180,6 +189,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([142, 76, 153, 126, 252, 12, 56, 231]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.DetachHook;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([218, 188, 111, 221, 152, 113, 174, 7]),
       ),
       0,
@@ -197,6 +217,17 @@ export function identifyAgenticCommerceV3Instruction(
     )
   ) {
     return AgenticCommerceV3Instruction.Initialize;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([34, 189, 226, 222, 218, 156, 19, 213]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.MigrateState;
   }
   if (
     containsBytes(
@@ -257,6 +288,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([63, 32, 154, 2, 56, 103, 79, 45]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetPause;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([19, 70, 111, 182, 156, 58, 208, 203]),
       ),
       0,
@@ -308,11 +350,17 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
       instructionType: AgenticCommerceV3Instruction.CreateJob;
     } & ParsedCreateJobInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.DetachHook;
+    } & ParsedDetachHookInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.Fund;
     } & ParsedFundInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.MigrateState;
+    } & ParsedMigrateStateInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.NominateAuthority;
     } & ParsedNominateAuthorityInstruction<TProgram>)
@@ -328,6 +376,9 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
   | ({
       instructionType: AgenticCommerceV3Instruction.SetEvaluatorFee;
     } & ParsedSetEvaluatorFeeInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SetPause;
+    } & ParsedSetPauseInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.SetPlatformFee;
     } & ParsedSetPlatformFeeInstruction<TProgram>)
@@ -378,6 +429,13 @@ export function parseAgenticCommerceV3Instruction<TProgram extends string>(
         ...parseCreateJobInstruction(instruction),
       };
     }
+    case AgenticCommerceV3Instruction.DetachHook: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AgenticCommerceV3Instruction.DetachHook,
+        ...parseDetachHookInstruction(instruction),
+      };
+    }
     case AgenticCommerceV3Instruction.Fund: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -390,6 +448,13 @@ export function parseAgenticCommerceV3Instruction<TProgram extends string>(
       return {
         instructionType: AgenticCommerceV3Instruction.Initialize,
         ...parseInitializeInstruction(instruction),
+      };
+    }
+    case AgenticCommerceV3Instruction.MigrateState: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AgenticCommerceV3Instruction.MigrateState,
+        ...parseMigrateStateInstruction(instruction),
       };
     }
     case AgenticCommerceV3Instruction.NominateAuthority: {
@@ -425,6 +490,13 @@ export function parseAgenticCommerceV3Instruction<TProgram extends string>(
       return {
         instructionType: AgenticCommerceV3Instruction.SetEvaluatorFee,
         ...parseSetEvaluatorFeeInstruction(instruction),
+      };
+    }
+    case AgenticCommerceV3Instruction.SetPause: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AgenticCommerceV3Instruction.SetPause,
+        ...parseSetPauseInstruction(instruction),
       };
     }
     case AgenticCommerceV3Instruction.SetPlatformFee: {

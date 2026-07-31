@@ -84,6 +84,7 @@ export type BeforeActionInstructionData = {
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
 export type BeforeActionInstructionDataArgs = {
@@ -91,6 +92,7 @@ export type BeforeActionInstructionDataArgs = {
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
 export function getBeforeActionInstructionDataEncoder(): Encoder<BeforeActionInstructionDataArgs> {
@@ -101,6 +103,7 @@ export function getBeforeActionInstructionDataEncoder(): Encoder<BeforeActionIns
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
       ["caller", getAddressEncoder()],
+      ["variant", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: BEFORE_ACTION_DISCRIMINATOR }),
   );
@@ -113,6 +116,7 @@ export function getBeforeActionInstructionDataDecoder(): Decoder<BeforeActionIns
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
     ["caller", getAddressDecoder()],
+    ["variant", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
 
@@ -131,11 +135,7 @@ export type BeforeActionAsyncInput<
   TAccountRouterState extends string = string,
   TAccountInstructionsSysvar extends string = string,
 > = {
-  /**
-   * Manually validated. Jobs created with the router as their hook before
-   * any `configure_hooks` call don't have a HookRouter PDA yet — handler
-   * detects this via `data_is_empty()` and returns early.
-   */
+  /** May not exist yet; handler treats a missing HookRouter PDA as a no-op. */
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
   instructionsSysvar?: Address<TAccountInstructionsSysvar>;
@@ -143,6 +143,7 @@ export type BeforeActionAsyncInput<
   action: BeforeActionInstructionDataArgs["action"];
   optParams: BeforeActionInstructionDataArgs["optParams"];
   caller: BeforeActionInstructionDataArgs["caller"];
+  variant: BeforeActionInstructionDataArgs["variant"];
 };
 
 export async function getBeforeActionInstructionAsync<
@@ -224,11 +225,7 @@ export type BeforeActionInput<
   TAccountRouterState extends string = string,
   TAccountInstructionsSysvar extends string = string,
 > = {
-  /**
-   * Manually validated. Jobs created with the router as their hook before
-   * any `configure_hooks` call don't have a HookRouter PDA yet — handler
-   * detects this via `data_is_empty()` and returns early.
-   */
+  /** May not exist yet; handler treats a missing HookRouter PDA as a no-op. */
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
   instructionsSysvar?: Address<TAccountInstructionsSysvar>;
@@ -236,6 +233,7 @@ export type BeforeActionInput<
   action: BeforeActionInstructionDataArgs["action"];
   optParams: BeforeActionInstructionDataArgs["optParams"];
   caller: BeforeActionInstructionDataArgs["caller"];
+  variant: BeforeActionInstructionDataArgs["variant"];
 };
 
 export function getBeforeActionInstruction<
@@ -308,11 +306,7 @@ export type ParsedBeforeActionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /**
-     * Manually validated. Jobs created with the router as their hook before
-     * any `configure_hooks` call don't have a HookRouter PDA yet — handler
-     * detects this via `data_is_empty()` and returns early.
-     */
+    /** May not exist yet; handler treats a missing HookRouter PDA as a no-op. */
     hookRouter: TAccountMetas[0];
     routerState: TAccountMetas[1];
     instructionsSysvar: TAccountMetas[2];

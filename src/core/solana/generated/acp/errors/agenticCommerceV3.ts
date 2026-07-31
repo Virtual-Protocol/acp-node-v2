@@ -80,12 +80,14 @@ export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x178e; // 
 export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x178f; // 6031
 /** ArithmeticOverflow: Arithmetic overflow */
 export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1790; // 6032
-/** HookProgramIsUpgradeable: Hook program must be immutable (upgrade authority must be None) */
-export const AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE = 0x1791; // 6033
+/** UntrustedHookUpgradeAuthority: Hook program upgrade authority must be None or the ACP authority */
+export const AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY = 0x1791; // 6033
 /** MissingHookProgram: Missing hook program account: job declares a hook but hook_program was not supplied */
 export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1792; // 6034
 /** InvalidAutoCompleteParams: Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len() */
 export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1793; // 6035
+/** ProtocolPaused: Protocol is paused */
+export const AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED = 0x1794; // 6036
 
 export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__AMOUNT_MUST_BE_GREATER_THAN_ZERO
@@ -100,7 +102,6 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT
   | typeof AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH
   | typeof AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED
-  | typeof AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE
   | typeof AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS
   | typeof AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION
@@ -117,9 +118,11 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__ONLY_EVALUATOR
   | typeof AGENTIC_COMMERCE_V3_ERROR__ONLY_PROVIDER
   | typeof AGENTIC_COMMERCE_V3_ERROR__PLATFORM_FEE_TOO_HIGH
+  | typeof AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET
   | typeof AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED
+  | typeof AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY
   | typeof AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS
   | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS
   | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_EVALUATOR
@@ -142,7 +145,6 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT]: `Expiry too short`,
     [AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH]: `Combined fees too high`,
     [AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED]: `Hook not whitelisted`,
-    [AGENTIC_COMMERCE_V3_ERROR__HOOK_PROGRAM_IS_UPGRADEABLE]: `Hook program must be immutable (upgrade authority must be None)`,
     [AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE]: `Insufficient vault balance`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS]: `Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len()`,
     [AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION]: `Invalid destination account`,
@@ -159,9 +161,11 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__ONLY_EVALUATOR]: `Only evaluator`,
     [AGENTIC_COMMERCE_V3_ERROR__ONLY_PROVIDER]: `Only provider`,
     [AGENTIC_COMMERCE_V3_ERROR__PLATFORM_FEE_TOO_HIGH]: `Platform fee too high`,
+    [AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED]: `Protocol is paused`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT]: `Provider cannot be the client`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET]: `Provider not set`,
     [AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED]: `Unauthorized`,
+    [AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY]: `Hook program upgrade authority must be None or the ACP authority`,
     [AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS]: `Wrong job status`,
     [AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS]: `ZeroAddress`,
     [AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_EVALUATOR]: `ZeroAddressEvaluator`,

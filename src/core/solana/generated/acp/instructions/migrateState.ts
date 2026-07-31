@@ -10,15 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressDecoder,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -39,20 +34,20 @@ import { findAcpStatePda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
-export const INITIALIZE_DISCRIMINATOR = new Uint8Array([
-  175, 175, 109, 31, 13, 152, 155, 237,
+export const MIGRATE_STATE_DISCRIMINATOR = new Uint8Array([
+  34, 189, 226, 222, 218, 156, 19, 213,
 ]);
 
-export function getInitializeDiscriminatorBytes() {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(INITIALIZE_DISCRIMINATOR);
+export function getMigrateStateDiscriminatorBytes() {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(
+    MIGRATE_STATE_DISCRIMINATOR,
+  );
 }
 
-export type InitializeInstruction<
+export type MigrateStateInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
-  TAccountProgramData extends string | AccountMeta<string> = string,
-  TAccountPaymentToken extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -67,12 +62,6 @@ export type InitializeInstruction<
       TAccountAcpState extends string
         ? WritableAccount<TAccountAcpState>
         : TAccountAcpState,
-      TAccountProgramData extends string
-        ? ReadonlyAccount<TAccountProgramData>
-        : TAccountProgramData,
-      TAccountPaymentToken extends string
-        ? ReadonlyAccount<TAccountPaymentToken>
-        : TAccountPaymentToken,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -80,95 +69,61 @@ export type InitializeInstruction<
     ]
   >;
 
-export type InitializeInstructionData = {
-  discriminator: ReadonlyUint8Array;
-  platformTreasury: Address;
-  platformFeeBp: bigint;
-  evaluatorFeeBp: bigint;
-  jobCounter: bigint;
-};
+export type MigrateStateInstructionData = { discriminator: ReadonlyUint8Array };
 
-export type InitializeInstructionDataArgs = {
-  platformTreasury: Address;
-  platformFeeBp: number | bigint;
-  evaluatorFeeBp: number | bigint;
-  jobCounter: number | bigint;
-};
+export type MigrateStateInstructionDataArgs = {};
 
-export function getInitializeInstructionDataEncoder(): FixedSizeEncoder<InitializeInstructionDataArgs> {
+export function getMigrateStateInstructionDataEncoder(): FixedSizeEncoder<MigrateStateInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["platformTreasury", getAddressEncoder()],
-      ["platformFeeBp", getU64Encoder()],
-      ["evaluatorFeeBp", getU64Encoder()],
-      ["jobCounter", getU64Encoder()],
-    ]),
-    (value) => ({ ...value, discriminator: INITIALIZE_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: MIGRATE_STATE_DISCRIMINATOR }),
   );
 }
 
-export function getInitializeInstructionDataDecoder(): FixedSizeDecoder<InitializeInstructionData> {
+export function getMigrateStateInstructionDataDecoder(): FixedSizeDecoder<MigrateStateInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["platformTreasury", getAddressDecoder()],
-    ["platformFeeBp", getU64Decoder()],
-    ["evaluatorFeeBp", getU64Decoder()],
-    ["jobCounter", getU64Decoder()],
   ]);
 }
 
-export function getInitializeInstructionDataCodec(): FixedSizeCodec<
-  InitializeInstructionDataArgs,
-  InitializeInstructionData
+export function getMigrateStateInstructionDataCodec(): FixedSizeCodec<
+  MigrateStateInstructionDataArgs,
+  MigrateStateInstructionData
 > {
   return combineCodec(
-    getInitializeInstructionDataEncoder(),
-    getInitializeInstructionDataDecoder(),
+    getMigrateStateInstructionDataEncoder(),
+    getMigrateStateInstructionDataDecoder(),
   );
 }
 
-export type InitializeAsyncInput<
+export type MigrateStateAsyncInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountPaymentToken extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
+  /** field (offset [8..40]) against the signer in the handler. */
   acpState?: Address<TAccountAcpState>;
-  programData?: Address<TAccountProgramData>;
-  paymentToken: Address<TAccountPaymentToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  platformTreasury: InitializeInstructionDataArgs["platformTreasury"];
-  platformFeeBp: InitializeInstructionDataArgs["platformFeeBp"];
-  evaluatorFeeBp: InitializeInstructionDataArgs["evaluatorFeeBp"];
-  jobCounter: InitializeInstructionDataArgs["jobCounter"];
 };
 
-export async function getInitializeInstructionAsync<
+export async function getMigrateStateInstructionAsync<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountProgramData extends string,
-  TAccountPaymentToken extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: InitializeAsyncInput<
+  input: MigrateStateAsyncInput<
     TAccountAuthority,
     TAccountAcpState,
-    TAccountProgramData,
-    TAccountPaymentToken,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  InitializeInstruction<
+  MigrateStateInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountProgramData,
-    TAccountPaymentToken,
     TAccountSystemProgram
   >
 > {
@@ -180,8 +135,6 @@ export async function getInitializeInstructionAsync<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    programData: { value: input.programData ?? null, isWritable: false },
-    paymentToken: { value: input.paymentToken ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -189,27 +142,9 @@ export async function getInitializeInstructionAsync<
     ResolvedAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
-  }
-  if (!accounts.programData.value) {
-    accounts.programData.value = await getProgramDerivedAddress({
-      programAddress:
-        "BPFLoaderUpgradeab1e11111111111111111111111" as Address<"BPFLoaderUpgradeab1e11111111111111111111111">,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            215, 88, 164, 37, 37, 167, 35, 155, 134, 215, 69, 245, 181, 35, 244,
-            68, 27, 66, 252, 90, 229, 167, 231, 185, 212, 144, 134, 15, 14, 60,
-            203, 45,
-          ]),
-        ),
-      ],
-    });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -221,64 +156,45 @@ export async function getInitializeInstructionAsync<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.programData),
-      getAccountMeta(accounts.paymentToken),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getInitializeInstructionDataEncoder().encode(
-      args as InitializeInstructionDataArgs,
-    ),
+    data: getMigrateStateInstructionDataEncoder().encode({}),
     programAddress,
-  } as InitializeInstruction<
+  } as MigrateStateInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountProgramData,
-    TAccountPaymentToken,
     TAccountSystemProgram
   >);
 }
 
-export type InitializeInput<
+export type MigrateStateInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountPaymentToken extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
+  /** field (offset [8..40]) against the signer in the handler. */
   acpState: Address<TAccountAcpState>;
-  programData: Address<TAccountProgramData>;
-  paymentToken: Address<TAccountPaymentToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  platformTreasury: InitializeInstructionDataArgs["platformTreasury"];
-  platformFeeBp: InitializeInstructionDataArgs["platformFeeBp"];
-  evaluatorFeeBp: InitializeInstructionDataArgs["evaluatorFeeBp"];
-  jobCounter: InitializeInstructionDataArgs["jobCounter"];
 };
 
-export function getInitializeInstruction<
+export function getMigrateStateInstruction<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountProgramData extends string,
-  TAccountPaymentToken extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: InitializeInput<
+  input: MigrateStateInput<
     TAccountAuthority,
     TAccountAcpState,
-    TAccountProgramData,
-    TAccountPaymentToken,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): InitializeInstruction<
+): MigrateStateInstruction<
   TProgramAddress,
   TAccountAuthority,
   TAccountAcpState,
-  TAccountProgramData,
-  TAccountPaymentToken,
   TAccountSystemProgram
 > {
   // Program address.
@@ -289,17 +205,12 @@ export function getInitializeInstruction<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    programData: { value: input.programData ?? null, isWritable: false },
-    paymentToken: { value: input.paymentToken ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.systemProgram.value) {
@@ -312,48 +223,41 @@ export function getInitializeInstruction<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.programData),
-      getAccountMeta(accounts.paymentToken),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getInitializeInstructionDataEncoder().encode(
-      args as InitializeInstructionDataArgs,
-    ),
+    data: getMigrateStateInstructionDataEncoder().encode({}),
     programAddress,
-  } as InitializeInstruction<
+  } as MigrateStateInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountProgramData,
-    TAccountPaymentToken,
     TAccountSystemProgram
   >);
 }
 
-export type ParsedInitializeInstruction<
+export type ParsedMigrateStateInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
+    /** field (offset [8..40]) against the signer in the handler. */
     acpState: TAccountMetas[1];
-    programData: TAccountMetas[2];
-    paymentToken: TAccountMetas[3];
-    systemProgram: TAccountMetas[4];
+    systemProgram: TAccountMetas[2];
   };
-  data: InitializeInstructionData;
+  data: MigrateStateInstructionData;
 };
 
-export function parseInitializeInstruction<
+export function parseMigrateStateInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedInitializeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+): ParsedMigrateStateInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 3) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -368,10 +272,8 @@ export function parseInitializeInstruction<
     accounts: {
       authority: getNextAccount(),
       acpState: getNextAccount(),
-      programData: getNextAccount(),
-      paymentToken: getNextAccount(),
       systemProgram: getNextAccount(),
     },
-    data: getInitializeInstructionDataDecoder().decode(instruction.data),
+    data: getMigrateStateInstructionDataDecoder().decode(instruction.data),
   };
 }

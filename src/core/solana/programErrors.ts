@@ -50,7 +50,7 @@ export function extractInstructionCustomCode(txErr: unknown): number | null {
 }
 
 /** Flattens an error and its `cause` chain into one string, case preserved. */
-function collectErrorText(err: unknown): string {
+export function collectErrorText(err: unknown): string {
   const parts: string[] = [];
   let current: unknown = err;
   for (let depth = 0; current != null && depth < 6; depth++) {

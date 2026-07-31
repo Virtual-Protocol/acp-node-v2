@@ -72,6 +72,39 @@ export type SendInstructionsOptions = {
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
   preflightCommitment?: Commitment;
+  /**
+   * Additional required signers beyond the adapter's own signer (e.g. the
+   * provider co-signing a multi-hook complete). Presence forces the SELF-PAY
+   * path: the sponsored flow adds only this wallet's signature and cannot
+   * carry a second required signer, so the adapter's signer pays the fee.
+   */
+  extraSigners?: SolanaSigner[];
+  /**
+   * Address lookup tables to compress the transaction against, keyed by
+   * table address with the table's ON-CHAIN address ordering as the value
+   * (see core/solana/lookupTable.ts — never compress against a local list).
+   * By default, presence forces the SELF-PAY path (see extraSigners); pass
+   * `sponsorLookupTables` to instead compress inside the sponsored flow.
+   */
+  lookupTables?: Record<string, SolanaAddress[]>;
+  /**
+   * Option B — sponsor a lookup-table-compressed and/or multi-signer
+   * transaction instead of self-paying it. When true, the sponsored path
+   * compresses against `lookupTables` before requesting the fee payer (Alchemy
+   * supports versioned v0 txs, so the ALT resolves during its simulation; the
+   * propagation lag is absorbed by the fee-payer retry), and each
+   * `extraSigners` entry partial-signs after Alchemy + Privy (Alchemy sponsors
+   * two-signer txs). Caller is responsible for having created and warmed any
+   * table on-chain first.
+   */
+  sponsorLookupTables?: boolean;
+  /**
+   * Hook-PDA rents for this action were pre-created in a direct sponsored
+   * transaction at CPI height 2 (see core/solana/preCreate.ts). A zero rent
+   * prefund on the main transaction is then the EXPECTED outcome, so adapters
+   * suppress the router zero-prefund warning.
+   */
+  hookRentPreCreated?: boolean;
 };
 
 // Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),

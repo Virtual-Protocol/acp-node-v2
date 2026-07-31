@@ -10,8 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressDecoder,
-  getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -31,24 +31,22 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findHookStatePda } from "../pdas/index.js";
-import { SUBSCRIPTION_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
+import { findAcpStatePda } from "../pdas/index.js";
+import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
-export const NOMINATE_AUTHORITY_DISCRIMINATOR = new Uint8Array([
-  148, 182, 144, 91, 186, 12, 118, 18,
+export const SET_PAUSE_DISCRIMINATOR = new Uint8Array([
+  63, 32, 154, 2, 56, 103, 79, 45,
 ]);
 
-export function getNominateAuthorityDiscriminatorBytes() {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    NOMINATE_AUTHORITY_DISCRIMINATOR,
-  );
+export function getSetPauseDiscriminatorBytes() {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(SET_PAUSE_DISCRIMINATOR);
 }
 
-export type NominateAuthorityInstruction<
-  TProgram extends string = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
+export type SetPauseInstruction<
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
-  TAccountHookState extends string | AccountMeta<string> = string,
+  TAccountAcpState extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -58,78 +56,74 @@ export type NominateAuthorityInstruction<
         ? ReadonlySignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
-      TAccountHookState extends string
-        ? WritableAccount<TAccountHookState>
-        : TAccountHookState,
+      TAccountAcpState extends string
+        ? WritableAccount<TAccountAcpState>
+        : TAccountAcpState,
       ...TRemainingAccounts,
     ]
   >;
 
-export type NominateAuthorityInstructionData = {
+export type SetPauseInstructionData = {
   discriminator: ReadonlyUint8Array;
-  newAuthority: Address;
+  paused: boolean;
 };
 
-export type NominateAuthorityInstructionDataArgs = { newAuthority: Address };
+export type SetPauseInstructionDataArgs = { paused: boolean };
 
-export function getNominateAuthorityInstructionDataEncoder(): FixedSizeEncoder<NominateAuthorityInstructionDataArgs> {
+export function getSetPauseInstructionDataEncoder(): FixedSizeEncoder<SetPauseInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["newAuthority", getAddressEncoder()],
+      ["paused", getBooleanEncoder()],
     ]),
-    (value) => ({ ...value, discriminator: NOMINATE_AUTHORITY_DISCRIMINATOR }),
+    (value) => ({ ...value, discriminator: SET_PAUSE_DISCRIMINATOR }),
   );
 }
 
-export function getNominateAuthorityInstructionDataDecoder(): FixedSizeDecoder<NominateAuthorityInstructionData> {
+export function getSetPauseInstructionDataDecoder(): FixedSizeDecoder<SetPauseInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["newAuthority", getAddressDecoder()],
+    ["paused", getBooleanDecoder()],
   ]);
 }
 
-export function getNominateAuthorityInstructionDataCodec(): FixedSizeCodec<
-  NominateAuthorityInstructionDataArgs,
-  NominateAuthorityInstructionData
+export function getSetPauseInstructionDataCodec(): FixedSizeCodec<
+  SetPauseInstructionDataArgs,
+  SetPauseInstructionData
 > {
   return combineCodec(
-    getNominateAuthorityInstructionDataEncoder(),
-    getNominateAuthorityInstructionDataDecoder(),
+    getSetPauseInstructionDataEncoder(),
+    getSetPauseInstructionDataDecoder(),
   );
 }
 
-export type NominateAuthorityAsyncInput<
+export type SetPauseAsyncInput<
   TAccountAuthority extends string = string,
-  TAccountHookState extends string = string,
+  TAccountAcpState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  hookState?: Address<TAccountHookState>;
-  newAuthority: NominateAuthorityInstructionDataArgs["newAuthority"];
+  acpState?: Address<TAccountAcpState>;
+  paused: SetPauseInstructionDataArgs["paused"];
 };
 
-export async function getNominateAuthorityInstructionAsync<
+export async function getSetPauseInstructionAsync<
   TAccountAuthority extends string,
-  TAccountHookState extends string,
-  TProgramAddress extends Address = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
+  TAccountAcpState extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: NominateAuthorityAsyncInput<TAccountAuthority, TAccountHookState>,
+  input: SetPauseAsyncInput<TAccountAuthority, TAccountAcpState>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  NominateAuthorityInstruction<
-    TProgramAddress,
-    TAccountAuthority,
-    TAccountHookState
-  >
+  SetPauseInstruction<TProgramAddress, TAccountAuthority, TAccountAcpState>
 > {
   // Program address.
   const programAddress =
-    config?.programAddress ?? SUBSCRIPTION_HOOK_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: false },
-    hookState: { value: input.hookState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -140,56 +134,52 @@ export async function getNominateAuthorityInstructionAsync<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.hookState.value) {
-    accounts.hookState.value = await findHookStatePda();
+  if (!accounts.acpState.value) {
+    accounts.acpState.value = await findAcpStatePda();
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.authority),
-      getAccountMeta(accounts.hookState),
+      getAccountMeta(accounts.acpState),
     ],
-    data: getNominateAuthorityInstructionDataEncoder().encode(
-      args as NominateAuthorityInstructionDataArgs,
+    data: getSetPauseInstructionDataEncoder().encode(
+      args as SetPauseInstructionDataArgs,
     ),
     programAddress,
-  } as NominateAuthorityInstruction<
+  } as SetPauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountHookState
+    TAccountAcpState
   >);
 }
 
-export type NominateAuthorityInput<
+export type SetPauseInput<
   TAccountAuthority extends string = string,
-  TAccountHookState extends string = string,
+  TAccountAcpState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  hookState: Address<TAccountHookState>;
-  newAuthority: NominateAuthorityInstructionDataArgs["newAuthority"];
+  acpState: Address<TAccountAcpState>;
+  paused: SetPauseInstructionDataArgs["paused"];
 };
 
-export function getNominateAuthorityInstruction<
+export function getSetPauseInstruction<
   TAccountAuthority extends string,
-  TAccountHookState extends string,
-  TProgramAddress extends Address = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
+  TAccountAcpState extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: NominateAuthorityInput<TAccountAuthority, TAccountHookState>,
+  input: SetPauseInput<TAccountAuthority, TAccountAcpState>,
   config?: { programAddress?: TProgramAddress },
-): NominateAuthorityInstruction<
-  TProgramAddress,
-  TAccountAuthority,
-  TAccountHookState
-> {
+): SetPauseInstruction<TProgramAddress, TAccountAuthority, TAccountAcpState> {
   // Program address.
   const programAddress =
-    config?.programAddress ?? SUBSCRIPTION_HOOK_PROGRAM_ADDRESS;
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: false },
-    hookState: { value: input.hookState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -203,39 +193,39 @@ export function getNominateAuthorityInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.authority),
-      getAccountMeta(accounts.hookState),
+      getAccountMeta(accounts.acpState),
     ],
-    data: getNominateAuthorityInstructionDataEncoder().encode(
-      args as NominateAuthorityInstructionDataArgs,
+    data: getSetPauseInstructionDataEncoder().encode(
+      args as SetPauseInstructionDataArgs,
     ),
     programAddress,
-  } as NominateAuthorityInstruction<
+  } as SetPauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountHookState
+    TAccountAcpState
   >);
 }
 
-export type ParsedNominateAuthorityInstruction<
-  TProgram extends string = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
+export type ParsedSetPauseInstruction<
+  TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    hookState: TAccountMetas[1];
+    acpState: TAccountMetas[1];
   };
-  data: NominateAuthorityInstructionData;
+  data: SetPauseInstructionData;
 };
 
-export function parseNominateAuthorityInstruction<
+export function parseSetPauseInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedNominateAuthorityInstruction<TProgram, TAccountMetas> {
+): ParsedSetPauseInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 2) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -248,7 +238,7 @@ export function parseNominateAuthorityInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { authority: getNextAccount(), hookState: getNextAccount() },
-    data: getNominateAuthorityInstructionDataDecoder().decode(instruction.data),
+    accounts: { authority: getNextAccount(), acpState: getNextAccount() },
+    data: getSetPauseInstructionDataDecoder().decode(instruction.data),
   };
 }

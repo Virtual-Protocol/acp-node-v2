@@ -44,22 +44,24 @@ export const MULTI_HOOK_ROUTER_ERROR__HOOK_COUNT_MISMATCH = 0x177c; // 6012
 export const MULTI_HOOK_ROUTER_ERROR__OPT_PARAMS_TOO_SHORT = 0x177d; // 6013
 /** WrongHookProgram: Wrong hook program in remaining accounts */
 export const MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_PROGRAM = 0x177e; // 6014
+/** WrongHookWhitelist: Wrong hook whitelist account: not the canonical PDA for this hook */
+export const MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_WHITELIST = 0x177f; // 6015
 /** AccountSliceOutOfBounds: Account count exceeds remaining accounts */
-export const MULTI_HOOK_ROUTER_ERROR__ACCOUNT_SLICE_OUT_OF_BOUNDS = 0x177f; // 6015
+export const MULTI_HOOK_ROUTER_ERROR__ACCOUNT_SLICE_OUT_OF_BOUNDS = 0x1780; // 6016
 /** UnauthorizedCaller: Unauthorized caller */
-export const MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER = 0x1780; // 6016
+export const MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER = 0x1781; // 6017
 /** InvalidMaxHooks: Max hooks per job must be >= 1 */
-export const MULTI_HOOK_ROUTER_ERROR__INVALID_MAX_HOOKS = 0x1781; // 6017
+export const MULTI_HOOK_ROUTER_ERROR__INVALID_MAX_HOOKS = 0x1782; // 6018
 /** InvalidSelector: Action is not a hookable selector (only SetBudget, Fund, Submit, Complete, Reject) */
-export const MULTI_HOOK_ROUTER_ERROR__INVALID_SELECTOR = 0x1782; // 6018
+export const MULTI_HOOK_ROUTER_ERROR__INVALID_SELECTOR = 0x1783; // 6019
 /** HookMissingRequiredSelector: Sub-hook is missing from a selector list it requires */
-export const MULTI_HOOK_ROUTER_ERROR__HOOK_MISSING_REQUIRED_SELECTOR = 0x1783; // 6019
+export const MULTI_HOOK_ROUTER_ERROR__HOOK_MISSING_REQUIRED_SELECTOR = 0x1784; // 6020
 /** InvalidHookMetadata: Sub-hook does not declare HookMetadata PDA */
-export const MULTI_HOOK_ROUTER_ERROR__INVALID_HOOK_METADATA = 0x1784; // 6020
+export const MULTI_HOOK_ROUTER_ERROR__INVALID_HOOK_METADATA = 0x1785; // 6021
 /** InvalidOptParamsMode: Invalid opt_params mode byte: must be 0x00 (Broadcast) or 0x01 (PerHook) */
-export const MULTI_HOOK_ROUTER_ERROR__INVALID_OPT_PARAMS_MODE = 0x1785; // 6021
+export const MULTI_HOOK_ROUTER_ERROR__INVALID_OPT_PARAMS_MODE = 0x1786; // 6022
 /** HookNotExecutable: Hook program account is not executable */
-export const MULTI_HOOK_ROUTER_ERROR__HOOK_NOT_EXECUTABLE = 0x1786; // 6022
+export const MULTI_HOOK_ROUTER_ERROR__HOOK_NOT_EXECUTABLE = 0x1787; // 6023
 
 export type MultiHookRouterError =
   | typeof MULTI_HOOK_ROUTER_ERROR__ACCOUNT_SLICE_OUT_OF_BOUNDS
@@ -84,6 +86,7 @@ export type MultiHookRouterError =
   | typeof MULTI_HOOK_ROUTER_ERROR__TOO_MANY_HOOKS
   | typeof MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER
   | typeof MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_PROGRAM
+  | typeof MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_WHITELIST
   | typeof MULTI_HOOK_ROUTER_ERROR__ZERO_ADDRESS;
 
 let multiHookRouterErrorMessages:
@@ -113,6 +116,7 @@ if (process.env.NODE_ENV !== "production") {
     [MULTI_HOOK_ROUTER_ERROR__TOO_MANY_HOOKS]: `Too many hooks for this job`,
     [MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER]: `Unauthorized caller`,
     [MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_PROGRAM]: `Wrong hook program in remaining accounts`,
+    [MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_WHITELIST]: `Wrong hook whitelist account: not the canonical PDA for this hook`,
     [MULTI_HOOK_ROUTER_ERROR__ZERO_ADDRESS]: `Zero address not allowed`,
   };
 }

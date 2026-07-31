@@ -16,6 +16,8 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getOptionDecoder,
+  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -30,6 +32,8 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
+  type Option,
+  type OptionOrNullable,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
@@ -88,20 +92,20 @@ export type BatchConfigureHooksInstruction<
 export type BatchConfigureHooksInstructionData = {
   discriminator: ReadonlyUint8Array;
   jobId: bigint;
-  setBudget: Array<Address>;
-  fund: Array<Address>;
-  submit: Array<Address>;
-  complete: Array<Address>;
-  reject: Array<Address>;
+  setBudget: Option<Array<Address>>;
+  fund: Option<Array<Address>>;
+  submit: Option<Array<Address>>;
+  complete: Option<Array<Address>>;
+  reject: Option<Array<Address>>;
 };
 
 export type BatchConfigureHooksInstructionDataArgs = {
   jobId: number | bigint;
-  setBudget: Array<Address>;
-  fund: Array<Address>;
-  submit: Array<Address>;
-  complete: Array<Address>;
-  reject: Array<Address>;
+  setBudget: OptionOrNullable<Array<Address>>;
+  fund: OptionOrNullable<Array<Address>>;
+  submit: OptionOrNullable<Array<Address>>;
+  complete: OptionOrNullable<Array<Address>>;
+  reject: OptionOrNullable<Array<Address>>;
 };
 
 export function getBatchConfigureHooksInstructionDataEncoder(): Encoder<BatchConfigureHooksInstructionDataArgs> {
@@ -109,11 +113,11 @@ export function getBatchConfigureHooksInstructionDataEncoder(): Encoder<BatchCon
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["jobId", getU64Encoder()],
-      ["setBudget", getArrayEncoder(getAddressEncoder())],
-      ["fund", getArrayEncoder(getAddressEncoder())],
-      ["submit", getArrayEncoder(getAddressEncoder())],
-      ["complete", getArrayEncoder(getAddressEncoder())],
-      ["reject", getArrayEncoder(getAddressEncoder())],
+      ["setBudget", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
+      ["fund", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
+      ["submit", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
+      ["complete", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
+      ["reject", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
     ]),
     (value) => ({
       ...value,
@@ -126,11 +130,11 @@ export function getBatchConfigureHooksInstructionDataDecoder(): Decoder<BatchCon
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["jobId", getU64Decoder()],
-    ["setBudget", getArrayDecoder(getAddressDecoder())],
-    ["fund", getArrayDecoder(getAddressDecoder())],
-    ["submit", getArrayDecoder(getAddressDecoder())],
-    ["complete", getArrayDecoder(getAddressDecoder())],
-    ["reject", getArrayDecoder(getAddressDecoder())],
+    ["setBudget", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
+    ["fund", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
+    ["submit", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
+    ["complete", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
+    ["reject", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
   ]);
 }
 

@@ -30,15 +30,32 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "accountnotinitialized",
   "0xbc4", // Anchor 3012 AccountNotInitialized as a custom program error
   "3012",
+  // BudgetMismatch is matched by NAME only. Its numeric code (6019 / 0x1783)
+  // collides with the hooks' IncompleteHookAccountSet (error index 19 in both
+  // programs), which is a deterministic account-set bug that must fail fast —
+  // matching the raw code would retry it to exhaustion. Anchor simulation logs
+  // always carry "Error Code: BudgetMismatch", so the name is sufficient.
   "budgetmismatch",
-  "0x1783", // Anchor 6019 BudgetMismatch as a custom program error
-  "6019",
   "blockhash not found",
   "no record of a prior credit", // fee-payer credit not yet visible to broadcast node
   "could not find account",
   "account not found",
   "minimum context slot",
   "-32016", // JSON-RPC code for minimum-context-slot-not-reached
+  "lookup table not found",
+  "lookup table index out of bounds",
+  "lookup table owner should be",
+  "alchemy_requestfeepayer failed",
+];
+
+// Deterministic failures that must fail FAST even when they arrive wrapped in
+// the sponsor-refusal catch-all above ("alchemy_requestfeepayer failed ...").
+// A wrong hook account set cannot be fixed by resending the same transaction;
+// retrying only burns ~21s per send and masks the SDK bug. The hooks'
+// IncompleteHookAccountSet is 6019, colliding with core BudgetMismatch, so
+// the numeric code alone can never make an error retryable.
+const NON_RETRYABLE_FEE_PAYER_PATTERNS = [
+  "incompletehookaccountset",
 ];
 
 /**
@@ -71,7 +88,15 @@ export function isRetryableFeePayerError(err: unknown): boolean {
   if (err instanceof SolanaTransactionError && err.phase === "expired") {
     return true;
   }
+  // Guarded errors stay guarded — the catch-all sponsor-refusal pattern must
+  // not bypass the retryGuard's fail-fast verdict.
+  if (isGuardedFeePayerError(err)) return false;
   const text = collectErrorText(err);
+  // Deterministic bugs fail fast — checked before the retryable list so the
+  // sponsor-refusal catch-all cannot sweep them into a retry loop.
+  if (NON_RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern))) {
+    return false;
+  }
   return RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
@@ -79,7 +104,11 @@ export function isRetryableFeePayerError(err: unknown): boolean {
 // failure is sponsor-node lag. Anchor always logs the error name, so match on
 // it rather than the numeric code (6015 / 0x177f), which collides with other
 // programs' error spaces (e.g. multi-hook-router AccountSliceOutOfBounds).
-const GUARDED_FEE_PAYER_PATTERNS = ["wrongstatus", "wrong job status"];
+const GUARDED_FEE_PAYER_PATTERNS = [
+  "wrongstatus",
+  "wrong job status",
+  "error code: unauthorized.",
+];
 
 export function isGuardedFeePayerError(err: unknown): boolean {
   const text = collectErrorText(err);

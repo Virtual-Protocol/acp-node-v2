@@ -189,7 +189,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
     );
   }
 
-  async batchConfigureHooks(
+  override async batchConfigureHooks(
     chainId: number,
     params: BatchConfigureHooksParams
   ): Promise<PreparedEvmTx> {

@@ -8,8 +8,9 @@ export * from "./clientFactory.js";
 export * from "./clients/baseAcpClient.js";
 export * from "./clients/evmAcpClient.js";
 export * from "./clients/solanaAcpClient.js";
-export * from "./clients/solanaMultiHookClient.js";
 export * as solanaMultiHook from "./core/solana/multiHook.js";
+export * as solanaRouterLayout from "./core/solana/routerLayout.js";
+export * from "./core/solana/encoding.js";
 
 // Core types
 export * from "./core/acpAbi.js";

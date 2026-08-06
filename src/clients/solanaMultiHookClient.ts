@@ -546,7 +546,10 @@ export class SolanaMultiHookClient {
     message = compressTransactionMessageUsingAddressLookupTables(message, lookupTables as never);
     const signed = await signTransactionMessageWithSigners(message);
     const sig = await this.rpc
-      .sendTransaction(getBase64EncodedWireTransaction(signed), { encoding: "base64" })
+      .sendTransaction(getBase64EncodedWireTransaction(signed), { 
+        encoding: "base64",
+        preflightCommitment: ACP_COMMITMENT
+      })
       .send();
     for (let i = 0; i < 40; i++) {
       const { value } = await this.rpc.getSignatureStatuses([sig as Signature]).send();

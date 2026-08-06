@@ -1,4 +1,6 @@
-// Retry guard for guarded fee-payer errors (WrongStatus, 6015 / 0x177f).
+// Retry guard for guarded fee-payer errors (WrongStatus 6015 / 0x177f, router
+// InvalidJob 6000 on BatchConfigureHooks, and subscription-hook JobNotExpired
+// 6010 on CleanupProposedTerms).
 //
 // Alchemy's sponsor node simulates against its own RPC, which can lag ours by
 // a few slots (see providers/solana/feePayerRetry.ts). A WrongStatus failure
@@ -6,12 +8,20 @@
 // that moved the job into the required state (safe to retry), or the job
 // genuinely is in the wrong state — e.g. already Completed by a duplicate
 // evaluation event (retrying is pointless and only delays the real error).
+// The router's InvalidJob on BatchConfigureHooks is ambiguous the same way:
+// the job account is an UncheckedAccount there, so a job the sponsor's node
+// has not seen yet fails the hook lib's owner check with InvalidJob instead
+// of AccountNotInitialized — indistinguishable from a genuinely wrong job id.
+// The subscription hook's CleanupProposedTerms is the third: it requires
+// job.state == Expired, so the JobNotExpired thrown moments after claim_refund
+// wrote that state is either sponsor lag or a genuinely live job.
 //
-// The guard disambiguates by asking OUR read RPC: for every state-gated ACP
-// instruction in the batch, fetch the job account and check whether its
-// current state satisfies that instruction's precondition. If our node says
-// the transaction can succeed, the sponsor was stale — retry. If our node
-// agrees the precondition is unmet, the error is genuine — fail fast.
+// The guard disambiguates by asking OUR read RPC: for every state-gated
+// instruction in the batch (ACP core lifecycle, router configure, or sub-hook
+// cleanup), fetch the job account and check whether its current state
+// satisfies that instruction's precondition. If our node says it can succeed,
+// the sponsor was stale — retry. If our node agrees the transaction cannot
+// succeed, the error is genuine — fail fast.
 
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import type { SolanaInstructionLike } from "../../providers/types.js";
@@ -23,6 +33,8 @@ import { FUND_DISCRIMINATOR } from "./generated/acp/instructions/fund.js";
 import { SUBMIT_DISCRIMINATOR } from "./generated/acp/instructions/submit.js";
 import { COMPLETE_DISCRIMINATOR } from "./generated/acp/instructions/complete.js";
 import { REJECT_DISCRIMINATOR } from "./generated/acp/instructions/reject.js";
+import { BATCH_CONFIGURE_HOOKS_DISCRIMINATOR } from "./generated/multi-hook-router/instructions/batchConfigureHooks.js";
+import { CLEANUP_PROPOSED_TERMS_DISCRIMINATOR } from "./generated/subscription-hook/instructions/cleanupProposedTerms.js";
 
 type StateGate = {
   discriminator: Uint8Array;
@@ -107,6 +119,34 @@ const STATE_GATES: StateGate[] = [
   },
 ];
 
+// Router-program instructions gated on the same ACP job account. The router
+// locks hook configuration once the job leaves Open (HooksLocked), and its
+// job account is an UncheckedAccount whose absence on a lagging node
+// surfaces as InvalidJob (base-acp-hook owner check), not
+// AccountNotInitialized. No expiry gate: the router checks only job.state.
+const ROUTER_STATE_GATES: StateGate[] = [
+  {
+    discriminator: BATCH_CONFIGURE_HOOKS_DISCRIMINATOR,
+    jobAccountIndex: 1,
+    allowedStates: [JobState.Open],
+  },
+];
+
+// Subscription-hook instructions gated on the ACP job account. Cleanup of an
+// abandoned job's ProposedTerms PDA requires the job to have reached Expired
+// (cleanup_proposed_terms.rs:47 — state only, no clock check), which happens
+// on claim_refund. Its job account is at index 2:
+// caller, hook_state, job_account, proposed_terms, provider.
+// No expiry gate: Expired IS the terminal state the instruction wants, so
+// job.expiredAt being in the past is the precondition, not a disqualifier.
+const SUB_HOOK_STATE_GATES: StateGate[] = [
+  {
+    discriminator: CLEANUP_PROPOSED_TERMS_DISCRIMINATOR,
+    jobAccountIndex: 2,
+    allowedStates: [JobState.Expired],
+  },
+];
+
 function startsWith(data: Uint8Array, prefix: Uint8Array): boolean {
   if (data.length < prefix.length) return false;
   for (let i = 0; i < prefix.length; i++) {
@@ -118,7 +158,8 @@ function startsWith(data: Uint8Array, prefix: Uint8Array): boolean {
 /**
  * Builds a `retryGuard` (see FeePayerRetryOptions) for a batch of
  * instructions. The guard returns true only when the batch contains at least
- * one state-gated instruction of `acpProgramAddress` AND every such
+ * one state-gated instruction of `acpProgramAddress` (or, when provided, of
+ * `routerProgramAddress` / `subscriptionHookProgramAddress`) AND every such
  * instruction's job account, as seen by `rpc`, is in a state its precondition
  * allows. When it refuses because a job-state precondition is unmet, the
  * refusal's details are available via `lastDiagnosis()`.
@@ -127,16 +168,31 @@ export function buildJobStateRetryGuard(
   rpc: Rpc<SolanaRpcApi>,
   acpProgramAddress: Address,
   instructions: SolanaInstructionLike[],
+  routerProgramAddress?: Address,
+  subscriptionHookProgramAddress?: Address,
 ): JobStateRetryGuard {
   let diagnosis: JobStateDiagnosis | null = null;
   const guard = async (): Promise<boolean> => {
     diagnosis = null;
     let sawGatedInstruction = false;
     for (const ix of instructions) {
-      if (ix.programAddress !== acpProgramAddress) continue;
-      const gate = STATE_GATES.find((g) =>
-        startsWith(ix.data, g.discriminator),
-      );
+      let gates: StateGate[];
+      if (ix.programAddress === acpProgramAddress) {
+        gates = STATE_GATES;
+      } else if (
+        routerProgramAddress !== undefined &&
+        ix.programAddress === routerProgramAddress
+      ) {
+        gates = ROUTER_STATE_GATES;
+      } else if (
+        subscriptionHookProgramAddress !== undefined &&
+        ix.programAddress === subscriptionHookProgramAddress
+      ) {
+        gates = SUB_HOOK_STATE_GATES;
+      } else {
+        continue;
+      }
+      const gate = gates.find((g) => startsWith(ix.data, g.discriminator));
       if (!gate) continue;
       const jobAddress = ix.accounts[gate.jobAccountIndex]?.address;
       if (!jobAddress) return false;

@@ -871,13 +871,25 @@ export class AcpAgent {
     params: BatchConfigureHooksAgentParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.batchConfigureHooks(chainId, {
-      routerAddress: params.routerAddress,
-      jobId: params.jobId,
-      selectors: params.selectors,
-      hooksPerSelector: params.hooksPerSelector,
-    });
-    return client.submitPrepared(chainId, [prepared]);
+    // On Solana, configure fired right after createJob can hit the sponsor's
+    // simulation node before it sees the new job account (router InvalidJob).
+    // The in-send guarded retry absorbs typical lag; this outer wrap
+    // re-prepares and resends with a delay if those attempts exhaust. The
+    // configure is idempotent on an Open job, and a sponsor-simulation
+    // rejection was never broadcast, so a resend cannot double-apply.
+    return withReprepare<PreparedTx, string | string[]>(
+      () =>
+        client.batchConfigureHooks(chainId, {
+          routerAddress: params.routerAddress,
+          jobId: params.jobId,
+          selectors: params.selectors,
+          hooksPerSelector: params.hooksPerSelector,
+        }),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -1019,27 +1031,42 @@ export class AcpAgent {
     params: FundJobParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = [];
+    const prepare = async () => {
+      const prepared = [];
 
-    if (client.getCapabilities().supportsAllowance) {
+      if (client.getCapabilities().supportsAllowance) {
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.amount.address,
+            spenderAddress: client.getContractAddress(chainId),
+            amount: params.amount.rawAmount,
+          }),
+        );
+      }
+
       prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.amount.address,
-          spenderAddress: client.getContractAddress(chainId),
-          amount: params.amount.rawAmount,
+        await client.fund(chainId, {
+          jobId: params.jobId,
+          expectedBudget: params.amount.rawAmount,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
         }),
       );
-    }
+      return prepared;
+    };
 
-    prepared.push(
-      await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-        ...(params.clientAddress && { clientAddress: params.clientAddress }),
-      }),
+    // Solana fund bakes the on-chain fund-request intent into opt_params and
+    // the account set at prepare time; a concurrent setBudget cancelling the
+    // proposal closes that intent PDA and the send fails AccountNotInitialized
+    // (3012) at the hook (E-H5 race). In-send blind retries absorb plain
+    // sponsor lag; this wrap rebuilds from fresh state when the race is real
+    // (see withReprepare).
+    return withReprepare(
+      prepare,
+      (prepared) => client.submitPrepared(chainId, prepared),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
     );
-
-    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -1069,8 +1096,17 @@ export class AcpAgent {
     params: CompleteParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.complete(chainId, params);
-    return client.submitPrepared(chainId, [prepared]);
+    // Solana complete reads the escrow intent (map + Intent account) at
+    // prepare time; a concurrent close changes the required account set and
+    // the send fails AccountNotInitialized (3012) — same race class as fund.
+    // A duplicate complete fails closed (core WrongStatus, not re-prepared).
+    return withReprepare<PreparedTx, string | string[]>(
+      () => client.complete(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
   }
 
   /**
@@ -1113,8 +1149,16 @@ export class AcpAgent {
     params: RejectParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.reject(chainId, params);
-    return client.submitPrepared(chainId, [prepared]);
+    // Same stale surface as complete: the escrow intent read at prepare and
+    // the funded/unfunded account-set decision both go stale under
+    // concurrent state changes — re-prepare on the 3012 race.
+    return withReprepare<PreparedTx, string | string[]>(
+      () => client.reject(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
   }
 
   /** @internal */
@@ -1143,50 +1187,62 @@ export class AcpAgent {
     params: FundWithTransferParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = [];
+    const prepare = async () => {
+      const prepared = [];
 
-    if (client.getCapabilities().supportsAllowance) {
-      prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.amount.address,
-          spenderAddress: client.getContractAddress(chainId),
-          amount: params.amount.rawAmount,
-        }),
-      );
-
-      const hookAddr =
-        params.hookAddress ??
-        getAddressForChain(
-          FUND_TRANSFER_HOOK_ADDRESSES,
-          chainId,
-          "FundTransferHook",
+      if (client.getCapabilities().supportsAllowance) {
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.amount.address,
+            spenderAddress: client.getContractAddress(chainId),
+            amount: params.amount.rawAmount,
+          }),
         );
+
+        const hookAddr =
+          params.hookAddress ??
+          getAddressForChain(
+            FUND_TRANSFER_HOOK_ADDRESSES,
+            chainId,
+            "FundTransferHook",
+          );
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.transferAmount.address,
+            spenderAddress: hookAddr,
+            amount: params.transferAmount.rawAmount,
+          }),
+        );
+      }
+
+      const optParams: Hex = encodeFundTransferFundOptParams(
+        chainId,
+        params.transferAmount.address,
+        params.transferAmount.rawAmount,
+        params.destination,
+      );
+
       prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.transferAmount.address,
-          spenderAddress: hookAddr,
-          amount: params.transferAmount.rawAmount,
+        await client.fund(chainId, {
+          jobId: params.jobId,
+          expectedBudget: params.amount.rawAmount,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
+          optParams,
         }),
       );
-    }
+      return prepared;
+    };
 
-    const optParams: Hex = encodeFundTransferFundOptParams(
-      chainId,
-      params.transferAmount.address,
-      params.transferAmount.rawAmount,
-      params.destination,
+    // On Solana the passed optParams are overwritten by the on-chain intent
+    // read inside client.fund, so the stale surface is identical to
+    // internalFund — re-prepare on the intent-close 3012 race (E-H5).
+    return withReprepare(
+      prepare,
+      (prepared) => client.submitPrepared(chainId, prepared),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
     );
-
-    prepared.push(
-      await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-        ...(params.clientAddress && { clientAddress: params.clientAddress }),
-        optParams,
-      }),
-    );
-
-    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -1227,12 +1283,20 @@ export class AcpAgent {
 
     if (client instanceof SolanaAcpClient) {
       // The Solana client reads the proposed terms on-chain and echoes them
-      // as the confirmation — no optParams or allowances needed.
-      const prepared = await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-      });
-      return client.submitPrepared(chainId, [prepared]);
+      // as the confirmation — no optParams or allowances needed. The echoed
+      // terms go stale if a second setBudget replaces the proposal between
+      // prepare and send — re-prepare on the 3012 race (see withReprepare).
+      return withReprepare(
+        () =>
+          client.fund(chainId, {
+            jobId: params.jobId,
+            expectedBudget: params.amount.rawAmount,
+          }),
+        (prepared) => client.submitPrepared(chainId, [prepared]),
+        (err) => client.isStalePrepareError(chainId, err),
+        3,
+        600,
+      );
     }
 
     const prepared = [];
@@ -1365,11 +1429,21 @@ export class AcpAgent {
       // The Solana client derives every fan-out slice from on-chain state
       // (proposed_terms + the fund-request intent) — echoing the intent IS
       // the client's consent — so no optParams or allowances are needed.
-      const prepared = await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-      });
-      return client.submitPrepared(chainId, [prepared]);
+      // Those reads go stale under a concurrent proposal change (E-H5) —
+      // re-prepare on the 3012 race. fundViaRouter's eager ATA-create
+      // broadcast at prepare time is idempotent, so re-running prepare in
+      // this loop is safe (see the comment at that send site).
+      return withReprepare(
+        () =>
+          client.fund(chainId, {
+            jobId: params.jobId,
+            expectedBudget: params.amount.rawAmount,
+          }),
+        (prepared) => client.submitPrepared(chainId, [prepared]),
+        (err) => client.isStalePrepareError(chainId, err),
+        3,
+        600,
+      );
     }
 
     const prepared = [];

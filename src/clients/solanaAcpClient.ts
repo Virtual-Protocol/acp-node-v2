@@ -75,6 +75,8 @@ import {
   ACP_COMMITMENT,
   ACP_SELECTORS,
   MULTI_HOOK_COMPLETE_ALT_ADDRESSES,
+  MULTI_HOOK_ROUTER_ADDRESSES,
+  SUBSCRIPTION_HOOK_ADDRESSES,
   EVM_NO_EVALUATOR_ADDRESS,
   SOLANA_NO_EVALUATOR_ADDRESS,
   INTENT_KIND_FUND_REQUEST,
@@ -136,6 +138,44 @@ const CREATE_JOB_SEEDS_RACE_MARKERS = [
   "error code: constraintseeds",
 ];
 
+// Marker strings (lowercased) identifying the create→configure sponsor-lag
+// race: the router's BatchConfigureHooks takes the job as an UncheckedAccount,
+// so a job the sponsor's simulation node has not seen yet fails the hook
+// lib's owner check with InvalidJob (6000) instead of AccountNotInitialized.
+// The sponsor prefix scopes it to a simulation failure (tx never broadcast,
+// retry is safe); the instruction marker scopes it to BatchConfigureHooks so
+// the fund hook's stale-intent InvalidJob keeps its own on-chain-log path.
+// Outer shield behind the guarded fee-payer retry (see feePayerRetry.ts):
+// this re-prepares and resends after the in-send retries exhaust.
+const CONFIGURE_HOOKS_LAG_MARKERS = [
+  "alchemy_requestfeepayer failed",
+  "instruction: batchconfigurehooks",
+  "error code: invalidjob.",
+];
+
+// Anchor framework AccountNotInitialized (3012). Fund/complete/reject bake
+// intent-derived accounts at prepare time (fund-request intent, escrow
+// intent); a concurrent setBudget/cancel closes that intent PDA, and the
+// send fails 3012 at the hook's AfterAction (the E-H5 race). The same code
+// also appears for plain sponsor lag (a PDA created moments ago not yet
+// visible), which the in-send blind retry recovers — this constant powers
+// the outer re-prepare for the race the blind retry cannot fix.
+const ANCHOR_ACCOUNT_NOT_INITIALIZED_CODE = 3012;
+
+// Marker groups (lowercased; every substring in a group must appear)
+// identifying an AccountNotInitialized failure on a transaction that was
+// provably never accepted by the cluster: rejected at the sponsor's
+// simulation, or rejected at the broadcast node's preflight
+// (formatPreflightFailure inlines the logs into a plain Error). Deliberately
+// NOT instruction-scoped: a never-broadcast transaction makes re-prepare +
+// resend always safe, and scoping would not reduce the only real cost —
+// bounded slower surfacing of a deterministic 3012 bug (3 outer attempts).
+// The name-with-period form pins the Anchor error name, not the number.
+const ACCOUNT_NOT_INITIALIZED_STALE_MARKER_GROUPS: string[][] = [
+  ["alchemy_requestfeepayer failed", "error code: accountnotinitialized."],
+  ["transaction preflight failed", "error code: accountnotinitialized."],
+];
+
 const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
 
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
@@ -190,10 +230,20 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     // Lets sponsored adapters distinguish a WrongStatus caused by sponsor-node
     // simulation lag (retry) from a genuine one, e.g. an already-completed job
     // (fail fast). Non-sponsored adapters ignore it.
+    // The router address gates BatchConfigureHooks the same way core
+    // lifecycle instructions are gated (empty/missing on chains without a
+    // router deployment — the guard then simply never matches router ixs).
+    // The subscription hook's CleanupProposedTerms is gated the same way on
+    // job.state (Expired), so a JobNotExpired from a lagging sponsor node is
+    // recoverable while one on a live job is not.
+    const routerAddress = MULTI_HOOK_ROUTER_ADDRESSES[chainId];
+    const subHookAddress = SUBSCRIPTION_HOOK_ADDRESSES[chainId];
     const { guard, lastDiagnosis } = buildJobStateRetryGuard(
       this.provider.getRpc(chainId),
       this.programAddress(chainId),
-      instructions
+      instructions,
+      routerAddress ? (routerAddress as Address) : undefined,
+      subHookAddress ? (subHookAddress as Address) : undefined
     );
     try {
       // extraOptions (e.g. a prepared reject's lookup table + sponsorship
@@ -208,18 +258,24 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   /**
-   * Detects two stale-prepare classes, both safe to rebuild-and-resend
+   * Detects the stale-prepare classes, all safe to rebuild-and-resend
    * because the failed transaction provably had no on-chain effect:
    *
    * 1. Hook InvalidJob (error 6000) on a confirmed on-chain failure — the
    *    error older hook deployments throw when a prepared intent PDA goes
    *    stale before inclusion. The failed transaction is atomic, so nothing
-   *    was applied.
+   *    was applied. As a sponsor-simulation rejection it is recognized only
+   *    under BatchConfigureHooks (the create→configure lag race).
    * 2. CreateJob ConstraintSeeds (Anchor 2006) — the job-counter race: the
    *    job PDA was derived from a counter snapshot that another createJob
    *    advanced before execution. Seen in two forms: a sponsor-simulation
    *    rejection (alchemy_requestFeePayer; tx never broadcast) or a
    *    confirmed on-chain failure (atomic revert).
+   * 3. AccountNotInitialized (Anchor 3012) — the intent-close race (E-H5):
+   *    fund/complete/reject bake intent-derived accounts at prepare, and a
+   *    concurrent setBudget/cancel closes the intent PDA. Seen in three
+   *    forms: sponsor-simulation rejection, broadcast preflight rejection
+   *    ("Transaction preflight failed"), or a confirmed on-chain failure.
    *
    * Codes collide across programs (6000: ACP core Unauthorized, router
    * OnlyACPContract; 2006: any Anchor constraint), so verdicts are confirmed
@@ -238,6 +294,20 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (CREATE_JOB_SEEDS_RACE_MARKERS.every((m) => text.includes(m))) {
       return true;
     }
+    if (CONFIGURE_HOOKS_LAG_MARKERS.every((m) => text.includes(m))) {
+      return true;
+    }
+    // AccountNotInitialized on a never-accepted transaction (sponsor
+    // simulation or broadcast preflight): the prepared account set references
+    // an intent PDA a concurrent transaction closed (E-H5) — rebuild from
+    // fresh state. Nothing was broadcast, so a resend cannot double-apply.
+    if (
+      ACCOUNT_NOT_INITIALIZED_STALE_MARKER_GROUPS.some((group) =>
+        group.every((m) => text.includes(m))
+      )
+    ) {
+      return true;
+    }
 
     if (!(err instanceof SolanaTransactionError) || err.phase !== "failed") {
       return false;
@@ -245,7 +315,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const code = extractInstructionCustomCode(err.txErr);
     if (
       code !== HOOK_INVALID_JOB_CODE &&
-      code !== ACP_CONSTRAINT_SEEDS_CODE
+      code !== ACP_CONSTRAINT_SEEDS_CODE &&
+      code !== ANCHOR_ACCOUNT_NOT_INITIALIZED_CODE
     ) {
       return false;
     }
@@ -261,6 +332,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       if (!logs) return true;
       if (code === HOOK_INVALID_JOB_CODE) {
         return logs.some((log) => log.includes("Error Code: InvalidJob"));
+      }
+      // AccountNotInitialized: an on-chain failure is an atomic revert, so a
+      // re-prepare from fresh state is safe. The name check disambiguates
+      // other programs' numeric 3012 collisions, mirroring the 6000 handling.
+      if (code === ANCHOR_ACCOUNT_NOT_INITIALIZED_CODE) {
+        return logs.some((log) =>
+          log.includes("Error Code: AccountNotInitialized")
+        );
       }
       // ConstraintSeeds: stale only when it is the createJob counter race —
       // require the CreateJob instruction marker alongside the error name.
@@ -1689,10 +1768,9 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     // silently leaking evaluator SOL on every complete.
     if (!MULTI_HOOK_COMPLETE_ALT_ADDRESSES[chainId]) {
       throw new Error(
-        `completeSubscriptionJob: no persistent complete lookup table is ` +
-          `configured for chain ${chainId}. Create one with the ACP ` +
-          `upgrade-authority keypair (one-time ~0.0084 SOL rent) and add ` +
-          `the address to MULTI_HOOK_COMPLETE_ALT_ADDRESSES in src/core/constants.ts.`
+        `completeSubscriptionJob: no complete lookup table is configured ` +
+          `for chain ${chainId}, so router job completion is not available ` +
+          `on this cluster.`
       );
     }
 

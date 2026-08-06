@@ -45,12 +45,11 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "lookup table not found",
   "lookup table index out of bounds",
   "lookup table owner should be",
-  "alchemy_requestfeepayer failed",
 ];
 
-// Deterministic failures that must fail FAST even when they arrive wrapped in
-// the sponsor-refusal catch-all above ("alchemy_requestfeepayer failed ...").
-// A wrong hook account set cannot be fixed by resending the same transaction;
+// Deterministic failures that must fail FAST even when they appear in a
+// multi-instruction simulation log alongside retryable-looking lines. A wrong
+// hook account set cannot be fixed by resending the same transaction;
 // retrying only burns ~21s per send and masks the SDK bug. The hooks'
 // IncompleteHookAccountSet is 6019, colliding with core BudgetMismatch, so
 // the numeric code alone can never make an error retryable.
@@ -88,12 +87,12 @@ export function isRetryableFeePayerError(err: unknown): boolean {
   if (err instanceof SolanaTransactionError && err.phase === "expired") {
     return true;
   }
-  // Guarded errors stay guarded — the catch-all sponsor-refusal pattern must
-  // not bypass the retryGuard's fail-fast verdict.
+  // Guarded errors stay guarded — an incidental retryable substring in the
+  // same simulation log must not bypass the retryGuard's fail-fast verdict.
   if (isGuardedFeePayerError(err)) return false;
   const text = collectErrorText(err);
-  // Deterministic bugs fail fast — checked before the retryable list so the
-  // sponsor-refusal catch-all cannot sweep them into a retry loop.
+  // Deterministic bugs fail fast — checked before the retryable list so an
+  // incidental match elsewhere in the log cannot sweep them into a retry loop.
   if (NON_RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern))) {
     return false;
   }
@@ -110,9 +109,32 @@ const GUARDED_FEE_PAYER_PATTERNS = [
   "error code: unauthorized.",
 ];
 
+// Guarded compound patterns: every substring in a group must appear. Used
+// where a single marker is too broad. InvalidJob (6000) alone must stay
+// unguarded — the fund hook throws it for stale intent PDAs, which need a
+// re-prepare (withReprepare), not a same-bytes resend. But on the router's
+// BatchConfigureHooks the job is an UncheckedAccount, so a job the sponsor's
+// node has not seen yet fails the owner check with InvalidJob; the retryGuard
+// disambiguates lag (job Open on our RPC → retry) from a genuinely wrong job.
+// CleanupProposedTerms gates on job.state == Expired (subscription-hook
+// cleanup_proposed_terms.rs:47) — a pure state read with no clock check. A
+// JobNotExpired right after claim_refund flipped Open -> Expired is therefore
+// the sponsor's node not having seen that write yet, indistinguishable from
+// the genuine error on a still-live job. Guarded, not blindly retryable: the
+// retryGuard confirms on our own RPC that the job really is Expired.
+const GUARDED_FEE_PAYER_PATTERN_GROUPS: string[][] = [
+  ["instruction: batchconfigurehooks", "error code: invalidjob."],
+  ["instruction: cleanupproposedterms", "error code: jobnotexpired."],
+];
+
 export function isGuardedFeePayerError(err: unknown): boolean {
   const text = collectErrorText(err);
-  return GUARDED_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern));
+  return (
+    GUARDED_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern)) ||
+    GUARDED_FEE_PAYER_PATTERN_GROUPS.some((group) =>
+      group.every((pattern) => text.includes(pattern)),
+    )
+  );
 }
 
 export interface FeePayerRetryOptions {

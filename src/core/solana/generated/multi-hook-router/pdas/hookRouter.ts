@@ -22,9 +22,7 @@ export async function findHookRouterPda(
   seeds: HookRouterSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
-  const {
-    programAddress = "3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs" as Address<"3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs">,
-  } = config;
+  const { programAddress = "" as Address<""> } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [

@@ -35,8 +35,7 @@ import {
   type ParsedRemoveWriterInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS =
-  "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1" as Address<"5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1">;
+export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionStateAccount {
   StateConfig,
@@ -194,9 +193,7 @@ export function identifySubscriptionStateInstruction(
   );
 }
 
-export type ParsedSubscriptionStateInstruction<
-  TProgram extends string = "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-> =
+export type ParsedSubscriptionStateInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionStateInstruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)

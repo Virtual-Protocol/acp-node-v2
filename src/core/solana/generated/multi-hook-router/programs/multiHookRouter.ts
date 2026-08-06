@@ -37,8 +37,7 @@ import {
   type ParsedSetMaxHooksPerJobInstruction,
 } from "../instructions/index.js";
 
-export const MULTI_HOOK_ROUTER_PROGRAM_ADDRESS =
-  "3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs" as Address<"3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs">;
+export const MULTI_HOOK_ROUTER_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum MultiHookRouterAccount {
   HookMetadata,
@@ -208,9 +207,7 @@ export function identifyMultiHookRouterInstruction(
   );
 }
 
-export type ParsedMultiHookRouterInstruction<
-  TProgram extends string = "3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs",
-> =
+export type ParsedMultiHookRouterInstruction<TProgram extends string = ""> =
   | ({
       instructionType: MultiHookRouterInstruction.AddHook;
     } & ParsedAddHookInstruction<TProgram>)

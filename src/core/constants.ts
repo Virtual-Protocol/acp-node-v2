@@ -16,8 +16,27 @@ export const SOLANA_CHAIN_ID_CLUSTERS: Record<number, SolanaCluster> = {
   [SOLANA_MAINNET_CHAIN_ID]: "mainnet-beta",
 };
 
+export class UnknownChainIdError extends Error {
+  constructor(readonly chainId: number) {
+    super(
+      `Unknown chain id ${chainId}. Register it in ACP_CONTRACT_ADDRESSES ` +
+        `or SOLANA_CHAIN_ID_CLUSTERS before use.`,
+    );
+    this.name = "UnknownChainIdError";
+  }
+}
+
+/**
+ * Resolve a chain id to its family. Fails closed.
+ *
+ * This used to return "evm" for anything that was not Solana, so an
+ * unregistered id silently reached the EVM client and failed later with an
+ * unrelated-looking error rather than at the point of the mistake.
+ */
 export function getChainFamily(chainId: number): ChainFamily {
-  return chainId in SOLANA_CHAIN_ID_CLUSTERS ? "solana" : "evm";
+  if (chainId in SOLANA_CHAIN_ID_CLUSTERS) return "solana";
+  if (chainId in ACP_CONTRACT_ADDRESSES) return "evm";
+  throw new UnknownChainIdError(chainId);
 }
 
 // ---------------------------------------------------------------------------
@@ -74,8 +93,8 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
-  [SOLANA_DEVNET_CHAIN_ID]: "",
-  [SOLANA_MAINNET_CHAIN_ID]: "GsuY2v1a7eeAHdx45c5VpBYFhrMuyjCN1cgxGkdBDD5J",
+  [SOLANA_DEVNET_CHAIN_ID]: "7ggjbmsS28pmPqr2hrUwqeMy6NzFPx7JSjV88KzqhecG",
+  [SOLANA_MAINNET_CHAIN_ID]: "Bq83ckifu1yS5WrUiG46eFPmtfFMzpaSUTJQHot6f14",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
@@ -87,7 +106,7 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [SOLANA_DEVNET_CHAIN_ID]: "3eeYkKexazv4CsEQybbaBrCFXWc5yL86z1GvGAFBcmcs",
-  [SOLANA_MAINNET_CHAIN_ID]: "",
+  [SOLANA_MAINNET_CHAIN_ID]: "6gP86dzKK28nuAxNueEUt2vdr5FADAjrFUZr2VBgbzxZ",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
 };
@@ -96,7 +115,7 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [SOLANA_DEVNET_CHAIN_ID]: "2M5jFkDnM3RxZTciJ3aPY785Emzk4g4E6yAfP9U9P5zz",
-  [SOLANA_MAINNET_CHAIN_ID]: "",
+  [SOLANA_MAINNET_CHAIN_ID]: "wiBJusTQ5ZzyvVT7nUwQsvyHTgb4wM617GgHXYZ2MXg",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
 };
@@ -105,14 +124,14 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [SOLANA_DEVNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-  [SOLANA_MAINNET_CHAIN_ID]: "",
+  [SOLANA_MAINNET_CHAIN_ID]: "5E9txkfq1RafMXXMWWij8kcJxuDcR6EaKUoxTJ3do9zc",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
 };
 
 export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
   [SOLANA_DEVNET_CHAIN_ID]: "HtY8KvvMF5fJ6G1AYHgdga1JSveQyymUKgYwgpHh79Zo",
-  [SOLANA_MAINNET_CHAIN_ID]: "",
+  [SOLANA_MAINNET_CHAIN_ID]: "HvtMFzNA3xwvuXT55rPxJL4qYhSP6s1hhFnfijgV4b9D",
 };
 
 export const ACP_SELECTORS = {

@@ -29,8 +29,7 @@ import {
   type ParsedPreCreateProposedTermsInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS =
-  "2M5jFkDnM3RxZTciJ3aPY785Emzk4g4E6yAfP9U9P5zz" as Address<"2M5jFkDnM3RxZTciJ3aPY785Emzk4g4E6yAfP9U9P5zz">;
+export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionHookAccount {
   HookMetadata,
@@ -140,9 +139,7 @@ export function identifySubscriptionHookInstruction(
   );
 }
 
-export type ParsedSubscriptionHookInstruction<
-  TProgram extends string = "2M5jFkDnM3RxZTciJ3aPY785Emzk4g4E6yAfP9U9P5zz",
-> =
+export type ParsedSubscriptionHookInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionHookInstruction.AfterAction;
     } & ParsedAfterActionInstruction<TProgram>)

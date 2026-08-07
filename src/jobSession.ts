@@ -507,6 +507,11 @@ export class JobSession {
     const effectiveAmount = amount ?? this._job.budget;
     const jobId = BigInt(this.jobId);
 
+    // Evaluate the exact provider wallet, chain and amount before any funding
+    // branch prepares or sends an on-chain transaction. A denied or failed
+    // policy is intentionally fail-closed.
+    await this.agent.enforceFundPolicy(this._job, effectiveAmount);
+
     const hook = this._job.hookAddress.toLowerCase();
     const router = (
       MULTI_HOOK_ROUTER_ADDRESSES[this.chainId] ?? ""

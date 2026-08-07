@@ -5,6 +5,7 @@ import {
   enforceFundPolicy,
   FundPolicyDeniedError,
 } from "../dist/core/fundPolicy.js";
+import { JobSession } from "../dist/jobSession.js";
 
 const context = {
   action: "fund",
@@ -54,4 +55,52 @@ test("propagates policy failures and preserves opt-in compatibility", async () =
     error => error === failure,
   );
   await enforceFundPolicy(undefined, context);
+});
+
+test("fund uses the exact job snapshot approved by a slow policy", async () => {
+  let releasePolicy;
+  const policyPending = new Promise(resolve => {
+    releasePolicy = resolve;
+  });
+  let policyStarted;
+  const policyStartedPromise = new Promise(resolve => {
+    policyStarted = resolve;
+  });
+  let approvedJob;
+  let funded;
+  const agent = {
+    enforceFundPolicy: async job => {
+      approvedJob = job;
+      policyStarted();
+      await policyPending;
+    },
+    internalFund: async (_chainId, input) => {
+      funded = input;
+    },
+  };
+  const makeJob = clientAddress => ({
+    budget: { source: clientAddress },
+    clientAddress,
+    hookAddress: "0x0000000000000000000000000000000000000000",
+    hookConfigs: null,
+    getFundRequestIntent: () => null,
+  });
+  const approvedSnapshot = makeJob(
+    "0x1111111111111111111111111111111111111111",
+  );
+  const refreshedSnapshot = makeJob(
+    "0x2222222222222222222222222222222222222222",
+  );
+  const session = new JobSession(agent, [], "17", 8453, ["client"]);
+  session._job = approvedSnapshot;
+
+  const funding = session.fund();
+  await policyStartedPromise;
+  session._job = refreshedSnapshot;
+  releasePolicy();
+  await funding;
+
+  assert.equal(approvedJob, approvedSnapshot);
+  assert.equal(funded.clientAddress, approvedSnapshot.clientAddress);
+  assert.equal(funded.amount, approvedSnapshot.budget);
 });

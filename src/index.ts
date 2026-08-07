@@ -17,6 +17,7 @@ export * from "./core/chains.js";
 export * from "./core/constants.js";
 export * from "./core/assetToken.js";
 export * from "./core/approvalGate.js";
+export * from "./core/fundPolicy.js";
 
 // Provider interfaces & adapters
 export * from "./providers/types.js";

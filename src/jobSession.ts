@@ -758,3 +758,10 @@ export class JobSession {
         const isOwnMessage = this.agentAddresses.has(e.from.toLowerCase());
         result.push({
           role: isOwnMessage ? "assistant" : "user",
+          content: isOwnMessage ? e.content : `[${e.from}]: ${e.content}`,
+        });
+      }
+    }
+    return result;
+  }
+}

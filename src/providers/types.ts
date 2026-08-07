@@ -1,6 +1,7 @@
 import type { Address, Call, Log, TransactionReceipt } from "viem";
 import {
   AccountRole,
+  type Commitment,
   type Rpc,
   type SolanaRpcApi,
   type KeyPairSigner,
@@ -70,6 +71,7 @@ export type SendInstructionsOptions = {
    * ignore it.
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+  preflightCommitment?: Commitment;
 };
 
 // Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),

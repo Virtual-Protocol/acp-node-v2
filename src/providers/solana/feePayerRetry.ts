@@ -10,10 +10,6 @@
 //   - fund -> submit:         vault PDA not yet visible  -> AccountNotInitialized (3012 / 0xbc4)
 //   - broadcast:              sponsor fee-payer credit not yet visible
 //                             -> "found no record of a prior credit"
-//   - broadcast:              node behind the tx's minContextSlot (we pass
-//                             Alchemy's simulationSlot / our last confirmed
-//                             slot) -> -32016 "Minimum context slot has not
-//                             been reached"
 //   - either path:            our blockhash not yet known -> Blockhash not found
 // All are safe to retry within blockhash validity (~60s) with a fresh
 // blockhash per attempt.
@@ -41,7 +37,7 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "no record of a prior credit", // fee-payer credit not yet visible to broadcast node
   "could not find account",
   "account not found",
-  "minimum context slot", // broadcast node behind the tx's minContextSlot
+  "minimum context slot",
   "-32016", // JSON-RPC code for minimum-context-slot-not-reached
 ];
 
@@ -83,10 +79,7 @@ export function isRetryableFeePayerError(err: unknown): boolean {
 // failure is sponsor-node lag. Anchor always logs the error name, so match on
 // it rather than the numeric code (6015 / 0x177f), which collides with other
 // programs' error spaces (e.g. multi-hook-router AccountSliceOutOfBounds).
-const GUARDED_FEE_PAYER_PATTERNS = [
-  "wrongstatus",
-  "wrong job status",
-];
+const GUARDED_FEE_PAYER_PATTERNS = ["wrongstatus", "wrong job status"];
 
 export function isGuardedFeePayerError(err: unknown): boolean {
   const text = collectErrorText(err);
@@ -197,7 +190,10 @@ export async function withFeePayerRetry<T>(
       const message = err instanceof Error ? err.message : String(err);
       options.onRetry?.(attempt, maxAttempts, message, err);
       await new Promise((resolve) =>
-        setTimeout(resolve, computeRetryDelayMs(attempt, baseDelayMs, maxDelayMs)),
+        setTimeout(
+          resolve,
+          computeRetryDelayMs(attempt, baseDelayMs, maxDelayMs),
+        ),
       );
     }
   }

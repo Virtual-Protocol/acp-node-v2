@@ -16,10 +16,9 @@ import {
   type Address,
   type Rpc,
   type Signature,
-  type Slot,
   type SolanaRpcApi,
+  type Commitment,
 } from "@solana/kit";
-import type { SolanaCluster } from "../../core/chains.js";
 import type {
   SendInstructionsOptions,
   SolanaInstructionLike,
@@ -38,6 +37,7 @@ import {
   SOLANA_CHAIN_ID_CLUSTERS,
   ACP_CONTRACT_ADDRESSES,
   FUND_TRANSFER_HOOK_ADDRESSES,
+  ACP_COMMITMENT,
 } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 import {
@@ -101,13 +101,21 @@ export interface PrivySolanaConfig {
   privyAppId?: string;
   sponsored?: boolean;
   /**
+   * Commitment every send's preflight simulation runs at, overridable per call
+   * via SendInstructionsOptions. Defaults to ACP_COMMITMENT ("confirmed") to
+   * match the level ACP reads run at, so preflight simulates against the same
+   * state the transaction was built on. The RPC's own default ("finalized")
+   * trails by ~32 slots and fails steps that depend on the previous one.
+   */
+  preflightCommitment?: Commitment;
+  /**
    * Called when a sponsored send is retried due to sponsor-node lag.
    * When provided, replaces the default one-line console notice. `slot` is
    * the read RPC's slot at blockhash fetch, `requiredSlot` is the slot in
    * which the required account state was created (the slot the sponsor node
-   * must reach), `nodeSlot` is the lagging node's own slot when the error
-   * exposes it (only -32016 minimum-context-slot errors do; Alchemy
-   * simulation errors leave it null), and `rawError` carries the underlying
+   * must reach), `nodeSlot` is the lagging node's own slot on the rare error
+   * that exposes it (a -32016 minimum-context-slot error; sponsor simulation
+   * failures leave it null), and `rawError` carries the underlying
    * simulation failure for debugging.
    */
   onSponsoredRetry?: (info: {
@@ -120,16 +128,12 @@ export interface PrivySolanaConfig {
   }) => void;
 }
 
-function maxSlot(a: bigint | null, b: bigint | null): bigint | null {
-  if (a == null) return b;
-  if (b == null) return a;
-  return a > b ? a : b;
-}
-
-// Extracts the responding node's slot from an error chain. Only the
-// broadcast-side -32016 "minimum context slot not reached" error carries it
-// (as `contextSlot` on the SolanaError context); Alchemy's sponsorship
-// simulation errors report no slot.
+// Extracts the responding node's slot from an error chain, when the error
+// carries one (as `contextSlot` on the SolanaError context). Only a -32016
+// "minimum context slot not reached" error does; we no longer send a
+// minContextSlot ourselves, so this is populated only when the RPC provider
+// applies its own min-context constraint. Alchemy's sponsorship simulation
+// errors report no slot.
 export function extractNodeContextSlot(err: unknown): bigint | null {
   let current: unknown = err;
   for (let depth = 0; current != null && depth < 6; depth++) {
@@ -145,29 +149,25 @@ export function extractNodeContextSlot(err: unknown): bigint | null {
 
 /**
  * Resolves the two slots reported when a sponsored attempt is retried:
- *   - `nodeSlot`: the responding node's slot, present only on a -32016
- *     broadcast error (see extractNodeContextSlot).
- *   - `requiredSlot`: the slot the failing step needed to reach. For a -32016
- *     broadcast error this is the exact `minContextSlot` we sent
- *     (`max(simulationSlot, lastConfirmedSlot)`), captured as
- *     `lastMinContextSlot`, so `requiredSlot - nodeSlot` is guaranteed
- *     positive. When the attempt failed before broadcast (sponsor-simulation
- *     lag throws a plain error with no slot), it falls back to the last
- *     confirmed slot, then to our read RPC's blockhash slot — the required
- *     state is visible by that slot, so it is a valid sync target.
+ *   - `nodeSlot`: the responding node's slot, present only when the error
+ *     carries one (see extractNodeContextSlot) — usually null.
+ *   - `requiredSlot`: the slot the failing step needed to reach. Both the
+ *     sponsor's simulation and the broadcast node fail with a plain error
+ *     carrying no slot, so this is the last confirmed slot — the slot in
+ *     which the state the transaction depends on was created — falling back
+ *     to our read RPC's blockhash slot, by which that state is likewise
+ *     visible, so it remains a valid sync target.
  */
 export function resolveSponsoredRetrySlots(
   error: unknown,
   slots: {
-    lastMinContextSlot: bigint | null;
     lastConfirmedSlot: bigint | null;
     lastSeenSlot: bigint | null;
   },
 ): { requiredSlot: bigint | null; nodeSlot: bigint | null } {
   return {
     nodeSlot: extractNodeContextSlot(error),
-    requiredSlot:
-      slots.lastMinContextSlot ?? slots.lastConfirmedSlot ?? slots.lastSeenSlot,
+    requiredSlot: slots.lastConfirmedSlot ?? slots.lastSeenSlot,
   };
 }
 
@@ -452,6 +452,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private _getAuthToken: (() => Promise<string>) | null = null;
   private readonly _sponsored: boolean;
   private readonly _onSponsoredRetry: PrivySolanaConfig["onSponsoredRetry"];
+  private readonly _preflightCommitment: Commitment;
   // Slot of the most recently confirmed transaction per chain — the slot the
   // sponsor node must reach to see account state created by the previous
   // step (e.g. createJob before setBudget). Per-chain because devnet and
@@ -469,6 +470,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     privyAppId: string;
     rpcProxyUrls: Map<number, string>;
     sponsored: boolean;
+    preflightCommitment: Commitment;
     onSponsoredRetry?: PrivySolanaConfig["onSponsoredRetry"];
   }) {
     super("privy-solana");
@@ -482,6 +484,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     this._privyAppId = params.privyAppId;
     this._rpcProxyUrls = params.rpcProxyUrls;
     this._sponsored = params.sponsored;
+    this._preflightCommitment = params.preflightCommitment;
     this._onSponsoredRetry = params.onSponsoredRetry;
   }
 
@@ -500,9 +503,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       params.chainIds ??
       (params.chainId != null ? [params.chainId] : [SOLANA_DEVNET_CHAIN_ID]);
     if (chainIds.length === 0) {
-      throw new Error(
-        "PrivySolanaProviderAdapter: chainIds must not be empty",
-      );
+      throw new Error("PrivySolanaProviderAdapter: chainIds must not be empty");
     }
     for (const chainId of chainIds) {
       if (!SOLANA_CHAIN_ID_CLUSTERS[chainId]) {
@@ -595,6 +596,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       privyAppId,
       rpcProxyUrls,
       sponsored: params.sponsored ?? true,
+      preflightCommitment: params.preflightCommitment ?? ACP_COMMITMENT,
       ...(params.onSponsoredRetry
         ? { onSponsoredRetry: params.onSponsoredRetry }
         : {}),
@@ -632,10 +634,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private async requestFeePayer(
     chainId: number,
     serializedTransaction: string,
-  ): Promise<{
-    serializedTransaction: string;
-    simulationSlot: bigint | null;
-  }> {
+  ): Promise<string> {
     const rpcProxyUrl = this._rpcProxyUrls.get(chainId);
     if (!rpcProxyUrl || !this._getAuthToken) {
       throw new Error("Gas sponsorship requires a proxied RPC connection");
@@ -667,14 +666,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`,
       );
     }
-    // simulationSlot is returned when prefundRent is true — the slot Alchemy's
-    // rent-prefunding simulation ran at. Alchemy's docs: "pass it as
-    // minContextSlot when submitting the transaction."
-    const rawSlot = json.result.simulationSlot;
-    return {
-      serializedTransaction: json.result.serializedTransaction,
-      simulationSlot: rawSlot != null ? BigInt(rawSlot) : null,
-    };
+    return json.result.serializedTransaction as string;
   }
 
   // -------------------------------------------------------------------------
@@ -738,7 +730,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       .getLatestBlockhash()
       .send();
 
-    return this.sendSelfPayTransaction(chainId, instructions, latestBlockhash);
+    return this.sendSelfPayTransaction(
+      chainId,
+      instructions,
+      latestBlockhash,
+      options,
+    );
   }
 
   /**
@@ -748,6 +745,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     chainId: number,
     instructions: SolanaInstructionLike[],
     latestBlockhash: any,
+    options?: SendInstructionsOptions,
   ): Promise<string> {
     const message = pipe(
       createTransactionMessage({ version: 0 }),
@@ -764,6 +762,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       chainId,
       encodedTx,
       latestBlockhash.lastValidBlockHeight,
+      options,
     );
   }
 
@@ -781,12 +780,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * fresh blockhash is fetched on every attempt so retries never reuse a
    * stale/expired one.
    *
-   * Sponsor-side simulation lag (requestFeePayer) cannot be avoided —
-   * alchemy_requestFeePayer accepts no minContextSlot and its simulation is
-   * the sponsorship policy gate. Broadcast-side lag IS avoided: we pass
-   * max(Alchemy's simulationSlot, our last confirmed slot) as minContextSlot
-   * to sendTransaction, so preflight never runs against state older than what
-   * the sponsor simulated; a lagging node returns a retryable -32016 instead.
+   * Neither side's lag is pinned to a slot: alchemy_requestFeePayer accepts no
+   * minContextSlot (its simulation is the sponsorship policy gate), and we
+   * send none on broadcast either — preflight runs at "confirmed" instead (see
+   * broadcastAndConfirm). A lagging node therefore surfaces as an ordinary
+   * retryable simulation failure, which this retry loop rides out with a fresh
+   * blockhash per attempt.
    */
   private async sendSponsoredTransaction(
     chainId: number,
@@ -797,15 +796,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     // fetched — the state the sponsor's simulation node has not caught up
     // to yet when a retryable lag error occurs.
     let lastSeenSlot: bigint | null = null;
-    // The minContextSlot passed to the current attempt's broadcast — i.e. the
-    // exact slot a -32016 "minimum context slot not reached" error means the
-    // broadcast node failed to reach. Reset each attempt; only set once the
-    // attempt actually reaches the broadcast step.
-    let lastMinContextSlot: bigint | null = null;
 
     return withFeePayerRetry(
       async () => {
-        lastMinContextSlot = null;
         // 1. Fresh blockhash + build tx with user as placeholder fee payer
         //    (Alchemy replaces it + prefunds CPI rent).
         const { context, value: latestBlockhash } = await this.getRpc(chainId)
@@ -826,36 +819,27 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         const unsignedBase64 = Buffer.from(wireBytes).toString("base64");
 
         // 2. Request gas sponsorship.
-        const { serializedTransaction: sponsoredBase64, simulationSlot } =
-          await this.requestFeePayer(chainId, unsignedBase64);
+        const sponsoredBase64 = await this.requestFeePayer(
+          chainId,
+          unsignedBase64,
+        );
 
         // 3. Sign with Privy (user's signature).
         const signedBase64 =
           await this.signTransactionViaPrivy(sponsoredBase64);
 
-        // 4. Broadcast + confirm. minContextSlot forces the broadcast node's
-        //    preflight to run against state at least as fresh as both
-        //    Alchemy's sponsorship simulation (simulationSlot) and our
-        //    previous confirmed step (_lastConfirmedSlot) — a lagging node
-        //    returns an explicit, retryable -32016 instead of a misleading
-        //    simulation failure.
-        const minContextSlot = maxSlot(
-          simulationSlot,
-          this._lastConfirmedSlot.get(chainId) ?? null,
-        );
-        lastMinContextSlot = minContextSlot;
+        // 4. Broadcast + confirm.
         return this.broadcastAndConfirm(
           chainId,
           signedBase64,
           latestBlockhash.lastValidBlockHeight,
-          minContextSlot,
+          options,
         );
       },
       {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
-            lastMinContextSlot,
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
             lastSeenSlot,
           });
@@ -931,7 +915,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     }
 
     let lastSeenSlot: bigint | null = null;
-    let lastMinContextSlot: bigint | null = null;
     // Confirmation bound for the tx's FIXED blockhash — resolved once and
     // held across retries. Re-reading the tip's lastValidBlockHeight on every
     // attempt would slide the expiry window forward each retry and keep
@@ -940,7 +923,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     return withFeePayerRetry(
       async () => {
-        lastMinContextSlot = null;
         // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
         // error) + the first-attempt fallback confirmation bound. The tx
         // carries its OWN blockhash — we do not rebuild it here.
@@ -951,26 +933,22 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         confirmUntilHeight ??= latest.lastValidBlockHeight;
 
         // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
-        const { serializedTransaction: sponsoredBase64, simulationSlot } =
-          await this.requestFeePayer(chainId, serializedTransaction);
+        const sponsoredBase64 = await this.requestFeePayer(
+          chainId,
+          serializedTransaction,
+        );
 
         // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
         //    the user's sig (two required signers, distinct slots).
         const signedBase64 =
           await this.signTransactionViaPrivy(sponsoredBase64);
 
-        // 3. Broadcast + confirm. minContextSlot keeps the broadcast node's
-        //    preflight at least as fresh as Alchemy's sponsorship simulation.
-        const minContextSlot = maxSlot(
-          simulationSlot,
-          this._lastConfirmedSlot.get(chainId) ?? null,
-        );
-        lastMinContextSlot = minContextSlot;
+        // 3. Broadcast + confirm.
         return this.broadcastAndConfirm(
           chainId,
           signedBase64,
           confirmUntilHeight,
-          minContextSlot,
+          options,
         );
       },
       {
@@ -979,7 +957,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
-            lastMinContextSlot,
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
             lastSeenSlot,
           });
@@ -1015,16 +992,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     chainId: number,
     encodedTx: string,
     lastValidBlockHeight: bigint,
-    minContextSlot?: bigint | null,
+    options?: {
+      preflightCommitment?: Commitment;
+      skipPreflight?: boolean;
+    },
   ): Promise<string> {
     let signature: Signature;
     try {
       signature = await this.getRpc(chainId)
         .sendTransaction(encodedTx as any, {
           encoding: "base64",
-          ...(minContextSlot != null
-            ? { minContextSlot: minContextSlot as Slot }
-            : {}),
+          preflightCommitment:
+            options?.preflightCommitment ?? this._preflightCommitment,
+          skipPreflight: options?.skipPreflight ?? false,
         })
         .send();
     } catch (err: unknown) {

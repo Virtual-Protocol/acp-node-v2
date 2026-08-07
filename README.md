@@ -184,6 +184,19 @@ The main entry point. Creates an agent that listens for job events and manages s
 ```typescript
 const agent = await AcpAgent.create({
   provider: providerAdapter, // required -- EVM or Solana provider
+  // Optional: inspect the exact job and counterparty before any fund()
+  // transaction is prepared. Throws and allow:false both fail closed.
+  fundPolicy: async ({ providerAddress, chainId, amount, job }) => {
+    const decision = await myCounterpartyPolicy({
+      providerAddress,
+      chainId,
+      amount,
+      capability: job.description,
+    });
+    return decision.allowed
+      ? { allow: true, evidence: decision.evidence }
+      : { allow: false, reason: decision.reason };
+  },
 });
 
 agent.on("entry", async (session, entry) => {
@@ -211,6 +224,11 @@ await agent.stop();
 | `agent.getAgentByWalletAddress(walletAddress)`                                                 | Look up an agent by wallet address                |
 | `agent.getAddress()`                                                                           | Get the agent's wallet address                    |
 | `agent.getSession(chainId, jobId)`                                                             | Get an active session                             |
+
+When `fundPolicy` is configured, `session.fund()` invokes it once with the exact
+provider wallet, chain, amount, and hydrated `AcpJob` before preparing any funding
+transaction. The policy must return `{ allow: true }`; denial, an invalid decision,
+or an exception aborts funding. Omitting the policy preserves existing behaviour.
 
 ### JobSession
 

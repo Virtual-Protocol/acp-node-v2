@@ -18,7 +18,7 @@ import {
   type KeyPairSigner,
   type FetchAccountConfig,
 } from "@solana/kit";
-import { ACP_COMMITMENT } from "../core/constants.js";
+import { ACP_COMMITMENT, ALT_PROGRAM_ID } from "../core/constants.js";
 import {
   ACP_CONTRACT_ADDRESSES,
   MULTI_HOOK_ROUTER_ADDRESSES,
@@ -42,7 +42,7 @@ const SYSVAR_IX = "Sysvar1nstructions1111111111111111111111111" as Address;
 const COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111" as Address;
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-const ALT_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
+const ALT_PROGRAM = ALT_PROGRAM_ID as Address;
 
 const ae = getAddressEncoder();
 const ad = getAddressDecoder();

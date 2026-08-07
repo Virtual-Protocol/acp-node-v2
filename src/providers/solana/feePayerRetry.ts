@@ -39,6 +39,12 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "account not found",
   "minimum context slot",
   "-32016", // JSON-RPC code for minimum-context-slot-not-reached
+  // Kora SPL-paid path. The broadcast-lag patterns above are provider-agnostic
+  // and already cover Kora's broadcast retries; any Kora-specific transient
+  // strings (fee-payer node lag / simulation) are added here once captured by
+  // the B0 devnet spike. Do NOT add speculative strings — a wrong match would
+  // retry a genuinely failed transaction. Kora's insufficient-payment / policy
+  // rejections are terminal and must stay OUT of this list.
 ];
 
 /**

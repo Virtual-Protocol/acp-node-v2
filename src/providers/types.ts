@@ -84,6 +84,15 @@ export interface ISolanaProviderAdapter extends IProviderAdapter {
   getRpc(chainId: number): Rpc<SolanaRpcApi>;
   getSigner(): SolanaSigner;
   signMessage(message: string): Promise<string>;
+  /**
+   * Address that should fund rent for accounts a transaction creates (notably
+   * ATAs). Defaults to the wallet's own signer, so a self-paying wallet funds
+   * its own rent in SOL. Adapters that route non-ACP transactions through an
+   * SPL paymaster (e.g. Kora) return the paymaster's fee-payer here, so the
+   * paymaster fronts the rent in SOL and bills the user in SPL. Pass the result
+   * as the `payer` argument to the wallet.ts instruction builders.
+   */
+  getRentPayer(chainId: number): Promise<string>;
   sendInstructions(
     chainId: number,
     instructions: SolanaInstructionLike[],

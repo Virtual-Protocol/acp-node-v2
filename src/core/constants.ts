@@ -46,6 +46,11 @@ export const JOB_CREATED_EVENT_DISC = new Uint8Array([
   48, 110, 162, 177, 67, 74, 159, 131,
 ]);
 
+// Address Lookup Table program — a fixed native program, identical on every
+// cluster (not chain-keyed). Used both when building ALT create/extend
+// instructions and to recognize ALT setup as a sponsorable ACP-adjacent action.
+export const ALT_PROGRAM_ID = "AddressLookupTab1e1111111111111111111111111";
+
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
 // ---------------------------------------------------------------------------
@@ -59,6 +64,38 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [robinhoodTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [robinhood.id]: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
 };
+
+// SPL fee-token mints for the Kora SPL-paid tier list. USDC lives in
+// USDC_ADDRESSES above. VIRTUAL and USDT Solana mints are not yet known and
+// MUST be filled before those tiers activate — empty entries are dropped by
+// defaultSplFeeTokens, so the list simply degrades to what's populated (the
+// plan Inputs cover supplying these). Do not guess mint addresses.
+// VIRTUAL is 9 decimals on BOTH clusters, while USDC/USDT are 6 — never share a
+// decimal constant across fee tokens. (The tier check compares the wallet's
+// balance against Kora's quote in the same token's base units, so no conversion
+// happens on that path.)
+export const SOLANA_VIRTUAL_MINTS: Record<number, string> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "FFyf9eN5aN26Sw3n4JhW3vrD1Jx1fFT9oRZ2nVukA6Pp",
+  [SOLANA_MAINNET_CHAIN_ID]: "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",
+};
+
+export const SOLANA_USDT_MINTS: Record<number, string> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "", // TODO: USDT devnet mint
+  [SOLANA_MAINNET_CHAIN_ID]: "", // TODO: USDT mainnet mint
+};
+
+/**
+ * Default SPL fee-token priority for a Solana chain: VIRTUAL -> USDC -> USDT,
+ * mirroring the EVM ERC-20 gas-token tiers. Falsy/missing mints are dropped, so
+ * until VIRTUAL/USDT mints are supplied the list is effectively USDC-only.
+ */
+export function defaultSplFeeTokens(chainId: number): string[] {
+  return [
+    SOLANA_VIRTUAL_MINTS[chainId],
+    USDC_ADDRESSES[chainId],
+    SOLANA_USDT_MINTS[chainId],
+  ].filter((m): m is string => !!m);
+}
 
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",

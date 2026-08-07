@@ -38,6 +38,11 @@ import {
   ACP_CONTRACT_ADDRESSES,
   FUND_TRANSFER_HOOK_ADDRESSES,
   ACP_COMMITMENT,
+  MULTI_HOOK_ROUTER_ADDRESSES,
+  SUBSCRIPTION_HOOK_ADDRESSES,
+  SUBSCRIPTION_STATE_ADDRESSES,
+  ALT_PROGRAM_ID,
+  defaultSplFeeTokens,
 } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
 import {
@@ -47,10 +52,19 @@ import {
 import { withFeePayerRetry } from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
+import { KoraClient, type KoraPayer } from "./koraClient.js";
+import { getSplTokenBalance } from "../../core/solana/wallet.js";
 
-// Sponsorship covers ACP actions only: batches touching the cluster's ACP
-// program or fund-transfer hook. Derived per chainId so devnet and mainnet
-// each recognize their own deployments.
+// Sponsorship covers ACP-protocol actions: batches touching the cluster's ACP
+// program, fund-transfer hook, multi-hook router, subscription hook/state, or
+// the Address Lookup Table program (ALT setup for multi-hook jobs). Everything
+// these actions create has rent welded to the acting wallet, so it must stay on
+// the Alchemy sponsored path (prefundRent) rather than the Kora SPL path, which
+// creates only ATAs. Derived per chainId so devnet and mainnet each recognize
+// their own deployments. The chain-keyed maps hold "" for chains where a
+// program isn't deployed (e.g. router/subscription on Solana mainnet), so the
+// filter drops every falsy value, not just undefined. ALT is a fixed native
+// program, identical on every cluster.
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
 function sponsorableProgramIds(chainId: number): ReadonlySet<string> {
   let set = sponsorableCache.get(chainId);
@@ -59,7 +73,11 @@ function sponsorableProgramIds(chainId: number): ReadonlySet<string> {
       [
         ACP_CONTRACT_ADDRESSES[chainId],
         FUND_TRANSFER_HOOK_ADDRESSES[chainId],
-      ].filter((a): a is string => a !== undefined),
+        MULTI_HOOK_ROUTER_ADDRESSES[chainId],
+        SUBSCRIPTION_HOOK_ADDRESSES[chainId],
+        SUBSCRIPTION_STATE_ADDRESSES[chainId],
+        ALT_PROGRAM_ID,
+      ].filter((a): a is string => !!a),
     );
     sponsorableCache.set(chainId, set);
   }
@@ -126,6 +144,20 @@ export interface PrivySolanaConfig {
     nodeSlot: bigint | null;
     rawError: string;
   }) => void;
+  /**
+   * Kora paymaster JSON-RPC URL per chainId (reached through the ACP server
+   * proxy). When set for a chain, non-ACP transactions on that chain are paid
+   * in SPL via Kora instead of self-paying SOL. Defaults to
+   * `${serverUrl}/wallets/solana-kora-rpc/${chainId}` for every proxied chain;
+   * pass `{}` or omit a chain to disable Kora there (falls back to self-pay).
+   */
+  koraRpcUrls?: Record<number, string>;
+  /**
+   * SPL fee-token mints to try, in priority order, for Kora-paid transactions
+   * on a chain. Defaults to `defaultSplFeeTokens(chainId)` (VIRTUAL -> USDC ->
+   * USDT). The first tier the wallet can cover wins.
+   */
+  splFeeTokens?: Record<number, string[]>;
 }
 
 // Extracts the responding node's slot from an error chain, when the error
@@ -433,6 +465,18 @@ function createPrivySolanaSigner(params: {
 // PrivySolanaProviderAdapter
 // ---------------------------------------------------------------------------
 
+/**
+ * Thrown when the Kora SPL-paid path has no fee token the wallet can cover.
+ * Deliberately NOT caught as a fallback — the wallet has no SOL to self-pay
+ * either, so silently spending SOL would be wrong. Mirrors the EVM error.
+ */
+export class InsufficientFeeTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InsufficientFeeTokenError";
+  }
+}
+
 export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _address: string;
   private readonly _rpcs: Map<number, Rpc<SolanaRpcApi>>;
@@ -459,6 +503,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // mainnet slot numbers are unrelated streams.
   private readonly _lastConfirmedSlot = new Map<number, bigint>();
 
+  // Kora SPL-paid path. A chain has a KoraClient only when a Kora URL was
+  // configured for it; non-ACP transactions on such chains are paid in SPL
+  // rather than self-paying SOL. _splFeeTokens is the per-chain tier list; the
+  // resolved Kora payer is cached per chain (stable per node).
+  private readonly _koraClients: Map<number, KoraClient>;
+  private readonly _splFeeTokens: Map<number, string[]>;
+  private readonly _koraPayer = new Map<number, KoraPayer>();
+
   private constructor(params: {
     address: string;
     rpcs: Map<number, Rpc<SolanaRpcApi>>;
@@ -472,6 +524,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     sponsored: boolean;
     preflightCommitment: Commitment;
     onSponsoredRetry?: PrivySolanaConfig["onSponsoredRetry"];
+    koraClients: Map<number, KoraClient>;
+    splFeeTokens: Map<number, string[]>;
   }) {
     super("privy-solana");
     this._address = params.address;
@@ -486,6 +540,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     this._sponsored = params.sponsored;
     this._preflightCommitment = params.preflightCommitment;
     this._onSponsoredRetry = params.onSponsoredRetry;
+    this._koraClients = params.koraClients;
+    this._splFeeTokens = params.splFeeTokens;
   }
 
   static async create(
@@ -534,6 +590,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     const rpcs = new Map<number, Rpc<SolanaRpcApi>>();
     const rpcProxyUrls = new Map<number, string>();
+    const koraClients = new Map<number, KoraClient>();
+    const splFeeTokens = new Map<number, string[]>();
     let getToken: (() => Promise<string>) | null = null;
 
     // One auth client serves every proxied chain (auth is wallet-scoped, keyed
@@ -566,6 +624,25 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       const proxyUrl = `${serverUrl}/wallets/solana-rpc/${chainId}`;
       rpcProxyUrls.set(chainId, proxyUrl);
       const token = ensureToken();
+
+      // Kora SPL-paid path for this proxied chain. `koraRpcUrls` undefined =>
+      // default the URL on for every proxied chain; a provided map opts in
+      // per chain (absent chain => disabled). Only register when at least one
+      // fee-token mint is configured, so `_koraClients.has(chainId)` means
+      // "Kora is usable here"; otherwise the send path falls back to self-pay.
+      const koraUrl =
+        params.koraRpcUrls === undefined
+          ? `${serverUrl}/wallets/solana-kora-rpc/${chainId}`
+          : params.koraRpcUrls[chainId];
+      if (koraUrl) {
+        const tiers =
+          params.splFeeTokens?.[chainId] ?? defaultSplFeeTokens(chainId);
+        if (tiers.length > 0) {
+          koraClients.set(chainId, new KoraClient({ url: koraUrl, getToken: token }));
+          splFeeTokens.set(chainId, tiers);
+        }
+      }
+
       const transport = async (config: { payload: unknown }): Promise<any> => {
         const res = await fetch(proxyUrl, {
           method: "POST",
@@ -600,6 +677,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       ...(params.onSponsoredRetry
         ? { onSponsoredRetry: params.onSponsoredRetry }
         : {}),
+      koraClients,
+      splFeeTokens,
     });
     adapter._getAuthToken = getToken;
     return adapter;
@@ -726,6 +805,31 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       return this.sendSponsoredTransaction(chainId, instructions, options);
     }
 
+    // Non-ACP action. If Kora is configured for this chain, pay fees in SPL.
+    // The probe is getPayerSigner (cached): if it fails, the Kora endpoint is
+    // absent or unhealthy (e.g. not yet deployed) and we fall back to self-pay
+    // — this happens before anything is built/signed/broadcast, so there is no
+    // double-send risk. A no-balance failure inside sendSplPaidTransaction is
+    // NOT a fallback: it throws, because the wallet has no SOL to spend either.
+    if (this._koraClients.has(chainId)) {
+      const koraPayer = await this.resolveKoraPayer(chainId).catch((err) => {
+        console.warn(
+          `[kora] getPayerSigner failed on chain ${chainId}; falling back to self-pay: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return null;
+      });
+      if (koraPayer) {
+        return this.sendSplPaidTransaction(
+          chainId,
+          instructions,
+          koraPayer,
+          options,
+        );
+      }
+    }
+
     const { value: latestBlockhash } = await this.getRpc(chainId)
       .getLatestBlockhash()
       .send();
@@ -736,6 +840,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       latestBlockhash,
       options,
     );
+  }
+
+  /** Cached Kora fee payer for a chain (stable per node). */
+  private async resolveKoraPayer(chainId: number): Promise<KoraPayer> {
+    const cached = this._koraPayer.get(chainId);
+    if (cached) return cached;
+    const client = this._koraClients.get(chainId);
+    if (!client) {
+      throw new Error(`No Kora client configured for chainId ${chainId}`);
+    }
+    const payer = await client.getPayerSigner();
+    this._koraPayer.set(chainId, payer);
+    return payer;
   }
 
   /**
@@ -763,6 +880,162 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       encodedTx,
       latestBlockhash.lastValidBlockHeight,
       options,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Kora SPL-paid path
+  // -------------------------------------------------------------------------
+
+  /**
+   * Rent payer for account creation (ATAs). When Kora is active for the chain,
+   * its fee payer fronts the rent (reimbursed in SPL via the payment
+   * instruction); otherwise the wallet self-funds. Callers pass this as the
+   * `payer` argument to the wallet.ts instruction builders.
+   */
+  override async getRentPayer(chainId: number): Promise<string> {
+    if (this._koraClients.has(chainId)) {
+      const payer = await this.resolveKoraPayer(chainId).catch(() => null);
+      if (payer) return payer.signerAddress;
+    }
+    return this._signer.address;
+  }
+
+  /**
+   * Pick the first fee token (in configured priority order) whose balance
+   * covers Kora's quote for `unsignedBase64`. Balances are read in parallel;
+   * only tokens with a positive balance are quoted. Returns null when no tier
+   * is affordable.
+   */
+  private async selectFeeToken(
+    chainId: number,
+    unsignedBase64: string,
+  ): Promise<string | null> {
+    const client = this._koraClients.get(chainId)!;
+    const tiers = this._splFeeTokens.get(chainId) ?? [];
+    const rpc = this.getRpc(chainId);
+    const owner = this._address as Address;
+
+    const balances = await Promise.all(
+      tiers.map((mint) =>
+        getSplTokenBalance(rpc, owner, mint as Address)
+          .then((b) => b.amount)
+          .catch(() => 0n),
+      ),
+    );
+
+    for (let i = 0; i < tiers.length; i++) {
+      if (balances[i]! <= 0n) continue;
+      const quote = await client.estimateTransactionFee(unsignedBase64, tiers[i]!);
+      if (balances[i]! >= quote.feeInToken) return tiers[i]!;
+    }
+    return null;
+  }
+
+  /**
+   * SPL-paid flow (per attempt, inside withFeePayerRetry):
+   * 1. Fresh blockhash; build tx with Kora's payer as fee payer + the caller's
+   *    instructions (Kora's payer is known up front — no placeholder mutation).
+   * 2. Pick a fee token the wallet can cover (selectFeeToken).
+   * 3. getPaymentInstruction → append the SPL payment (wallet -> Kora).
+   * 4. Privy signs (user sig); Kora co-signs as fee payer.
+   * 5. Broadcast + confirm.
+   *
+   * A fresh blockhash per attempt means retries never reuse a stale one. Unlike
+   * the Alchemy path there is no simulationSlot, so minContextSlot falls back to
+   * our last confirmed slot — sufficient because a self-hosted Kora reads from
+   * the same RPC we do.
+   */
+  private async sendSplPaidTransaction(
+    chainId: number,
+    instructions: SolanaInstructionLike[],
+    koraPayer: KoraPayer,
+    options?: SendInstructionsOptions,
+  ): Promise<string> {
+    const client = this._koraClients.get(chainId)!;
+    let lastSeenSlot: bigint | null = null;
+
+    return withFeePayerRetry(
+      async () => {
+        const { context, value: latestBlockhash } = await this.getRpc(chainId)
+          .getLatestBlockhash()
+          .send();
+        lastSeenSlot = context.slot;
+
+        // Build with Kora's payer as fee payer, then compile to unsigned bytes
+        // for the fee quote + payment instruction.
+        const baseMessage = pipe(
+          createTransactionMessage({ version: 0 }),
+          (msg) => setTransactionMessageFeePayer(koraPayer.signerAddress, msg),
+          (msg) =>
+            setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+          (msg) => appendTransactionMessageInstructions(instructions, msg),
+        );
+        const unsignedBase64 = Buffer.from(
+          getTransactionEncoder().encode(compileTransaction(baseMessage)),
+        ).toString("base64");
+
+        const feeToken = await this.selectFeeToken(chainId, unsignedBase64);
+        if (!feeToken) {
+          throw new InsufficientFeeTokenError(
+            "Not enough balance to cover the network fee. Add USDC, USDT, or VIRTUAL to your wallet and try again.",
+          );
+        }
+
+        const paymentIx = await client.getPaymentInstruction({
+          transactionBase64: unsignedBase64,
+          feeToken,
+          sourceWallet: this._address,
+        });
+
+        // Append the payment instruction, recompile, and collect signatures:
+        // the user's (Privy) then Kora's (fee payer).
+        const finalMessage = appendTransactionMessageInstructions(
+          [paymentIx],
+          baseMessage,
+        );
+        const finalBase64 = Buffer.from(
+          getTransactionEncoder().encode(compileTransaction(finalMessage)),
+        ).toString("base64");
+
+        const userSigned = await this.signTransactionViaPrivy(finalBase64);
+        const fullySigned = await client.signTransaction(userSigned);
+
+        return this.broadcastAndConfirm(
+          chainId,
+          fullySigned,
+          latestBlockhash.lastValidBlockHeight,
+          options,
+        );
+      },
+      {
+        ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        onRetry: (attempt, maxAttempts, message, error) => {
+          const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
+            lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
+            lastSeenSlot,
+          });
+          if (this._onSponsoredRetry) {
+            this._onSponsoredRetry({
+              attempt,
+              maxAttempts,
+              slot: lastSeenSlot,
+              requiredSlot,
+              nodeSlot,
+              rawError: message,
+            });
+            return;
+          }
+          console.warn(
+            formatSponsoredRetryWarning(
+              requiredSlot,
+              nodeSlot,
+              attempt,
+              maxAttempts,
+            ),
+          );
+        },
+      },
     );
   }
 

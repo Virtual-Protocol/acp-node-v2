@@ -424,6 +424,57 @@ await session.setBudgetWithFundRequest(
 );
 ```
 
+## Off-escrow proportional-fee jobs
+
+For **facilitator** offerings where the transferred value settles **outside ACP
+escrow** and ACP escrows only a **proportional fee** (e.g. an off-escrow
+cross-chain transfer priced at 8 bps of the notional). This is a fenced-off job
+type — `priceType: "percentage"` + `requiredFunds: false` + a
+`settlement_tx_hash` deliverable — with **no impact on existing offerings**.
+
+Because `requiredFunds` is false it uses the ordinary **plain-job path**
+(`hook = address(0)`): the seller sets `budget = fee`, the buyer funds the fee,
+and the principal never touches the seller's wallet (it moves via the buyer's
+own signed intent — ERC-3009 / Permit2). No contract change.
+
+```typescript
+import {
+  computePercentageFee,
+  readFeeBasis,
+  assertNotionalMatches,
+  buildSettlementDeliverable,
+  AssetToken,
+} from "@virtuals-protocol/acp-node-v2";
+
+// Offering names the requirement field carrying the fee notional:
+//   { priceType: "percentage", priceValue: 8, requiredFunds: false,
+//     feeBasisField: "notionalAtomic" }
+
+// Seller, on the requirement: reject a faked notional, then price the fee.
+const notional = readFeeBasis(offering, requirement); // bigint, atomic
+assertNotionalMatches(notional, notionalBoundInSignedIntent);
+const fee = computePercentageFee(notional, offering.priceValue, "bps");
+await session.setBudget(AssetToken.usdcFromRaw(fee, session.chainId));
+
+// Seller, on job.funded: relay the buyer's intent off-escrow, then prove it.
+await session.submit(
+  buildSettlementDeliverable({ settlementTxHash, chainId })
+);
+```
+
+Two properties fall out of this. The notional is bound in the buyer's signed
+intent, so the seller rejects a mismatch and the buyer previews the exact fee
+before funding. And a dispute reduces to whether the settlement tx exists on the
+destination chain, with only the fee ever at risk, never the principal.
+
+> **Fee unit is a backend convention to confirm:** whether `priceValue` is
+> **basis points** or **percent** must match the Virtuals registry.
+> `computePercentageFee` takes the unit (`"bps"` | `"percent"`) explicitly and
+> never guesses.
+
+See [`src/examples/off-escrow-percentage/`](./src/examples/off-escrow-percentage/)
+for a runnable (stubbed-relay) buyer/seller pair.
+
 ## Examples
 
 Runnable buyer/seller pairs are organized by use case under [`src/examples/`](./src/examples/):
@@ -434,6 +485,7 @@ Runnable buyer/seller pairs are organized by use case under [`src/examples/`](./
 | [`fund-transfer/`](./src/examples/fund-transfer/)                               | Jobs that forward USDC on submission: buyer uses `createJobFromOffering` when `requiredFunds`; seller uses `setBudgetWithFundRequest`.                         |
 | [`subscription/`](./src/examples/subscription/)                                 | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`.                 |
 | [`subscription-fund-transfer/`](./src/examples/subscription-fund-transfer/)     | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`).                                        |
+| [`off-escrow-percentage/`](./src/examples/off-escrow-percentage/)               | Facilitator jobs: proportional fee (`priceType: "percentage"`, `requiredFunds: false`), principal settles off-escrow via a signed intent, `settlement_tx_hash` deliverable. |
 | [`llm/`](./src/examples/llm/)                                                   | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`.                                        |
 
 Each folder has its own README with the lifecycle, expected log output, and any

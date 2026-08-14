@@ -27,7 +27,7 @@
       "name": "HookState"
     }
   ],
-  "address": "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT",
+  "address": "6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP",
   "events": [
     {
       "discriminator": [
@@ -86,52 +86,6 @@
     {
       "accounts": [
         {
-          "name": "new_authority",
-          "signer": true
-        },
-        {
-          "name": "hook_state",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  111,
-                  107,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          },
-          "writable": true
-        }
-      ],
-      "args": [],
-      "discriminator": [
-        107,
-        86,
-        198,
-        91,
-        33,
-        12,
-        107,
-        160
-      ],
-      "docs": [
-        "Accepts a pending authority nomination, completing ownership transfer."
-      ],
-      "name": "accept_authority"
-    },
-    {
-      "accounts": [
-        {
           "name": "hook_state",
           "pda": {
             "seeds": [
@@ -166,6 +120,14 @@
         {
           "name": "opt_params",
           "type": "bytes"
+        },
+        {
+          "name": "caller",
+          "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -179,9 +141,8 @@
         73
       ],
       "docs": [
-        "Post-action hook callback. Mirrors EVM `_postFund` (validate proposed terms),",
-        "`_postComplete` (activate subscription via CPI + cleanup), and `_postReject`",
-        "(cleanup proposed terms PDA)."
+        "Post-action hook callback; validates terms on Fund, activates the",
+        "subscription on Complete, and cleans up proposed terms on Reject."
       ],
       "name": "after_action"
     },
@@ -222,6 +183,14 @@
         {
           "name": "opt_params",
           "type": "bytes"
+        },
+        {
+          "name": "caller",
+          "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -235,8 +204,7 @@
         137
       ],
       "docs": [
-        "Pre-action hook callback. Mirrors EVM `_preSetBudget` for SetBudget action;",
-        "no-op for other actions."
+        "Pre-action hook callback; proposes subscription terms on SetBudget."
       ],
       "name": "before_action"
     },
@@ -244,12 +212,7 @@
       "accounts": [
         {
           "docs": [
-            "Permissionless trigger. May be the provider, an evaluator, a keeper,",
-            "or any third party -- the only authorization is that the job has",
-            "expired. Signer requirement preserves \"the rent move comes from an",
-            "account that opted into paying the tx fee\" -- attackers cannot grief",
-            "by spamming cleanups against random jobs (no state mutation that",
-            "affects them)."
+            "Permissionless trigger; the only authorization is that the job has expired."
           ],
           "name": "caller",
           "signer": true
@@ -284,18 +247,12 @@
         },
         {
           "docs": [
-            "Manually closed (lamports out, data zeroed, ownership reassigned to",
-            "system program) -- not an `#[account(close = ...)]` because the",
-            "schema-validation provider check is needed first."
+            "Manually closed after the provider check."
           ],
           "name": "proposed_terms",
           "writable": true
         },
         {
-          "docs": [
-            "`ProposedTerms.provider` -- prevents a third-party caller from",
-            "redirecting the rent refund."
-          ],
           "name": "provider",
           "writable": true
         }
@@ -317,12 +274,8 @@
         238
       ],
       "docs": [
-        "F-72: standalone cleanup of the `ProposedTerms` PDA for jobs that",
-        "expired without reaching `complete` or `reject`. Permissionless",
-        "caller; rent always refunds to the original provider (validated",
-        "against `ProposedTerms.provider`). Mirrors",
-        "`fund-transfer-hook::claim_escrow_refund` per the design doc's",
-        "expiry-cleanup pattern."
+        "Permissionless cleanup of the `ProposedTerms` PDA for expired jobs;",
+        "rent always refunds to the original provider."
       ],
       "name": "cleanup_proposed_terms"
     },
@@ -429,38 +382,38 @@
               {
                 "kind": "const",
                 "value": [
-                  160,
-                  79,
-                  217,
-                  65,
-                  203,
-                  195,
-                  5,
-                  219,
-                  86,
-                  220,
-                  94,
-                  203,
-                  159,
-                  53,
-                  23,
-                  9,
-                  50,
-                  59,
-                  236,
-                  190,
-                  215,
-                  144,
-                  18,
-                  6,
-                  166,
-                  117,
-                  187,
-                  156,
-                  75,
-                  100,
-                  100,
-                  110
+                  82,
+                  35,
+                  22,
+                  92,
+                  78,
+                  34,
+                  36,
+                  77,
+                  223,
+                  4,
+                  88,
+                  68,
+                  137,
+                  148,
+                  42,
+                  102,
+                  63,
+                  194,
+                  165,
+                  181,
+                  196,
+                  243,
+                  93,
+                  127,
+                  58,
+                  161,
+                  228,
+                  131,
+                  1,
+                  90,
+                  114,
+                  14
                 ]
               }
             ]
@@ -499,8 +452,13 @@
     {
       "accounts": [
         {
-          "name": "authority",
-          "signer": true
+          "docs": [
+            "Rent payer; must be the job's provider (the wallet before_action",
+            "debits, and the refund recipient stored in the live proposal later)."
+          ],
+          "name": "payer",
+          "signer": true,
+          "writable": true
         },
         {
           "name": "hook_state",
@@ -522,30 +480,48 @@
                 ]
               }
             ]
-          },
+          }
+        },
+        {
+          "docs": [
+            "via `deserialize_job` against `hook_state.acp_program`."
+          ],
+          "name": "job"
+        },
+        {
+          "docs": [
+            "in handler."
+          ],
+          "name": "proposed_terms",
           "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
         }
       ],
       "args": [
         {
-          "name": "new_authority",
-          "type": "pubkey"
+          "name": "job_id",
+          "type": "u64"
         }
       ],
       "discriminator": [
-        148,
-        182,
-        144,
-        91,
-        186,
-        12,
-        118,
-        18
+        30,
+        108,
+        232,
+        212,
+        189,
+        31,
+        122,
+        234
       ],
       "docs": [
-        "Nominates a new authority (first step of two-step transfer)."
+        "Pre-creates the proposed_terms PDA for a job, zeroed, rent paid by the",
+        "job's provider at a CPI depth the paymaster can prefund. Idempotent:",
+        "no-op when the account already exists."
       ],
-      "name": "nominate_authority"
+      "name": "pre_create_proposed_terms"
     }
   ],
   "metadata": {
@@ -557,11 +533,8 @@
   "types": [
     {
       "docs": [
-        "Hook self-declaration of which selectors this hook implements. Read by",
-        "multi-hook-router's `_validate_selector_completeness` (mirrors EVM",
-        "`IACPHookMetadata.requiredSelectors()`). PDA seeded by `[b\"hook_metadata\"]`.",
-        "",
-        "Bitmask layout: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
+        "Self-declared selectors this hook implements; read by the multi-hook router.",
+        "Bitmask: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
       ],
       "name": "HookMetadata",
       "type": {
@@ -594,16 +567,6 @@
             "type": "pubkey"
           },
           {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
             "name": "bump",
             "type": "u8"
           }
@@ -613,10 +576,7 @@
     },
     {
       "docs": [
-        "F-72: `ProposedTerms` PDA closed via the standalone `cleanup_proposed_terms`",
-        "instruction after the job expired without reaching `complete` or `reject`.",
-        "Provides indexers a single emission point to track the expiry-cleanup path",
-        "distinct from the normal complete/reject close."
+        "`ProposedTerms` PDA closed via `cleanup_proposed_terms` after job expiry."
       ],
       "name": "ProposedTermsCleanedUp",
       "type": {
@@ -639,8 +599,7 @@
     },
     {
       "docs": [
-        "Subscription activated after `complete`. Mirrors EVM",
-        "`SubscriptionActivated`."
+        "Subscription activated after `complete`."
       ],
       "name": "SubscriptionActivated",
       "type": {
@@ -671,8 +630,7 @@
     },
     {
       "docs": [
-        "Provider proposed terms during `set_budget`. Mirrors EVM",
-        "`SubscriptionTermsProposed`."
+        "Provider proposed subscription terms during `set_budget`."
       ],
       "name": "SubscriptionTermsProposed",
       "type": {
@@ -695,8 +653,8 @@
     },
     {
       "docs": [
-        "Provider tried to propose terms but client already has an active subscription",
-        "for this (provider, package_id). Mirrors EVM `SubscriptionTermsSkipped`."
+        "Terms proposal skipped; client already has an active subscription for",
+        "this (provider, package_id)."
       ],
       "name": "SubscriptionTermsSkipped",
       "type": {

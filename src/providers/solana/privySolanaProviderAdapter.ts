@@ -1,4 +1,6 @@
 import {
+  AccountRole,
+  compressTransactionMessageUsingAddressLookupTables,
   createSolanaRpc,
   createSolanaRpcFromTransport,
   createSignableMessage,
@@ -33,6 +35,7 @@ import {
 import {
   ACP_SERVER_URL,
   PRIVY_APP_ID,
+  TESTNET_PRIVY_APP_ID,
   SOLANA_DEVNET_CHAIN_ID,
   SOLANA_CHAIN_ID_CLUSTERS,
   ACP_CONTRACT_ADDRESSES,
@@ -52,8 +55,16 @@ import {
 import { withFeePayerRetry } from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
-import { KoraClient, type KoraPayer } from "./koraClient.js";
-import { getSplTokenBalance } from "../../core/solana/wallet.js";
+import {
+  KoraClient,
+  type KoraFeeQuote,
+  type KoraPayer,
+} from "./koraClient.js";
+import {
+  buildSplTransferInstructions,
+  getSolBalance,
+  getSplTokenBalance,
+} from "../../core/solana/wallet.js";
 
 // Sponsorship covers ACP-protocol actions: batches touching the cluster's ACP
 // program, fund-transfer hook, multi-hook router, subscription hook/state, or
@@ -66,6 +77,97 @@ import { getSplTokenBalance } from "../../core/solana/wallet.js";
 // filter drops every falsy value, not just undefined. ALT is a fixed native
 // program, identical on every cluster.
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
+
+/**
+ * Solana's hard transaction size: the 1280-byte IPv6 MTU minus 48 bytes of
+ * headers. Not a paymaster limit — every transaction is bound by it, which is
+ * why address lookup tables exist.
+ */
+const MAX_SOLANA_TX_BYTES = 1232;
+
+/**
+ * Prefund used only to MEASURE, never sent.
+ *
+ * Sizing works by simulating a funded transaction and seeing what it consumes,
+ * so the probe has to be comfortably above any real requirement — the worst
+ * measured ACP step is BatchConfigureHooks at 12,486,240 lamports. It is not
+ * bound by the node's max_allowed_lamports, because a probe transaction is
+ * never submitted; it only has to be within the sponsor's actual balance.
+ */
+const PREFUND_PROBE_LAMPORTS = 50_000_000n;
+
+/** System program, and its u32-LE Transfer discriminant. */
+const SYSTEM_PROGRAM_ADDRESS =
+  "11111111111111111111111111111111" as Address;
+const SYSTEM_TRANSFER_DISCRIMINANT = 2;
+
+type SimulateWithAccounts = {
+  value?: {
+    err?: unknown;
+    accounts?: ({ lamports?: number } | null)[];
+    /**
+     * Program logs. Load-bearing for diagnosis, not decoration: an
+     * InstructionError carries a bare code, and an Anchor CPI reports the INNER
+     * program's code against the OUTER instruction index — so `Custom: 6000`
+     * alone could be the router's OnlyACPContract, the ACP program's
+     * Unauthorized, or a hook's InvalidJob. Only the logs name the program at
+     * each invoke depth.
+     */
+    logs?: string[] | null;
+  };
+};
+
+/**
+ * The rent prefund: SOL from the sponsor to the acting wallet.
+ *
+ * Hand-encoded because @solana-program/system is not a dependency and this is
+ * the only System instruction the SDK builds. Layout is u32 LE discriminant
+ * followed by u64 LE lamports.
+ */
+function buildSponsorPrefundInstruction(params: {
+  from: Address;
+  to: Address;
+  lamports: bigint;
+}): SolanaInstructionLike {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, SYSTEM_TRANSFER_DISCRIMINANT, true);
+  view.setBigUint64(4, params.lamports, true);
+  return {
+    programAddress: SYSTEM_PROGRAM_ADDRESS,
+    accounts: [
+      { address: params.from, role: AccountRole.WRITABLE_SIGNER },
+      { address: params.to, role: AccountRole.WRITABLE },
+    ],
+    data,
+  } as unknown as SolanaInstructionLike;
+}
+
+
+/**
+ * Applies the caller's lookup tables and extra signers to a message.
+ *
+ * Compression must happen before any size check: a router `complete` fits only
+ * once compressed, and measuring it uncompressed would reject a transaction
+ * that is actually fine.
+ */
+function applySendOptions<T>(
+  message: T,
+  options?: SendInstructionsOptions,
+): T {
+  let m = message as never;
+  if (options?.extraSigners?.length) {
+    m = addSignersToTransactionMessage(options.extraSigners as never, m);
+  }
+  if (options?.lookupTables && Object.keys(options.lookupTables).length > 0) {
+    m = compressTransactionMessageUsingAddressLookupTables(
+      m,
+      options.lookupTables as never,
+    );
+  }
+  return m as T;
+}
+
 function sponsorableProgramIds(chainId: number): ReadonlySet<string> {
   let set = sponsorableCache.get(chainId);
   if (!set) {
@@ -153,6 +255,16 @@ export interface PrivySolanaConfig {
    */
   koraRpcUrls?: Record<number, string>;
   /**
+   * Who pays for ACP actions.
+   *
+   * "alchemy" (default) — alchemy_requestFeePayer rewrites the fee payer and
+   * prefunds rent. "kora" — the Kora sponsor node co-signs and the prefund is
+   * written here, because Kora never modifies a transaction.
+   */
+  acpSponsorship?: "alchemy" | "kora";
+  /** Sponsor-node URL per chain. Defaults to the backend's sponsor proxy. */
+  koraSponsorRpcUrls?: Record<number, string>;
+  /**
    * SPL fee-token mints to try, in priority order, for Kora-paid transactions
    * on a chain. Defaults to `defaultSplFeeTokens(chainId)` (VIRTUAL -> USDC ->
    * USDT). The first tier the wallet can cover wins.
@@ -203,20 +315,20 @@ export function resolveSponsoredRetrySlots(
   };
 }
 
-/** Human-readable warning for a sponsored-transaction retry. */
+/**
+ * Human-readable warning for a sponsored-transaction retry. Slots are named
+ * only when a -32016 broadcast error revealed both; a sponsor-simulation
+ * failure carries no slot information, so no slot is invented for it.
+ */
 export function formatSponsoredRetryWarning(
   requiredSlot: bigint | null,
   nodeSlot: bigint | null,
   attempt: number,
   maxAttempts: number,
 ): string {
-  const gap =
-    requiredSlot != null && nodeSlot != null ? requiredSlot - nodeSlot : null;
-  return gap != null && gap > 0n
-    ? `[gas_sponsorship] sponsor node ${gap} slot${gap === 1n ? "" : "s"} behind required slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
-    : requiredSlot != null
-      ? `[gas_sponsorship] waiting for sponsor node to reach slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
-      : `[gas_sponsorship] sponsor node syncing, waiting (attempt ${attempt}/${maxAttempts})`;
+  return requiredSlot != null && nodeSlot != null && requiredSlot > nodeSlot
+    ? `[gas_sponsorship] sponsor node ${requiredSlot - nodeSlot} slot(s) behind required slot ${requiredSlot} (attempt ${attempt}/${maxAttempts})`
+    : `[gas_sponsorship] sponsor node behind recent state, retrying (attempt ${attempt}/${maxAttempts})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -477,6 +589,66 @@ export class InsufficientFeeTokenError extends Error {
   }
 }
 
+/**
+ * Warning for a sponsored router action whose prefund came back empty.
+ * A sponsor's rent estimator may not cover account creations made deep in the
+ * CPI stack: router actions create hook PDAs several calls down, so a zero
+ * prefund there can mean the signer wallet pays those rents. Surface it up
+ * front instead of letting the transaction die on-chain with a bare
+ * "insufficient lamports". Returns null when there is nothing to warn about.
+ */
+export function routerPrefundWarning(
+  chainId: number,
+  instructions: readonly SolanaInstructionLike[],
+  prefundLamports: bigint | null,
+  hookRentPreCreated = false,
+): string | null {
+  // Hook-PDA rents were pre-created at CPI height 2 in their own sponsored
+  // tx — a zero prefund on the main tx is the expected success signal.
+  if (hookRentPreCreated) return null;
+  if (prefundLamports != null && prefundLamports > 0n) return null;
+  const router = MULTI_HOOK_ROUTER_ADDRESSES[chainId];
+  if (!router) return null;
+  const touchesRouter = instructions.some(
+    (ix) =>
+      (ix.programAddress as string) === router ||
+      ix.accounts.some((a) => (a.address as string) === router),
+  );
+  if (!touchesRouter) return null;
+  return (
+    "[gas_sponsorship] prefund returned 0 for a router action — hook PDA " +
+    "rents (deep CPI) may be paid by the signer wallet if they were not " +
+    "pre-created"
+  );
+}
+
+/**
+ * Rewraps a sendTransaction rejection that carries simulation logs so the
+ * ACTUAL tx-level failure reason survives, not just the (often all-success)
+ * preflight logs: a broadcast can fail post-execution — InsufficientFundsForRent
+ * after every instruction succeeded, BlockhashNotFound, an unmet
+ * minContextSlot — and without the reason the error reads as a bare
+ * "simulation failed" over a wall of success lines. Returns null when the
+ * error has no logs (network, auth, server errors pass through unchanged).
+ */
+export function formatPreflightFailure(err: unknown): Error | null {
+  const errObj = err as Record<string, unknown>;
+  const context = errObj?.context as Record<string, unknown> | undefined;
+  const cause = errObj?.cause as Record<string, unknown> | undefined;
+  const logs =
+    (context?.logs as string[]) ??
+    (cause?.logs as string[]) ??
+    (errObj?.logs as string[]);
+  if (!logs?.length) return null;
+  const reason =
+    (cause?.message as string) ??
+    (errObj?.message as string) ??
+    stringifyBigIntSafe(errObj?.cause ?? context ?? errObj);
+  return new Error(
+    `Transaction preflight failed [${reason}]:\n${logs.join("\n")}`,
+  );
+}
+
 export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _address: string;
   private readonly _rpcs: Map<number, Rpc<SolanaRpcApi>>;
@@ -508,8 +680,17 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // rather than self-paying SOL. _splFeeTokens is the per-chain tier list; the
   // resolved Kora payer is cached per chain (stable per node).
   private readonly _koraClients: Map<number, KoraClient>;
+  /** Sponsor node per chain. Empty unless acpSponsorship === "kora". */
+  private readonly _koraSponsorClients: Map<number, KoraClient>;
+  /** Sponsor payer, cached per chain — one signer per node, so it is stable. */
+  private readonly _koraSponsorPayer = new Map<number, KoraPayer>();
   private readonly _splFeeTokens: Map<number, string[]>;
   private readonly _koraPayer = new Map<number, KoraPayer>();
+  private readonly _feeTokenDecimals = new Map<string, number>();
+  // chainId -> the mints the node accepts as fee payment (getSupportedTokens).
+  // Cached for the process lifetime: allowed_spl_paid_tokens is baked into the
+  // Kora image, so it cannot change while this adapter lives.
+  private readonly _nodeFeeTokens = new Map<number, string[]>();
 
   private constructor(params: {
     address: string;
@@ -525,6 +706,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     preflightCommitment: Commitment;
     onSponsoredRetry?: PrivySolanaConfig["onSponsoredRetry"];
     koraClients: Map<number, KoraClient>;
+    koraSponsorClients: Map<number, KoraClient>;
     splFeeTokens: Map<number, string[]>;
   }) {
     super("privy-solana");
@@ -541,6 +723,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     this._preflightCommitment = params.preflightCommitment;
     this._onSponsoredRetry = params.onSponsoredRetry;
     this._koraClients = params.koraClients;
+    this._koraSponsorClients = params.koraSponsorClients;
     this._splFeeTokens = params.splFeeTokens;
   }
 
@@ -554,7 +737,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     }
 
     const serverUrl = (params.serverUrl ?? ACP_SERVER_URL).replace(/\/$/, "");
-    const privyAppId = params.privyAppId ?? PRIVY_APP_ID;
     const chainIds =
       params.chainIds ??
       (params.chainId != null ? [params.chainId] : [SOLANA_DEVNET_CHAIN_ID]);
@@ -566,6 +748,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         throw new Error(`Unsupported Solana chainId: ${chainId}`);
       }
     }
+    // The app id is not cosmetic: generatePrivyAuthSig signs over
+    // `headers: { "privy-app-id": privyAppId }`, and the ACP server replays that
+    // request under ITS OWN app id. Sign with the mainnet id against a testnet
+    // server and Privy rejects the signature — surfacing as a 500 from
+    // /wallets/solana/sign-message, which the adapter then swallows into a
+    // silent self-pay fallback. Defaulting by cluster keeps the two ends
+    // agreeing without every devnet caller having to remember the override.
+    const privyAppId =
+      params.privyAppId ??
+      (SOLANA_CHAIN_ID_CLUSTERS[chainIds[0]!] === "devnet"
+        ? TESTNET_PRIVY_APP_ID
+        : PRIVY_APP_ID);
     if (params.rpcUrl && chainIds.length > 1) {
       throw new Error(
         "PrivySolanaProviderAdapter: rpcUrl is single-chain; use rpcUrls with multiple chainIds",
@@ -591,6 +785,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const rpcs = new Map<number, Rpc<SolanaRpcApi>>();
     const rpcProxyUrls = new Map<number, string>();
     const koraClients = new Map<number, KoraClient>();
+    const koraSponsorClients = new Map<number, KoraClient>();
     const splFeeTokens = new Map<number, string[]>();
     let getToken: (() => Promise<string>) | null = null;
 
@@ -634,6 +829,23 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         params.koraRpcUrls === undefined
           ? `${serverUrl}/wallets/solana-kora-rpc/${chainId}`
           : params.koraRpcUrls[chainId];
+      // The SPONSOR node is a different node from the microgas one: price type
+      // is a per-node setting, so one is margin-priced and the other free.
+      // Registered only when ACP sponsorship is switched to Kora, so the
+      // default build has no sponsor client at all.
+      if (params.acpSponsorship === "kora") {
+        const sponsorUrl =
+          params.koraSponsorRpcUrls === undefined
+            ? `${serverUrl}/wallets/solana-kora-sponsor-rpc/${chainId}`
+            : params.koraSponsorRpcUrls[chainId];
+        if (sponsorUrl) {
+          koraSponsorClients.set(
+            chainId,
+            new KoraClient({ url: sponsorUrl, getToken: token }),
+          );
+        }
+      }
+
       if (koraUrl) {
         const tiers =
           params.splFeeTokens?.[chainId] ?? defaultSplFeeTokens(chainId);
@@ -678,6 +890,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         ? { onSponsoredRetry: params.onSponsoredRetry }
         : {}),
       koraClients,
+      koraSponsorClients,
       splFeeTokens,
     });
     adapter._getAuthToken = getToken;
@@ -704,6 +917,24 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
   getSigner(): SolanaSigner {
     return this._signer;
+  }
+
+  /**
+   * The microgas Kora client for a chain, or undefined when kora is not
+   * configured for it.
+   *
+   * Exposed so callers can ask the node about itself — its fee payer and
+   * payment address — rather than configuring those values separately and
+   * letting them drift from the node actually charging. The client is already
+   * authenticated and already points at the deployed route, which is the whole
+   * reason to hand it out instead of letting each caller rebuild the URL and
+   * re-derive an agent token.
+   *
+   * This is the MARGIN-PRICED microgas node, not the sponsor node: fees it
+   * collects land in `getPayerSigner().paymentAddress`.
+   */
+  getKoraClient(chainId: number): KoraClient | undefined {
+    return this._koraClients.get(chainId);
   }
 
   // -------------------------------------------------------------------------
@@ -802,6 +1033,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       isAcpAction;
 
     if (useSponsorship) {
+      // Same ACP traffic, a different sponsor. Kora cannot rewrite the fee
+      // payer the way Alchemy does, so this path writes the rent prefund
+      // itself — see sendKoraSponsoredTransaction.
+      if (this._koraSponsorClients.has(chainId)) {
+        return this.sendKoraSponsoredTransaction(chainId, instructions, options);
+      }
       return this.sendSponsoredTransaction(chainId, instructions, options);
     }
 
@@ -864,13 +1101,21 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     latestBlockhash: any,
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    const message = pipe(
-      createTransactionMessage({ version: 0 }),
-      (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
-      (msg) =>
-        setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-      (msg) => appendTransactionMessageInstructions(instructions, msg),
-      (msg) => addSignersToTransactionMessage([this._signer], msg),
+    // Same option handling as the sponsored paths. Self-pay is where an ACP
+    // action lands when sponsorship is unavailable (sponsored: false, no proxy
+    // URL, no auth token), so dropping the caller's lookup tables here would
+    // push a router `complete` back over the 1232-byte limit, and dropping
+    // extraSigners would ship a transaction missing a required signature.
+    const message = applySendOptions(
+      pipe(
+        createTransactionMessage({ version: 0 }),
+        (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
+        (msg) =>
+          setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+        (msg) => appendTransactionMessageInstructions(instructions, msg),
+        (msg) => addSignersToTransactionMessage([this._signer], msg),
+      ),
+      options,
     );
 
     const signedTx = await signTransactionMessageWithSigners(message);
@@ -902,17 +1147,130 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * Pick the first fee token (in configured priority order) whose balance
-   * covers Kora's quote for `unsignedBase64`. Balances are read in parallel;
-   * only tokens with a positive balance are quoted. Returns null when no tier
-   * is affordable.
+   * Fee-token decimals, cached per (chain, mint). Needed by TransferChecked,
+   * which verifies the value against the mint and rejects a mismatch.
+   *
+   * Read from the MINT, not from the wallet's balance. Decimals are a property
+   * of the mint, and the balance helper returns a hardcoded `0` when both of
+   * its reads fail — but `0` is itself a legitimate decimals value, so that
+   * sentinel cannot be told apart from a real answer. Cached, it would make
+   * every later payment in this token fail a decimals check for the lifetime of
+   * the process, reporting a mismatch rather than the RPC failure that caused
+   * it.
+   *
+   * So a failed read throws instead of resolving to a guess, and only a
+   * successful read is cached — the next send retries.
+   */
+  private async feeTokenDecimals(
+    chainId: number,
+    feeToken: string,
+  ): Promise<number> {
+    const key = `${chainId}:${feeToken}`;
+    const cached = this._feeTokenDecimals.get(key);
+    if (cached !== undefined) return cached;
+
+    const { value } = await this.getRpc(chainId)
+      .getTokenSupply(feeToken as Address)
+      .send();
+    this._feeTokenDecimals.set(key, value.decimals);
+    return value.decimals;
+  }
+
+  /**
+   * The fee-token tiers to actually try on this chain.
+   *
+   * Two lists have to agree and are maintained in different repos: the SDK's
+   * configured tier list (priority order — which token an agent is charged in
+   * first) and the node's `allowed_spl_paid_tokens` (which mints it accepts at
+   * all). Left independent they drift both ways: a mint added to kora.toml is
+   * unusable until someone edits the SDK, and a mint the SDK lists but the node
+   * rejects burns a round trip per transaction and surfaces as an opaque
+   * upstream error.
+   *
+   * So the node is asked once per chain and treated as authoritative on
+   * ACCEPTANCE, while the configured list stays authoritative on ORDER:
+   *
+   *   1. configured tiers the node accepts, in configured order;
+   *   2. then any mint the node accepts that the SDK has no opinion about.
+   *
+   * Step 2 is what lets a token added to kora.toml be used without an SDK
+   * release. It goes last because the configured order encodes a deliberate
+   * revenue decision and an unknown mint has no place inside it.
+   *
+   * Any failure — node unreachable, method disabled, empty list — falls back to
+   * the configured tiers. This whole path is an optimization over self-pay, so
+   * a discovery failure must not remove fee tokens that already worked.
+   */
+  private async resolveFeeTokens(chainId: number): Promise<string[]> {
+    const configured = this._splFeeTokens.get(chainId) ?? [];
+
+    let accepted = this._nodeFeeTokens.get(chainId);
+    if (accepted === undefined) {
+      try {
+        accepted = await this._koraClients.get(chainId)!.getSupportedTokens();
+      } catch (err) {
+        console.warn(
+          `[kora] getSupportedTokens failed on chain ${chainId}; using the configured fee tokens: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return configured;
+      }
+      this._nodeFeeTokens.set(chainId, accepted);
+
+      // Surfaced once per chain, at discovery. A silently dropped tier is the
+      // failure this method exists to prevent, so it should not be invisible.
+      // Skipped when the node reported nothing: that is a discovery failure
+      // (handled below), not a statement that every configured mint is bad.
+      const rejected =
+        accepted.length > 0
+          ? configured.filter((mint) => !accepted!.includes(mint))
+          : [];
+      if (rejected.length > 0) {
+        console.warn(
+          `[kora] chain ${chainId}: configured fee token(s) not accepted by the node, skipping: ${rejected.join(
+            ", ",
+          )}`,
+        );
+      }
+    }
+
+    if (accepted.length === 0) return configured;
+
+    const acceptedSet = new Set(accepted);
+    const configuredSet = new Set(configured);
+    return [
+      ...configured.filter((mint) => acceptedSet.has(mint)),
+      ...accepted.filter((mint) => !configuredSet.has(mint)),
+    ];
+  }
+
+  /**
+   * Pick the first fee token (in resolved priority order) whose balance covers
+   * Kora's quote, and return that quote alongside it. Balances are read in
+   * parallel; only tokens with a positive balance are quoted. Returns null when
+   * no tier is affordable.
+   *
+   * **Each tier is quoted with its own payment instruction included**, via
+   * `encodeWithPayment`. Quoting the caller's instructions alone understates the
+   * fee by one ATA rent — the payment always carries a `CreateIdempotent` for
+   * Kora's fee account, and Kora prices the instruction list rather than what it
+   * does. A wallet holding a balance between the two figures used to pass this
+   * check, fail to fund the payment, and abort the send with no fallback to the
+   * next tier.
+   *
+   * The returned quote is therefore the amount Kora will actually charge, and
+   * the caller pays it directly rather than re-quoting. `TransferChecked` data
+   * is fixed-width, so the placeholder payment compiles to the same size as the
+   * final one and the two quotes cannot diverge.
    */
   private async selectFeeToken(
     chainId: number,
-    unsignedBase64: string,
-  ): Promise<string | null> {
+    koraPayer: KoraPayer,
+    encodeWithPayment: (paymentIxs: SolanaInstructionLike[]) => string,
+  ): Promise<{ feeToken: string; quote: KoraFeeQuote } | null> {
     const client = this._koraClients.get(chainId)!;
-    const tiers = this._splFeeTokens.get(chainId) ?? [];
+    const tiers = await this.resolveFeeTokens(chainId);
     const rpc = this.getRpc(chainId);
     const owner = this._address as Address;
 
@@ -926,18 +1284,80 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     for (let i = 0; i < tiers.length; i++) {
       if (balances[i]! <= 0n) continue;
-      const quote = await client.estimateTransactionFee(unsignedBase64, tiers[i]!);
-      if (balances[i]! >= quote.feeInToken) return tiers[i]!;
+      const feeToken = tiers[i]!;
+      // Real decimals, not a placeholder. Only the compiled SIZE affects the
+      // fee, but Kora SIMULATES the transaction before pricing it, so a
+      // TransferChecked whose decimals disagree with the mint aborts the quote
+      // with MintDecimalsMismatch (custom program error 0x12) instead of
+      // returning a number. A `0` placeholder therefore fails against every
+      // mint that is not 0-decimal — i.e. all of them in practice.
+      //
+      // A tier whose decimals cannot be read is skipped rather than allowed to
+      // throw: feeTokenDecimals refuses to cache a guess, and one unreadable
+      // mint must not abort selection for the tiers behind it.
+      let probeDecimals: number;
+      try {
+        probeDecimals = await this.feeTokenDecimals(chainId, feeToken);
+      } catch {
+        continue;
+      }
+      const probePaymentIxs = await this.buildKoraPaymentInstructions({
+        koraPayer,
+        feeToken,
+        // Placeholder amount only; the quote depends on size, not value.
+        amount: 1n,
+        decimals: probeDecimals,
+      });
+      const quote = await client.estimateTransactionFee(
+        encodeWithPayment(probePaymentIxs),
+        feeToken,
+      );
+      if (balances[i]! >= quote.feeInToken) return { feeToken, quote };
     }
     return null;
+  }
+
+  /**
+   * The SPL payment Kora is owed: a `TransferChecked` of `amount` from the agent
+   * wallet to Kora's payment address, preceded by a `CreateIdempotent` for the
+   * destination ATA.
+   *
+   * Kora exposes no `getPaymentInstruction` RPC (confirmed against
+   * `getConfig.enabled_methods` on 2.2.x), so the client builds this and Kora
+   * validates it inside `signTransaction` before co-signing.
+   *
+   * DO NOT "optimize" the create away when the fee account is known to exist.
+   * Kora prices the instruction list rather than what the transaction does, so
+   * that create is what the platform's per-transaction fee is charged through —
+   * omitting it drops revenue on a repeat transfer by ~99.8%. This was
+   * implemented once and reverted for exactly that reason. See
+   * `deploy/kora/CHANGES.md` in agentic-commerce-be, "ATA creation is the
+   * billing mechanism".
+   */
+  private buildKoraPaymentInstructions(params: {
+    koraPayer: KoraPayer;
+    feeToken: string;
+    amount: bigint;
+    decimals: number;
+  }): Promise<SolanaInstructionLike[]> {
+    return buildSplTransferInstructions({
+      owner: this._address as Address,
+      recipient: params.koraPayer.paymentAddress,
+      mint: params.feeToken as Address,
+      amount: params.amount,
+      decimals: params.decimals,
+      payer: params.koraPayer.signerAddress,
+    });
   }
 
   /**
    * SPL-paid flow (per attempt, inside withFeePayerRetry):
    * 1. Fresh blockhash; build tx with Kora's payer as fee payer + the caller's
    *    instructions (Kora's payer is known up front — no placeholder mutation).
-   * 2. Pick a fee token the wallet can cover (selectFeeToken).
-   * 3. getPaymentInstruction → append the SPL payment (wallet -> Kora).
+   * 2. Pick a fee token the wallet can cover, quoting each tier with its own
+   *    payment included (selectFeeToken) — returns the fee token AND the quote
+   *    Kora will charge.
+   * 3. Rebuild the payment at the quoted amount and real decimals, append it.
    * 4. Privy signs (user sig); Kora co-signs as fee payer.
    * 5. Broadcast + confirm.
    *
@@ -971,29 +1391,49 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
             setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
           (msg) => appendTransactionMessageInstructions(instructions, msg),
         );
-        const unsignedBase64 = Buffer.from(
-          getTransactionEncoder().encode(compileTransaction(baseMessage)),
-        ).toString("base64");
+        // The caller's lookup tables and extra signers apply here too, and they
+        // must be applied to the SAME message the quote is taken from: Kora
+        // prices the compiled instruction list, so quoting an uncompressed
+        // message and sending a compressed one would charge for a transaction
+        // that was never sent.
+        const withOptions = (paymentIxs: SolanaInstructionLike[]) =>
+          applySendOptions(
+            appendTransactionMessageInstructions(paymentIxs, baseMessage),
+            options,
+          );
+        const encodeWithPayment = (paymentIxs: SolanaInstructionLike[]) =>
+          Buffer.from(
+            getTransactionEncoder().encode(
+              compileTransaction(withOptions(paymentIxs)),
+            ),
+          ).toString("base64");
 
-        const feeToken = await this.selectFeeToken(chainId, unsignedBase64);
-        if (!feeToken) {
+        // Each tier is quoted with its payment included, so `quote` is what Kora
+        // will charge — no re-quote, and no window where the affordability check
+        // and the charge disagree.
+        const selection = await this.selectFeeToken(
+          chainId,
+          koraPayer,
+          encodeWithPayment,
+        );
+        if (!selection) {
           throw new InsufficientFeeTokenError(
             "Not enough balance to cover the network fee. Add USDC, USDT, or VIRTUAL to your wallet and try again.",
           );
         }
+        const { feeToken, quote } = selection;
 
-        const paymentIx = await client.getPaymentInstruction({
-          transactionBase64: unsignedBase64,
+        const decimals = await this.feeTokenDecimals(chainId, feeToken);
+        const finalPaymentIxs = await this.buildKoraPaymentInstructions({
+          koraPayer,
           feeToken,
-          sourceWallet: this._address,
+          amount: quote.feeInToken,
+          decimals,
         });
 
         // Append the payment instruction, recompile, and collect signatures:
         // the user's (Privy) then Kora's (fee payer).
-        const finalMessage = appendTransactionMessageInstructions(
-          [paymentIx],
-          baseMessage,
-        );
+        const finalMessage = withOptions(finalPaymentIxs);
         const finalBase64 = Buffer.from(
           getTransactionEncoder().encode(compileTransaction(finalMessage)),
         ).toString("base64");
@@ -1060,6 +1500,231 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * retryable simulation failure, which this retry loop rides out with a fresh
    * blockhash per attempt.
    */
+  /**
+   * ACP action sponsored by the Kora SPONSOR node.
+   *
+   * The shape differs from the Alchemy path in one decisive way. Alchemy takes
+   * the transaction, REWRITES the fee payer, prefunds rent, and hands it back
+   * for the user to sign. Kora cannot: it only ever appends a signature, so the
+   * transaction has to be correct before it arrives. That means we choose the
+   * fee payer up front AND write the rent prefund ourselves.
+   *
+   * The prefund exists because no ACP instruction takes a payer account — rent
+   * for every PDA is welded to the acting wallet (createJob's only writable
+   * signer is `client`), and that wallet holds 0 SOL by design.
+   *
+   * Sizing is by simulation, not by inspecting instructions: a static estimator
+   * can miss account creations made deep in the CPI stack, whereas measuring the
+   * shortfall is depth-independent — it does not care how deep the account was
+   * created.
+   */
+  private async sendKoraSponsoredTransaction(
+    chainId: number,
+    instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
+  ): Promise<string> {
+    const client = this._koraSponsorClients.get(chainId);
+    if (!client) {
+      throw new Error(`No Kora sponsor client configured for chain ${chainId}`);
+    }
+    const rpc = this.getRpc(chainId);
+    let lastSeenSlot: bigint | null = null;
+
+    return withFeePayerRetry(
+      async () => {
+        const payer = await this.resolveKoraSponsorPayer(chainId);
+        const { context, value: latestBlockhash } = await rpc
+          .getLatestBlockhash()
+          .send();
+        lastSeenSlot = context.slot;
+
+        const compose = (ixs: SolanaInstructionLike[]) =>
+          applySendOptions(
+            pipe(
+              createTransactionMessage({ version: 0 }),
+              (m) => setTransactionMessageFeePayer(payer.signerAddress, m),
+              (m) =>
+                setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
+              (m) => appendTransactionMessageInstructions(ixs, m),
+            ),
+            options,
+          );
+        const encode = (msg: ReturnType<typeof compose>) =>
+          Buffer.from(
+            getTransactionEncoder().encode(compileTransaction(msg)),
+          ).toString("base64");
+
+        const needed = await this.measureRentRequirement(
+          chainId,
+          (ixs) => encode(compose(ixs)),
+          instructions,
+          payer.signerAddress,
+        );
+
+        const finalIxs =
+          needed > 0n
+            ? [
+                buildSponsorPrefundInstruction({
+                  from: payer.signerAddress,
+                  to: this._signer.address,
+                  lamports: needed,
+                }),
+                ...instructions,
+              ]
+            : instructions;
+
+        const finalBase64 = encode(compose(finalIxs));
+
+        // A Solana transaction cannot exceed 1232 bytes — the 1280-byte IPv6
+        // MTU minus headers. The prefund instruction pushes an already-large
+        // ACP batch closer to that ceiling, and the failure it causes on the
+        // way out is opaque, so fail here where the cause is obvious.
+        const wireBytes = Buffer.from(finalBase64, "base64").length;
+        if (wireBytes > MAX_SOLANA_TX_BYTES) {
+          throw new Error(
+            `Sponsored transaction is ${wireBytes} bytes, over the ${MAX_SOLANA_TX_BYTES}-byte limit ` +
+              `(the rent prefund adds ~${wireBytes - Buffer.from(encode(compose(instructions)), "base64").length}). ` +
+              `Compress the account list with an address lookup table.`,
+          );
+        }
+
+        const userSigned = await this.signTransactionViaPrivy(finalBase64);
+        const fullySigned = await client.signTransaction(userSigned);
+
+        return this.broadcastAndConfirm(
+          chainId,
+          fullySigned,
+          latestBlockhash.lastValidBlockHeight,
+          options,
+        );
+      },
+      {
+        ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        onRetry: (attempt, maxAttempts, message, error) => {
+          const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
+            lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
+            lastSeenSlot,
+          });
+          if (this._onSponsoredRetry) {
+            this._onSponsoredRetry({
+              attempt,
+              maxAttempts,
+              slot: lastSeenSlot,
+              requiredSlot,
+              nodeSlot,
+              rawError: message,
+            });
+          }
+        },
+      },
+    );
+  }
+
+  /** The sponsor node has one signer, so its payer is stable and cacheable. */
+  private async resolveKoraSponsorPayer(chainId: number): Promise<KoraPayer> {
+    const cached = this._koraSponsorPayer.get(chainId);
+    if (cached) return cached;
+    const client = this._koraSponsorClients.get(chainId);
+    if (!client) {
+      throw new Error(`No Kora sponsor client configured for chain ${chainId}`);
+    }
+    const payer = await client.getPayerSigner();
+    this._koraSponsorPayer.set(chainId, payer);
+    return payer;
+  }
+
+  /**
+   * How many lamports the acting wallet needs, measured by simulating a FUNDED
+   * transaction and seeing what it actually consumes.
+   *
+   * Why funded, not bare: the wallet holds 0 SOL by design, so an un-prefunded
+   * ACP action simply fails simulation at the first account creation. There is
+   * no shortfall to read off a transaction that never got far enough to spend
+   * anything. Handing it a generous probe lets every account actually be
+   * created, and the lamports that leave the wallet ARE the requirement.
+   *
+   * Measuring consumption is depth-independent: it asks "what did this cost?"
+   * rather than "where is an account created?", so it covers rent created any
+   * number of CPIs deep, including by programs whose instructions cannot be
+   * statically parsed.
+   *
+   * Fails closed rather than guessing when the simulation cannot be sized.
+   */
+  private async measureRentRequirement(
+    chainId: number,
+    compose: (ixs: SolanaInstructionLike[]) => string,
+    instructions: SolanaInstructionLike[],
+    sponsor: Address,
+  ): Promise<bigint> {
+    const rpc = this.getRpc(chainId);
+    const owner = this._signer.address;
+    const before = BigInt(await getSolBalance(rpc as never, owner));
+
+    const probeBase64 = compose([
+      buildSponsorPrefundInstruction({
+        from: sponsor,
+        to: owner,
+        lamports: PREFUND_PROBE_LAMPORTS,
+      }),
+      ...instructions,
+    ]);
+
+    const sim = await (
+      rpc as unknown as {
+        simulateTransaction: (
+          tx: string,
+          cfg: Record<string, unknown>,
+        ) => { send: () => Promise<SimulateWithAccounts> };
+      }
+    )
+      .simulateTransaction(probeBase64, {
+        encoding: "base64",
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+        accounts: { encoding: "base64", addresses: [owner] },
+      })
+      .send();
+
+    if (sim?.value?.err) {
+      // stringifyBigIntSafe, not JSON.stringify: @solana/kit parses RPC numbers
+      // as BigInt, so a simulation error such as
+      // {InstructionError:[1,{Custom:6000n}]} makes plain stringify THROW
+      // ("cannot serialize BigInt"), replacing the real reason with a
+      // serialization error — on the one line whose job is to report the reason.
+      const logs = sim.value.logs ?? [];
+      throw new Error(
+        `Refusing to sponsor: the transaction fails simulation even with ${PREFUND_PROBE_LAMPORTS} ` +
+          `lamports of rent available, so the failure is not a funding problem: ${stringifyBigIntSafe(sim.value.err)}` +
+          // The logs are appended, not summarised: the error code alone does not
+          // identify the rejecting program, and this throw is the only place the
+          // caller ever sees why a sponsored send was refused. Without them a
+          // guard that fired correctly is indistinguishable from a broken one.
+          (logs.length ? `\nProgram logs:\n${logs.join("\n")}` : ""),
+      );
+    }
+
+    const after = sim?.value?.accounts?.[0]?.lamports;
+    if (after === undefined || after === null) {
+      throw new Error(
+        "Refusing to sponsor: simulation did not report the wallet balance, so the prefund cannot be sized",
+      );
+    }
+
+    // The probe went in; whatever did not come back out is the requirement.
+    const leftover = BigInt(after) - before;
+    const needed = PREFUND_PROBE_LAMPORTS - leftover;
+
+    if (needed < 0n) {
+      // The wallet ended richer than the probe made it, which should be
+      // impossible. Something else is moving SOL in, and sizing a prefund off
+      // it would be guesswork.
+      throw new Error(
+        `Refusing to sponsor: the wallet gained ${-needed} lamports beyond the probe; cannot size a prefund`,
+      );
+    }
+    return needed;
+  }
+
   private async sendSponsoredTransaction(
     chainId: number,
     instructions: SolanaInstructionLike[],
@@ -1073,18 +1738,21 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     return withFeePayerRetry(
       async () => {
         // 1. Fresh blockhash + build tx with user as placeholder fee payer
-        //    (Alchemy replaces it + prefunds CPI rent).
+        //    (the sponsor replaces it and prefunds rent).
         const { context, value: latestBlockhash } = await this.getRpc(chainId)
           .getLatestBlockhash()
           .send();
         lastSeenSlot = context.slot;
 
-        const message = pipe(
-          createTransactionMessage({ version: 0 }),
-          (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
-          (msg) =>
-            setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-          (msg) => appendTransactionMessageInstructions(instructions, msg),
+        const message = applySendOptions(
+          pipe(
+            createTransactionMessage({ version: 0 }),
+            (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
+            (msg) =>
+              setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+            (msg) => appendTransactionMessageInstructions(instructions, msg),
+          ),
+          options,
         );
 
         const compiled = compileTransaction(message);

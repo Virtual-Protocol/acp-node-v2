@@ -72,6 +72,29 @@ export type SendInstructionsOptions = {
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
   preflightCommitment?: Commitment;
+  /**
+   * Additional required signers beyond the adapter's own signer (e.g. the
+   * provider co-signing a multi-hook complete). Applied on EVERY send path —
+   * sponsored, self-pay and Kora SPL-paid alike. Sponsorship is chosen by
+   * whether the batch touches an ACP program, never by these options.
+   */
+  extraSigners?: SolanaSigner[];
+  /**
+   * Address lookup tables to compress the transaction against, keyed by
+   * table address with the table's ON-CHAIN address ordering as the value
+   * (see core/solana/lookupTable.ts — never compress against a local list).
+   * Compression is applied on every send path, and always before any size
+   * check: a router `complete` fits only once compressed. The caller is
+   * responsible for having created and warmed the table on-chain first.
+   */
+  lookupTables?: Record<string, SolanaAddress[]>;
+  /**
+   * Hook-PDA rents for this action were pre-created in a direct sponsored
+   * transaction at CPI height 2 (see core/solana/preCreate.ts). A zero rent
+   * prefund on the main transaction is then the EXPECTED outcome, so adapters
+   * suppress the router zero-prefund warning.
+   */
+  hookRentPreCreated?: boolean;
 };
 
 // Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),

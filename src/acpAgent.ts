@@ -27,8 +27,19 @@ import {
   BUFFER_SECONDS,
   getChainFamily,
   getNoEvaluatorAddress,
+  ACP_COMMITMENT,
+  ACP_SELECTORS,
 } from "./core/constants.js";
 import { type ChainFamily } from "./core/chains.js";
+import type { Address as SolanaAddress } from "@solana/kit";
+import type { SolanaSigner } from "./providers/types.js";
+import {
+  fetchProposedTerms,
+  hookRouterPda,
+  subExpiryPda,
+} from "./core/solana/multiHook.js";
+import { fetchMaybeSubscriptionExpiry } from "./core/solana/generated/subscription-state/accounts/subscriptionExpiry.js";
+import { fetchMaybeHookRouter } from "./core/solana/generated/multi-hook-router/accounts/hookRouter.js";
 import { SUBSCRIPTION_STATE_ABI } from "./core/subscriptionStateAbi.js";
 import { SUBSCRIPTION_HOOK_ABI } from "./core/subscriptionHookAbi.js";
 import { MULTI_HOOK_ROUTER_ABI } from "./core/multiHookRouterAbi.js";
@@ -79,6 +90,11 @@ export type SetBudgetParams = {
   amount: AssetToken;
   clientAddress?: string;
   optParams?: Hex;
+  /**
+   * Multi-hook (router) jobs on Solana: subscription terms to propose.
+   * On EVM terms ride inside optParams instead (encodeSubscriptionOptParams).
+   */
+  subscriptionTerms?: { duration: bigint; packageId: bigint };
 };
 
 export type FundJobParams = {
@@ -598,8 +614,18 @@ export class AcpAgent {
 
   async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
     const client = this.getClient(chainId);
-    const prepared = await client.createJob(chainId, params);
-    const result = await client.submitPrepared(chainId, [prepared]);
+    // On Solana, createJob precomputes the job PDA from acp_state.job_counter
+    // read at prepare time; a concurrent createJob can advance the counter
+    // first, failing the program's seeds constraint (ConstraintSeeds 2006).
+    // Re-prepare re-reads the counter; the delay lets a lagging read/sponsor
+    // node catch up so the re-read doesn't return the same stale value.
+    const result = await withReprepare<PreparedTx, string | string[]>(
+      () => client.createJob(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
     const txHash = Array.isArray(result) ? result[0]! : result;
 
     const jobId = await client.getJobIdFromTxHash(chainId, txHash);
@@ -845,16 +871,25 @@ export class AcpAgent {
     params: BatchConfigureHooksAgentParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    if (!(client instanceof EvmAcpClient)) {
-      throw new Error("batchConfigureHooks is only supported on EVM chains");
-    }
-    const prepared = await client.batchConfigureHooks(chainId, {
-      routerAddress: params.routerAddress,
-      jobId: params.jobId,
-      selectors: params.selectors,
-      hooksPerSelector: params.hooksPerSelector,
-    });
-    return client.submitPrepared(chainId, [prepared]);
+    // On Solana, configure fired right after createJob can hit the sponsor's
+    // simulation node before it sees the new job account (router InvalidJob).
+    // The in-send guarded retry absorbs typical lag; this outer wrap
+    // re-prepares and resends with a delay if those attempts exhaust. The
+    // configure is idempotent on an Open job, and a sponsor-simulation
+    // rejection was never broadcast, so a resend cannot double-apply.
+    return withReprepare<PreparedTx, string | string[]>(
+      () =>
+        client.batchConfigureHooks(chainId, {
+          routerAddress: params.routerAddress,
+          jobId: params.jobId,
+          selectors: params.selectors,
+          hooksPerSelector: params.hooksPerSelector,
+        }),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -868,6 +903,26 @@ export class AcpAgent {
     packageId: number,
   ): Promise<bigint> {
     const acpClient = this.getClient(chainId);
+    if (acpClient instanceof SolanaAcpClient) {
+      const stateProgram = getAddressForChain(
+        SUBSCRIPTION_STATE_ADDRESSES,
+        chainId,
+        "SubscriptionState",
+      );
+      const pda = await subExpiryPda(
+        stateProgram as SolanaAddress,
+        client as SolanaAddress,
+        provider as SolanaAddress,
+        BigInt(packageId),
+      );
+      const maybe = await fetchMaybeSubscriptionExpiry(
+        acpClient.getProvider().getRpc(chainId),
+        pda,
+        { commitment: ACP_COMMITMENT },
+      );
+      // No PDA means never activated — same 0 the EVM mapping returns.
+      return maybe.exists ? maybe.data.expiry : 0n;
+    }
     if (!(acpClient instanceof EvmAcpClient)) {
       throw new Error("getSubscriptionExpiry is only supported on EVM chains");
     }
@@ -905,6 +960,23 @@ export class AcpAgent {
     jobId: bigint,
   ): Promise<{ duration: bigint; packageId: bigint }> {
     const acpClient = this.getClient(chainId);
+    if (acpClient instanceof SolanaAcpClient) {
+      const subHook = getAddressForChain(
+        SUBSCRIPTION_HOOK_ADDRESSES,
+        chainId,
+        "SubscriptionHook",
+      );
+      const terms = await fetchProposedTerms(
+        acpClient.getProvider().getRpc(chainId),
+        subHook as SolanaAddress,
+        jobId,
+        ACP_COMMITMENT,
+      );
+      // Absent PDA mirrors the EVM zero-struct read for "nothing proposed".
+      return terms
+        ? { duration: terms.duration, packageId: terms.packageId }
+        : { duration: 0n, packageId: 0n };
+    }
     if (!(acpClient instanceof EvmAcpClient)) {
       throw new Error(
         "getProposedSubscriptionTerms is only supported on EVM chains",
@@ -944,6 +1016,9 @@ export class AcpAgent {
           amount: params.amount.rawAmount,
           ...(params.clientAddress && { clientAddress: params.clientAddress }),
           optParams: params.optParams ?? "0x",
+          ...(params.subscriptionTerms && {
+            subscriptionTerms: params.subscriptionTerms,
+          }),
         }),
       (prepared) => client.submitPrepared(chainId, [prepared]),
       (err) => client.isStalePrepareError(chainId, err),
@@ -956,27 +1031,42 @@ export class AcpAgent {
     params: FundJobParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = [];
+    const prepare = async () => {
+      const prepared = [];
 
-    if (client.getCapabilities().supportsAllowance) {
+      if (client.getCapabilities().supportsAllowance) {
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.amount.address,
+            spenderAddress: client.getContractAddress(chainId),
+            amount: params.amount.rawAmount,
+          }),
+        );
+      }
+
       prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.amount.address,
-          spenderAddress: client.getContractAddress(chainId),
-          amount: params.amount.rawAmount,
+        await client.fund(chainId, {
+          jobId: params.jobId,
+          expectedBudget: params.amount.rawAmount,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
         }),
       );
-    }
+      return prepared;
+    };
 
-    prepared.push(
-      await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-        ...(params.clientAddress && { clientAddress: params.clientAddress }),
-      }),
+    // Solana fund bakes the on-chain fund-request intent into opt_params and
+    // the account set at prepare time; a concurrent setBudget cancelling the
+    // proposal closes that intent PDA and the send fails AccountNotInitialized
+    // (3012) at the hook (E-H5 race). In-send blind retries absorb plain
+    // sponsor lag; this wrap rebuilds from fresh state when the race is real
+    // (see withReprepare).
+    return withReprepare(
+      prepare,
+      (prepared) => client.submitPrepared(chainId, prepared),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
     );
-
-    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -1006,8 +1096,51 @@ export class AcpAgent {
     params: CompleteParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.complete(chainId, params);
-    return client.submitPrepared(chainId, [prepared]);
+    // Solana complete reads the escrow intent (map + Intent account) at
+    // prepare time; a concurrent close changes the required account set and
+    // the send fails AccountNotInitialized (3012) — same race class as fund.
+    // A duplicate complete fails closed (core WrongStatus, not re-prepared).
+    return withReprepare<PreparedTx, string | string[]>(
+      () => client.complete(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
+  }
+
+  /**
+   * Complete a Solana subscription-activating job — multi-hook (router) or
+   * standalone subscription hook. Needs TWO signatures in one transaction:
+   * the agent's own wallet is the evaluator (the Complete caller), and
+   * `providerSigner` co-signs because the hook requires the provider to pay
+   * the sub_expiry rent and receive the proposed_terms refund. Sent via the
+   * sponsored multi-signer path, so neither wallet needs SOL.
+   * On EVM chains this simply delegates to the normal single-signer complete.
+   */
+  async completeSubscriptionJob(
+    chainId: number,
+    params: {
+      jobId: bigint;
+      reason: string;
+      providerSigner: SolanaSigner;
+      clientAddress?: string;
+    },
+  ): Promise<string> {
+    const client = this.getClient(chainId);
+    if (client instanceof SolanaAcpClient) {
+      return client.completeSubscriptionJob(chainId, {
+        jobId: params.jobId,
+        reason: params.reason,
+        ...(params.clientAddress && { clientAddress: params.clientAddress }),
+        providerSigner: params.providerSigner,
+      });
+    }
+    const result = await this.internalComplete(chainId, {
+      jobId: params.jobId,
+      reason: params.reason,
+    });
+    return Array.isArray(result) ? result[0]! : result;
   }
 
   /** @internal */
@@ -1016,8 +1149,16 @@ export class AcpAgent {
     params: RejectParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = await client.reject(chainId, params);
-    return client.submitPrepared(chainId, [prepared]);
+    // Same stale surface as complete: the escrow intent read at prepare and
+    // the funded/unfunded account-set decision both go stale under
+    // concurrent state changes — re-prepare on the 3012 race.
+    return withReprepare<PreparedTx, string | string[]>(
+      () => client.reject(chainId, params),
+      (prepared) => client.submitPrepared(chainId, [prepared]),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
+    );
   }
 
   /** @internal */
@@ -1046,50 +1187,62 @@ export class AcpAgent {
     params: FundWithTransferParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    const prepared = [];
+    const prepare = async () => {
+      const prepared = [];
 
-    if (client.getCapabilities().supportsAllowance) {
-      prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.amount.address,
-          spenderAddress: client.getContractAddress(chainId),
-          amount: params.amount.rawAmount,
-        }),
-      );
-
-      const hookAddr =
-        params.hookAddress ??
-        getAddressForChain(
-          FUND_TRANSFER_HOOK_ADDRESSES,
-          chainId,
-          "FundTransferHook",
+      if (client.getCapabilities().supportsAllowance) {
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.amount.address,
+            spenderAddress: client.getContractAddress(chainId),
+            amount: params.amount.rawAmount,
+          }),
         );
+
+        const hookAddr =
+          params.hookAddress ??
+          getAddressForChain(
+            FUND_TRANSFER_HOOK_ADDRESSES,
+            chainId,
+            "FundTransferHook",
+          );
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.transferAmount.address,
+            spenderAddress: hookAddr,
+            amount: params.transferAmount.rawAmount,
+          }),
+        );
+      }
+
+      const optParams: Hex = encodeFundTransferFundOptParams(
+        chainId,
+        params.transferAmount.address,
+        params.transferAmount.rawAmount,
+        params.destination,
+      );
+
       prepared.push(
-        await client.approveAllowance(chainId, {
-          tokenAddress: params.transferAmount.address,
-          spenderAddress: hookAddr,
-          amount: params.transferAmount.rawAmount,
+        await client.fund(chainId, {
+          jobId: params.jobId,
+          expectedBudget: params.amount.rawAmount,
+          ...(params.clientAddress && { clientAddress: params.clientAddress }),
+          optParams,
         }),
       );
-    }
+      return prepared;
+    };
 
-    const optParams: Hex = encodeFundTransferFundOptParams(
-      chainId,
-      params.transferAmount.address,
-      params.transferAmount.rawAmount,
-      params.destination,
+    // On Solana the passed optParams are overwritten by the on-chain intent
+    // read inside client.fund, so the stale surface is identical to
+    // internalFund — re-prepare on the intent-close 3012 race (E-H5).
+    return withReprepare(
+      prepare,
+      (prepared) => client.submitPrepared(chainId, prepared),
+      (err) => client.isStalePrepareError(chainId, err),
+      3,
+      600,
     );
-
-    prepared.push(
-      await client.fund(chainId, {
-        jobId: params.jobId,
-        expectedBudget: params.amount.rawAmount,
-        ...(params.clientAddress && { clientAddress: params.clientAddress }),
-        optParams,
-      }),
-    );
-
-    return client.submitPrepared(chainId, prepared);
   }
 
   /** @internal */
@@ -1097,6 +1250,18 @@ export class AcpAgent {
     chainId: number,
     params: SetBudgetWithSubscriptionParams,
   ): Promise<string | string[]> {
+    if (getChainFamily(chainId) === "solana") {
+      // Structured terms; the Solana client encodes the hook's 16-byte LE
+      // params itself (EVM rides ABI-encoded terms in optParams instead).
+      return this.internalSetBudget(chainId, {
+        jobId: params.jobId,
+        amount: params.amount,
+        subscriptionTerms: {
+          duration: params.duration,
+          packageId: params.packageId,
+        },
+      });
+    }
     const optParams = encodeSubscriptionOptParams(
       params.duration,
       params.packageId,
@@ -1115,6 +1280,25 @@ export class AcpAgent {
     params: FundWithSubscriptionParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
+
+    if (client instanceof SolanaAcpClient) {
+      // The Solana client reads the proposed terms on-chain and echoes them
+      // as the confirmation — no optParams or allowances needed. The echoed
+      // terms go stale if a second setBudget replaces the proposal between
+      // prepare and send — re-prepare on the 3012 race (see withReprepare).
+      return withReprepare(
+        () =>
+          client.fund(chainId, {
+            jobId: params.jobId,
+            expectedBudget: params.amount.rawAmount,
+          }),
+        (prepared) => client.submitPrepared(chainId, [prepared]),
+        (err) => client.isStalePrepareError(chainId, err),
+        3,
+        600,
+      );
+    }
+
     const prepared = [];
 
     if (client.getCapabilities().supportsAllowance) {
@@ -1148,6 +1332,25 @@ export class AcpAgent {
     chainId: number,
     params: SetBudgetWithSubscriptionAndFundRequestParams,
   ): Promise<string | string[]> {
+    if (getChainFamily(chainId) === "solana") {
+      // Solana router jobs take structured terms plus the raw fund-transfer
+      // slice; the client assembles the multi-hook header itself so declared
+      // account counts always match the slices it builds.
+      return this.internalSetBudget(chainId, {
+        jobId: params.jobId,
+        amount: params.amount,
+        optParams: encodeFundTransferSetBudgetOptParams(
+          chainId,
+          params.transferAmount.address,
+          params.transferAmount.rawAmount,
+          params.destination,
+        ),
+        subscriptionTerms: {
+          duration: params.duration,
+          packageId: params.packageId,
+        },
+      });
+    }
     const subSlice = encodeSubscriptionOptParams(
       params.duration,
       params.packageId,
@@ -1172,6 +1375,32 @@ export class AcpAgent {
     selector: Hex,
   ): Promise<Address[]> {
     const client = this.getClient(chainId);
+    if (client instanceof SolanaAcpClient) {
+      const routerAddress = getAddressForChain(
+        MULTI_HOOK_ROUTER_ADDRESSES,
+        chainId,
+        "MultiHookRouter",
+      );
+      const pda = await hookRouterPda(routerAddress as SolanaAddress, jobId);
+      const maybe = await fetchMaybeHookRouter(
+        client.getProvider().getRpc(chainId),
+        pda,
+        { commitment: ACP_COMMITMENT },
+      );
+      if (!maybe.exists) return [];
+      const bySelector: Record<string, readonly SolanaAddress[]> = {
+        [ACP_SELECTORS.setBudget]: maybe.data.setBudgetHooks,
+        [ACP_SELECTORS.fund]: maybe.data.fundHooks,
+        [ACP_SELECTORS.submit]: maybe.data.submitHooks,
+        [ACP_SELECTORS.complete]: maybe.data.completeHooks,
+        [ACP_SELECTORS.reject]: maybe.data.rejectHooks,
+      };
+      const hooks = bySelector[selector];
+      if (!hooks) {
+        throw new Error(`getRouterHooks: unknown selector ${selector}`);
+      }
+      return hooks as unknown as Address[];
+    }
     if (!(client instanceof EvmAcpClient)) {
       throw new Error("getRouterHooks is only supported on EVM chains");
     }
@@ -1195,6 +1424,28 @@ export class AcpAgent {
     params: FundViaRouterParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
+
+    if (client instanceof SolanaAcpClient) {
+      // The Solana client derives every fan-out slice from on-chain state
+      // (proposed_terms + the fund-request intent) — echoing the intent IS
+      // the client's consent — so no optParams or allowances are needed.
+      // Those reads go stale under a concurrent proposal change (E-H5) —
+      // re-prepare on the 3012 race. fundViaRouter's eager ATA-create
+      // broadcast at prepare time is idempotent, so re-running prepare in
+      // this loop is safe (see the comment at that send site).
+      return withReprepare(
+        () =>
+          client.fund(chainId, {
+            jobId: params.jobId,
+            expectedBudget: params.amount.rawAmount,
+          }),
+        (prepared) => client.submitPrepared(chainId, [prepared]),
+        (err) => client.isStalePrepareError(chainId, err),
+        3,
+        600,
+      );
+    }
+
     const prepared = [];
 
     if (client.getCapabilities().supportsAllowance) {

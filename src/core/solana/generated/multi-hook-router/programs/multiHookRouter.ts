@@ -17,32 +17,28 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
   parseAddHookInstruction,
   parseAfterActionInstruction,
   parseBatchConfigureHooksInstruction,
   parseBeforeActionInstruction,
   parseConfigureHooksInstruction,
   parseInitializeInstruction,
-  parseNominateAuthorityInstruction,
   parseRemoveHookInstruction,
   parseReorderHooksInstruction,
   parseSetMaxHooksPerJobInstruction,
-  type ParsedAcceptAuthorityInstruction,
   type ParsedAddHookInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBatchConfigureHooksInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedConfigureHooksInstruction,
   type ParsedInitializeInstruction,
-  type ParsedNominateAuthorityInstruction,
   type ParsedRemoveHookInstruction,
   type ParsedReorderHooksInstruction,
   type ParsedSetMaxHooksPerJobInstruction,
 } from "../instructions/index.js";
 
 export const MULTI_HOOK_ROUTER_PROGRAM_ADDRESS =
-  "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q" as Address<"HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q">;
+  "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5" as Address<"EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5">;
 
 export enum MultiHookRouterAccount {
   HookMetadata,
@@ -93,14 +89,12 @@ export function identifyMultiHookRouterAccount(
 }
 
 export enum MultiHookRouterInstruction {
-  AcceptAuthority,
   AddHook,
   AfterAction,
   BatchConfigureHooks,
   BeforeAction,
   ConfigureHooks,
   Initialize,
-  NominateAuthority,
   RemoveHook,
   ReorderHooks,
   SetMaxHooksPerJob,
@@ -110,17 +104,6 @@ export function identifyMultiHookRouterInstruction(
   instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): MultiHookRouterInstruction {
   const data = "data" in instruction ? instruction.data : instruction;
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([107, 86, 198, 91, 33, 12, 107, 160]),
-      ),
-      0,
-    )
-  ) {
-    return MultiHookRouterInstruction.AcceptAuthority;
-  }
   if (
     containsBytes(
       data,
@@ -191,17 +174,6 @@ export function identifyMultiHookRouterInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([148, 182, 144, 91, 186, 12, 118, 18]),
-      ),
-      0,
-    )
-  ) {
-    return MultiHookRouterInstruction.NominateAuthority;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([190, 124, 75, 130, 220, 82, 21, 208]),
       ),
       0,
@@ -237,11 +209,8 @@ export function identifyMultiHookRouterInstruction(
 }
 
 export type ParsedMultiHookRouterInstruction<
-  TProgram extends string = "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q",
+  TProgram extends string = "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5",
 > =
-  | ({
-      instructionType: MultiHookRouterInstruction.AcceptAuthority;
-    } & ParsedAcceptAuthorityInstruction<TProgram>)
   | ({
       instructionType: MultiHookRouterInstruction.AddHook;
     } & ParsedAddHookInstruction<TProgram>)
@@ -261,9 +230,6 @@ export type ParsedMultiHookRouterInstruction<
       instructionType: MultiHookRouterInstruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
   | ({
-      instructionType: MultiHookRouterInstruction.NominateAuthority;
-    } & ParsedNominateAuthorityInstruction<TProgram>)
-  | ({
       instructionType: MultiHookRouterInstruction.RemoveHook;
     } & ParsedRemoveHookInstruction<TProgram>)
   | ({
@@ -278,13 +244,6 @@ export function parseMultiHookRouterInstruction<TProgram extends string>(
 ): ParsedMultiHookRouterInstruction<TProgram> {
   const instructionType = identifyMultiHookRouterInstruction(instruction);
   switch (instructionType) {
-    case MultiHookRouterInstruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
     case MultiHookRouterInstruction.AddHook: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -325,13 +284,6 @@ export function parseMultiHookRouterInstruction<TProgram extends string>(
       return {
         instructionType: MultiHookRouterInstruction.Initialize,
         ...parseInitializeInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.NominateAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
       };
     }
     case MultiHookRouterInstruction.RemoveHook: {

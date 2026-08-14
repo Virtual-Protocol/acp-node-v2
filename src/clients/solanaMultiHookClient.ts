@@ -4,18 +4,7 @@ import {
   getAddressEncoder,
   getAddressDecoder,
   getU64Encoder,
-  pipe,
-  createTransactionMessage,
-  setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
-  appendTransactionMessageInstructions,
-  addSignersToTransactionMessage,
-  signTransactionMessageWithSigners,
-  getBase64EncodedWireTransaction,
-  compressTransactionMessageUsingAddressLookupTables,
   type Address,
-  type Signature,
-  type KeyPairSigner,
   type FetchAccountConfig,
 } from "@solana/kit";
 import { ACP_COMMITMENT, ALT_PROGRAM_ID } from "../core/constants.js";
@@ -183,6 +172,7 @@ export class SolanaMultiHookClient {
     const ix = getSetBudgetInstruction(
       {
         caller: seller,
+        acpState: await mh.acpStatePda(this.acp),
         job: jobPda,
         budgetMint: paymentToken,
         hookProgram: this.router,
@@ -231,6 +221,7 @@ export class SolanaMultiHookClient {
     const ix = getFundInstruction(
       {
         client: buyer,
+        acpState: await mh.acpStatePda(this.acp),
         job: jobPda,
         clientTokenAccount: clientAta,
         vault: vaultAta,
@@ -335,17 +326,25 @@ export class SolanaMultiHookClient {
    */
   async complete(
     evaluator: ISolanaProviderAdapter,
-    providerSigner: SolanaSigner,
+    /**
+     * The job's provider. Since F-118 only its ADDRESS is used — it is named as
+     * the proposed_terms rent recipient and never signs — so an evaluator that
+     * has no access to the provider's key can pass the bare address. A
+     * SolanaSigner is still accepted so existing callers compile unchanged.
+     */
+    provider: SolanaSigner | Address,
     jobId: bigint,
     p: { terms: SubscriptionTerms; clientAddress: Address; reason?: string }
   ): Promise<string> {
+    const providerAddress: Address =
+      typeof provider === "string" ? provider : provider.address;
     const evalSigner = evaluator.getSigner();
     const jobPda = await mh.jobPda(this.acp, p.clientAddress, jobId);
     const paymentToken = await this.paymentToken();
     const acpState = await this.read(fetchAcpState, await mh.acpStatePda(this.acp));
     const vaultAuthority = await mh.vaultAuthorityPda(this.acp, jobPda);
     const vaultAta = await deriveAta(vaultAuthority, paymentToken);
-    const providerAta = await deriveAta(providerSigner.address, paymentToken);
+    const providerAta = await deriveAta(providerAddress, paymentToken);
     const evaluatorAta = await deriveAta(evalSigner.address, paymentToken);
     const treasuryAta = await deriveAta(acpState.data.platformTreasury, paymentToken);
     const clientAta = await deriveAta(p.clientAddress, paymentToken);
@@ -353,7 +352,7 @@ export class SolanaMultiHookClient {
     const submitIntent = await mh.intentPda(this.fundHook, jobId, 1);
     const escrowAuth = await mh.escrowAuthorityPda(this.fundHook, jobId);
     const escrowVault = await deriveAta(escrowAuth, paymentToken);
-    const subExpiry = await mh.subExpiryPda(this.subState, p.clientAddress, providerSigner.address, p.terms.packageId);
+    const subExpiry = await mh.subExpiryPda(this.subState, p.clientAddress, providerAddress, p.terms.packageId);
 
     const header = mh.encodeMultiHookHeader([
       { accountCount: 9, params: new Uint8Array(0) },
@@ -383,13 +382,13 @@ export class SolanaMultiHookClient {
         ...ix.accounts,
         ...(await this.routerPrefix(jobId)),
         ro(this.sub), ro(await this.wl(this.sub)), w(await mh.hookStatePda(this.sub)), ro(SYSVAR_IX), w(await mh.proposedTermsPda(this.sub, jobId)),
-        ws(providerSigner.address), ro(jobPda), ro(this.subState), ro(await mh.writerRegistryPda(this.subState, this.sub)), w(subExpiry), ro(SYSTEM),
+        w(providerAddress), ro(jobPda), ro(this.subState), ro(await mh.writerRegistryPda(this.subState, this.sub)), w(subExpiry), ro(SYSTEM),
         ro(this.fundHook), ro(await this.wl(this.fundHook)), w(fundHookState), ro(SYSVAR_IX),
         ro(await mh.providerEscrowIntentIdPda(this.fundHook, jobId)), w(submitIntent), w(escrowVault), w(clientAta), ro(escrowAuth), ro(TOKEN_PROGRAM),
       ],
       data: ix.data as Uint8Array,
     };
-    const signerSet = new Set<string>([evalSigner.address, providerSigner.address]);
+    const signerSet = new Set<string>([evalSigner.address, providerAddress]);
     const lutAddrs = [...new Set(completeInstruction.accounts.map((a) => a.address as string))].filter(
       (a) => !signerSet.has(a)
     ) as Address[];
@@ -401,11 +400,32 @@ export class SolanaMultiHookClient {
     // against the real table makes our accounts resolve correctly regardless of
     // who else extended it.
     const { lut, addresses: tableAddrs } = await this.createLut(evaluator, lutAddrs);
-    return this.sendMulti(evalSigner, [evalSigner, providerSigner], [
-      cuLimitIx(1_400_000),
-      createAtaIdempotentIx(evalSigner.address, evaluatorAta, evalSigner.address, paymentToken),
-      completeInstruction,
-    ], { [lut]: tableAddrs });
+    // Through the adapter, not a raw send. `complete` used to broadcast itself
+    // because the sponsored path could not carry a second required signer — the
+    // provider co-signature — so it was the one lifecycle step the evaluator
+    // always paid for out of its own SOL. extraSigners is now applied on every
+    // path, so the same batch rides sponsorship like every other step.
+    //
+    // The ATA create keeps the evaluator as its rent payer rather than
+    // getRentPayer(): this is an ACP action, so it takes the SPONSORED path, and
+    // there the rent is prefunded to the acting wallet. getRentPayer() would
+    // name Kora's MICROGAS payer whenever that node is configured — an address
+    // that never signs this transaction.
+    const result = await evaluator.sendInstructions(
+      this.chainId,
+      [
+        cuLimitIx(1_400_000),
+        createAtaIdempotentIx(evalSigner.address, evaluatorAta, evalSigner.address, paymentToken),
+        completeInstruction,
+      ],
+      {
+        // No extraSigners since F-118: the provider is named (it receives the
+        // proposed_terms rent refund) but does not sign. Activation no longer
+        // allocates, so there is nothing for its signature to authorize.
+        lookupTables: { [lut]: tableAddrs },
+      },
+    );
+    return Array.isArray(result) ? result[0]! : result;
   }
 
   // -------------------------------------------------------------------------
@@ -529,39 +549,6 @@ export class SolanaMultiHookClient {
     return { addresses, lastExtendedSlot };
   }
 
-  private async sendMulti(
-    feePayer: SolanaSigner,
-    signers: SolanaSigner[],
-    instructions: SolanaInstructionLike[],
-    lookupTables: Record<string, Address[]>
-  ): Promise<string> {
-    const { value: blockhash } = await this.rpc.getLatestBlockhash().send();
-    let message: any = pipe(
-      createTransactionMessage({ version: 0 }),
-      (m) => setTransactionMessageFeePayer(feePayer.address, m),
-      (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-      (m) => appendTransactionMessageInstructions(instructions as never, m),
-      (m) => addSignersToTransactionMessage(signers as never, m)
-    );
-    message = compressTransactionMessageUsingAddressLookupTables(message, lookupTables as never);
-    const signed = await signTransactionMessageWithSigners(message);
-    const sig = await this.rpc
-      .sendTransaction(getBase64EncodedWireTransaction(signed), { 
-        encoding: "base64",
-        preflightCommitment: ACP_COMMITMENT
-      })
-      .send();
-    for (let i = 0; i < 40; i++) {
-      const { value } = await this.rpc.getSignatureStatuses([sig as Signature]).send();
-      const s = value[0];
-      if (s) {
-        if (s.err) throw new Error(`complete failed: ${JSON.stringify(s.err)}`);
-        if (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized") return sig;
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`complete confirm timeout: ${sig}`);
-  }
 }
 
 // ---------------------------------------------------------------------------

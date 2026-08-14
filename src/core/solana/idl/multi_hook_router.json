@@ -40,7 +40,7 @@
       "name": "RouterState"
     }
   ],
-  "address": "HDw9jDF9LbPnBiJxpJo2tEQyDLXvj43s33H9JQxtau5q",
+  "address": "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5",
   "errors": [
     {
       "code": 6000,
@@ -119,72 +119,51 @@
     },
     {
       "code": 6015,
+      "msg": "Wrong hook whitelist account: not the canonical PDA for this hook",
+      "name": "WrongHookWhitelist"
+    },
+    {
+      "code": 6016,
       "msg": "Account count exceeds remaining accounts",
       "name": "AccountSliceOutOfBounds"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "msg": "Unauthorized caller",
       "name": "UnauthorizedCaller"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "msg": "Max hooks per job must be >= 1",
       "name": "InvalidMaxHooks"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "msg": "Action is not a hookable selector (only SetBudget, Fund, Submit, Complete, Reject)",
       "name": "InvalidSelector"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "msg": "Sub-hook is missing from a selector list it requires",
       "name": "HookMissingRequiredSelector"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "msg": "Sub-hook does not declare HookMetadata PDA",
       "name": "InvalidHookMetadata"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "msg": "Invalid opt_params mode byte: must be 0x00 (Broadcast) or 0x01 (PerHook)",
       "name": "InvalidOptParamsMode"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "msg": "Hook program account is not executable",
       "name": "HookNotExecutable"
     }
   ],
   "events": [
-    {
-      "discriminator": [
-        83,
-        253,
-        94,
-        222,
-        179,
-        41,
-        95,
-        127
-      ],
-      "name": "AuthorityNominated"
-    },
-    {
-      "discriminator": [
-        245,
-        109,
-        179,
-        54,
-        135,
-        92,
-        22,
-        64
-      ],
-      "name": "AuthorityTransferred"
-    },
     {
       "discriminator": [
         107,
@@ -265,54 +244,6 @@
     }
   ],
   "instructions": [
-    {
-      "accounts": [
-        {
-          "name": "new_authority",
-          "signer": true
-        },
-        {
-          "name": "router_state",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  111,
-                  117,
-                  116,
-                  101,
-                  114,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          },
-          "writable": true
-        }
-      ],
-      "args": [],
-      "discriminator": [
-        107,
-        86,
-        198,
-        91,
-        33,
-        12,
-        107,
-        160
-      ],
-      "docs": [
-        "Accept the pending authority nomination, completing the two-step transfer."
-      ],
-      "name": "accept_authority"
-    },
     {
       "accounts": [
         {
@@ -487,6 +418,10 @@
         {
           "name": "caller",
           "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -500,8 +435,7 @@
         73
       ],
       "docs": [
-        "Hook callback: routes to the per-selector list for `action` and fans",
-        "out `after_action` to each sub-hook in order. Called by ACP core via CPI."
+        "Post-action hook callback; fans out to each sub-hook configured for `action`."
       ],
       "name": "after_action"
     },
@@ -580,31 +514,41 @@
         {
           "name": "set_budget",
           "type": {
-            "vec": "pubkey"
+            "option": {
+              "vec": "pubkey"
+            }
           }
         },
         {
           "name": "fund",
           "type": {
-            "vec": "pubkey"
+            "option": {
+              "vec": "pubkey"
+            }
           }
         },
         {
           "name": "submit",
           "type": {
-            "vec": "pubkey"
+            "option": {
+              "vec": "pubkey"
+            }
           }
         },
         {
           "name": "complete",
           "type": {
-            "vec": "pubkey"
+            "option": {
+              "vec": "pubkey"
+            }
           }
         },
         {
           "name": "reject",
           "type": {
-            "vec": "pubkey"
+            "option": {
+              "vec": "pubkey"
+            }
           }
         }
       ],
@@ -619,8 +563,7 @@
         156
       ],
       "docs": [
-        "Atomically replace ALL 5 per-selector hook lists for a job. Mirrors",
-        "EVM `MultiHookRouter.batchConfigureHooks`."
+        "Atomically replace all 5 per-selector hook lists for a job."
       ],
       "name": "batch_configure_hooks"
     },
@@ -628,9 +571,7 @@
       "accounts": [
         {
           "docs": [
-            "Manually validated. Jobs created with the router as their hook before",
-            "any `configure_hooks` call don't have a HookRouter PDA yet — handler",
-            "detects this via `data_is_empty()` and returns early."
+            "May not exist yet; handler treats a missing HookRouter PDA as a no-op."
           ],
           "name": "hook_router",
           "pda": {
@@ -703,6 +644,10 @@
         {
           "name": "caller",
           "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
         }
       ],
       "discriminator": [
@@ -716,8 +661,7 @@
         137
       ],
       "docs": [
-        "Hook callback: routes to the per-selector list for `action` and fans",
-        "out `before_action` to each sub-hook in order. Called by ACP core via CPI."
+        "Pre-action hook callback; fans out to each sub-hook configured for `action`."
       ],
       "name": "before_action"
     },
@@ -854,8 +798,7 @@
         },
         {
           "docs": [
-            "Self-declared metadata. Read by other multi-hook-routers if this is",
-            "ever nested as a sub-hook (defensive completeness coverage)."
+            "Self-declared hook metadata, read when this router is nested as a sub-hook."
           ],
           "name": "hook_metadata",
           "pda": {
@@ -929,38 +872,38 @@
               {
                 "kind": "const",
                 "value": [
+                  203,
+                  9,
+                  225,
+                  30,
+                  61,
+                  29,
+                  149,
                   241,
-                  11,
-                  48,
+                  219,
+                  111,
+                  190,
+                  59,
                   76,
-                  211,
-                  51,
-                  201,
-                  10,
-                  4,
-                  54,
-                  76,
-                  150,
-                  27,
-                  210,
-                  216,
-                  249,
-                  20,
-                  99,
-                  15,
-                  73,
-                  12,
-                  166,
-                  140,
-                  184,
-                  55,
+                  171,
+                  208,
+                  45,
+                  19,
                   245,
-                  200,
-                  155,
-                  254,
-                  104,
-                  13,
-                  96
+                  181,
+                  160,
+                  87,
+                  233,
+                  72,
+                  170,
+                  14,
+                  181,
+                  126,
+                  111,
+                  15,
+                  157,
+                  236,
+                  230
                 ]
               }
             ]
@@ -988,63 +931,9 @@
         237
       ],
       "docs": [
-        "Initialize the router with ACP program reference and max hooks config.",
-        "`max_hooks_per_job` accepts any value 1..=255 (no logical upper bound)."
+        "Initialize the router with ACP program reference and max hooks config."
       ],
       "name": "initialize"
-    },
-    {
-      "accounts": [
-        {
-          "name": "authority",
-          "signer": true
-        },
-        {
-          "name": "router_state",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  111,
-                  117,
-                  116,
-                  101,
-                  114,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          },
-          "writable": true
-        }
-      ],
-      "args": [
-        {
-          "name": "new_authority",
-          "type": "pubkey"
-        }
-      ],
-      "discriminator": [
-        148,
-        182,
-        144,
-        91,
-        186,
-        12,
-        118,
-        18
-      ],
-      "docs": [
-        "Nominate a new authority. Two-step transfer: nominee must call accept_authority."
-      ],
-      "name": "nominate_authority"
     },
     {
       "accounts": [
@@ -1233,6 +1122,10 @@
     {
       "accounts": [
         {
+          "docs": [
+            "Must be the ACP core authority (`AcpState.authority`), verified in the",
+            "handler against `acp_state`. The router has no admin of its own."
+          ],
           "name": "authority",
           "signer": true
         },
@@ -1260,6 +1153,12 @@
             ]
           },
           "writable": true
+        },
+        {
+          "docs": [
+            "PDA address, owner, and stored `authority` are validated in the handler."
+          ],
+          "name": "acp_state"
         }
       ],
       "args": [
@@ -1279,8 +1178,8 @@
         200
       ],
       "docs": [
-        "Update the maximum sub-hooks allowed per job per selector. Authority only.",
-        "Accepts any value 1..=255 (no logical upper bound)."
+        "Update the maximum sub-hooks allowed per job per selector.",
+        "Callable only by the ACP core authority (the router has no admin of its own)."
       ],
       "name": "set_max_hooks_per_job"
     }
@@ -1293,43 +1192,14 @@
   },
   "types": [
     {
-      "name": "AuthorityNominated",
-      "type": {
-        "fields": [
-          {
-            "name": "current_authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "type": "pubkey"
-          }
-        ],
-        "kind": "struct"
-      }
-    },
-    {
-      "name": "AuthorityTransferred",
-      "type": {
-        "fields": [
-          {
-            "name": "old_authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "new_authority",
-            "type": "pubkey"
-          }
-        ],
-        "kind": "struct"
-      }
-    },
-    {
       "docs": [
-        "Cached required-selectors bitmask for one configured sub-hook. Populated",
-        "from the sub-hook's `HookMetadata` PDA at mutation time so that",
-        "`validate_completeness` and fund-time re-validation can run from",
-        "HookRouter alone (no metadata account reads needed at fan-out)."
+        "Cached required-selectors bitmask for one configured sub-hook.",
+        "",
+        "Read via `validate_sub_hook` at config time and cached. Safe because",
+        "`HookMetadata.required_selectors` is write-once (set only in each hook's",
+        "`initialize`, no setter), so the cache can never diverge from the source.",
+        "If `HookMetadata` ever becomes mutable, `validate_completeness` must re-read",
+        "it live instead of trusting this cache."
       ],
       "name": "CachedHookMetadata",
       "type": {
@@ -1348,10 +1218,8 @@
     },
     {
       "docs": [
-        "Emitted in `before_action`/`after_action` when a configured sub-hook is",
-        "no longer whitelisted on ACP at fan-out time. The router skips the",
-        "dewhitelisted hook and continues to the next one. Mirrors EVM",
-        "`DewhitelistedHookSkipped`."
+        "Emitted when a configured sub-hook is no longer whitelisted at fan-out",
+        "time; the router skips it and continues."
       ],
       "name": "DewhitelistedHookSkipped",
       "type": {
@@ -1398,9 +1266,8 @@
     },
     {
       "docs": [
-        "Hook self-declaration. Read by other multi-hook-routers if this router",
-        "is ever nested as a sub-hook (defensive: also lets external indexers",
-        "query \"what does multi-hook-router forward?\"). PDA seeded by `[b\"hook_metadata\"]`."
+        "Hook self-declaration, read when this router is nested as a sub-hook.",
+        "PDA seeded by `[b\"hook_metadata\"]`."
       ],
       "name": "HookMetadata",
       "type": {
@@ -1440,10 +1307,7 @@
     {
       "docs": [
         "Per-job hook configuration. Five per-selector ordered lists, one per",
-        "hookable lifecycle action. PDA seeded by `[\"hook_router\", job_id_le_bytes]`.",
-        "",
-        "Mirrors EVM `mapping(jobId => mapping(selector => address[]))` — the same",
-        "hook can appear in multiple selector lists; lists are independent."
+        "hookable lifecycle action. PDA seeded by `[\"hook_router\", job_id_le_bytes]`."
       ],
       "name": "HookRouter",
       "type": {
@@ -1484,8 +1348,7 @@
           },
           {
             "docs": [
-              "Cached metadata for unique configured sub-hooks. Used by",
-              "`validate_completeness` and fund-time re-validation."
+              "Cached metadata for unique configured sub-hooks."
             ],
             "name": "hook_metadata_cache",
             "type": {
@@ -1576,21 +1439,9 @@
             "type": "pubkey"
           },
           {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
             "docs": [
-              "Admin-configurable max sub-hooks per job, per selector. Range: 1..=255.",
-              "No logical upper bound (mirrors EVM `MultiHookRouter.maxHooksPerJob`).",
-              "Practical limit governed by Solana tx-size at runtime (~5-8 hooks per",
-              "call without Address Lookup Tables)."
+              "Max sub-hooks per job, per selector. Tunable only by the ACP core",
+              "authority (`AcpState.authority`); the router has no admin of its own."
             ],
             "name": "max_hooks_per_job",
             "type": "u8"

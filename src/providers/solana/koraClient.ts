@@ -13,28 +13,19 @@
  * Transport mirrors `PrivySolanaProviderAdapter.requestFeePayer`: plain `fetch`
  * JSON-RPC with a bearer token, no extra dependency.
  *
- * NOTE ON FIELD NAMES: Kora's exact request/response JSON field names
- * (snake_case vs camelCase, `fee_token` vs `feeToken`, the payment-instruction
- * shape) are confirmed by the B0 devnet spike. They are intentionally isolated
- * to this file so a mismatch is a one-place fix.
+ * FIELD NAMES are confirmed against a live node (devnet, kora-cli 2.2.x):
+ * responses are snake_case (`signer_address`, `fee_in_lamports`,
+ * `signed_transaction`); the camelCase fallbacks below are belt-and-braces.
+ * They are intentionally isolated to this file so a mismatch is a one-place fix.
+ *
+ * There is deliberately no getPaymentInstruction here: that method does not
+ * exist in Kora (its getConfig.enabled_methods lists liveness, get_config,
+ * get_blockhash, get_supported_tokens, get_payer_signer,
+ * estimate_transaction_fee, sign_transaction, get_version and the bundle
+ * variants, and nothing else). The SDK builds the SPL payment itself and Kora
+ * validates it inside sign_transaction.
  */
-import {
-  AccountRole,
-  type Address,
-} from "@solana/kit";
-import type { SolanaInstructionLike } from "../types.js";
-
-/** Kora's instruction JSON (Rust-style Solana instruction). */
-interface KoraInstructionJson {
-  program_id: string;
-  accounts: Array<{
-    pubkey: string;
-    is_signer: boolean;
-    is_writable: boolean;
-  }>;
-  /** base64-encoded instruction data (byte-array form tolerated). */
-  data: string | number[];
-}
+import type { Address } from "@solana/kit";
 
 export interface KoraFeeQuote {
   /** Network + rent cost in lamports, before margin. */
@@ -46,36 +37,8 @@ export interface KoraFeeQuote {
 export interface KoraPayer {
   /** The fee-payer address Kora will co-sign with. */
   signerAddress: Address;
-  /** Where the SPL payment instruction must send the fee token. */
+  /** Where the SPL payment must send the fee token. */
   paymentAddress: Address;
-}
-
-function toRole(isSigner: boolean, isWritable: boolean): AccountRole {
-  if (isSigner) {
-    return isWritable ? AccountRole.WRITABLE_SIGNER : AccountRole.READONLY_SIGNER;
-  }
-  return isWritable ? AccountRole.WRITABLE : AccountRole.READONLY;
-}
-
-function decodeIxData(data: string | number[]): Uint8Array {
-  if (typeof data === "string") {
-    return new Uint8Array(Buffer.from(data, "base64"));
-  }
-  return new Uint8Array(data);
-}
-
-/** Map a Kora instruction JSON to the SDK's SolanaInstructionLike. */
-export function koraInstructionToSolana(
-  ix: KoraInstructionJson,
-): SolanaInstructionLike {
-  return {
-    programAddress: ix.program_id as Address,
-    accounts: ix.accounts.map((a) => ({
-      address: a.pubkey as Address,
-      role: toRole(a.is_signer, a.is_writable),
-    })),
-    data: decodeIxData(ix.data),
-  };
 }
 
 export class KoraClient {
@@ -99,14 +62,27 @@ export class KoraClient {
     });
     const json = (await res.json()) as {
       result?: T;
-      error?: { message?: string; code?: number };
+      // JSON-RPC shape, from Kora itself.
+      error?: { message?: string; code?: number } | string;
+      // Nest's HttpException shape, from the authenticated proxy sitting in
+      // front of it: {message, error: "Bad Request", statusCode}. Here `error`
+      // is a STRING, so reading `.message` off it yields undefined and the
+      // real reason — which lives in `message` — is discarded. Every proxy
+      // rejection then reads as the useless `Kora <method> failed:
+      // "Bad Request"`, which is what sent one debugging session after the
+      // node instead of the route in front of it.
+      message?: string;
+      statusCode?: number;
     };
     if (json.error || json.result === undefined) {
-      throw new Error(
-        `Kora ${method} failed: ${
-          json.error?.message ?? JSON.stringify(json.error ?? "no result")
-        }`,
-      );
+      const reason =
+        (typeof json.error === "object" ? json.error?.message : undefined) ??
+        json.message ??
+        (typeof json.error === "string" ? json.error : undefined) ??
+        JSON.stringify(json.error ?? "no result");
+      const status =
+        json.statusCode !== undefined ? ` (HTTP ${json.statusCode})` : "";
+      throw new Error(`Kora ${method} failed${status}: ${reason}`);
     }
     return json.result;
   }
@@ -130,6 +106,21 @@ export class KoraClient {
     };
   }
 
+  /**
+   * The mints this node accepts as fee payment — its `allowed_spl_paid_tokens`.
+   *
+   * Static per deployment: the policy file is baked into the Kora image at
+   * build time, so this cannot change under a running process. Callers should
+   * resolve it once per chain and cache, not ask per transaction.
+   *
+   * Returns an unordered list. Kora expresses acceptance, not preference — the
+   * priority order is the SDK's decision (see `resolveFeeTokens`).
+   */
+  async getSupportedTokens(): Promise<string[]> {
+    const r = await this.call<{ tokens?: string[] }>("getSupportedTokens", {});
+    return r.tokens ?? [];
+  }
+
   /** Quote the fee for a base64 transaction, in lamports and the fee token. */
   async estimateTransactionFee(
     transactionBase64: string,
@@ -150,30 +141,6 @@ export class KoraClient {
       feeInLamports: BigInt(lamports),
       feeInToken: BigInt(token),
     };
-  }
-
-  /**
-   * The payment instruction to append: transfers `feeToken` from `sourceWallet`
-   * to Kora's payment address in the amount Kora requires (margin included).
-   */
-  async getPaymentInstruction(params: {
-    transactionBase64: string;
-    feeToken: string;
-    sourceWallet: string;
-  }): Promise<SolanaInstructionLike> {
-    const r = await this.call<{
-      payment_instruction?: KoraInstructionJson;
-      paymentInstruction?: KoraInstructionJson;
-    }>("getPaymentInstruction", {
-      transaction: params.transactionBase64,
-      fee_token: params.feeToken,
-      source_wallet: params.sourceWallet,
-    });
-    const ix = r.payment_instruction ?? r.paymentInstruction;
-    if (!ix) {
-      throw new Error("Kora getPaymentInstruction returned no instruction");
-    }
-    return koraInstructionToSolana(ix);
   }
 
   /** Co-sign as fee payer; returns the fully-signed base64 transaction. */

@@ -17,23 +17,22 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
   parseAfterActionInstruction,
   parseBeforeActionInstruction,
   parseClaimEscrowRefundInstruction,
   parseCloseIntentInstruction,
   parseInitializeInstruction,
-  parseNominateAuthorityInstruction,
-  type ParsedAcceptAuthorityInstruction,
+  parsePreCreateIntentInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedClaimEscrowRefundInstruction,
   type ParsedCloseIntentInstruction,
   type ParsedInitializeInstruction,
-  type ParsedNominateAuthorityInstruction,
+  type ParsedPreCreateIntentInstruction,
 } from "../instructions/index.js";
 
-export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
+export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
+  "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q" as Address<"HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q">;
 
 export enum FundTransferHookAccount {
   FundRequestIntentId,
@@ -108,30 +107,18 @@ export function identifyFundTransferHookAccount(
 }
 
 export enum FundTransferHookInstruction {
-  AcceptAuthority,
   AfterAction,
   BeforeAction,
   ClaimEscrowRefund,
   CloseIntent,
   Initialize,
-  NominateAuthority,
+  PreCreateIntent,
 }
 
 export function identifyFundTransferHookInstruction(
   instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): FundTransferHookInstruction {
   const data = "data" in instruction ? instruction.data : instruction;
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([107, 86, 198, 91, 33, 12, 107, 160]),
-      ),
-      0,
-    )
-  ) {
-    return FundTransferHookInstruction.AcceptAuthority;
-  }
   if (
     containsBytes(
       data,
@@ -191,22 +178,21 @@ export function identifyFundTransferHookInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([148, 182, 144, 91, 186, 12, 118, 18]),
+        new Uint8Array([157, 244, 37, 181, 86, 92, 73, 162]),
       ),
       0,
     )
   ) {
-    return FundTransferHookInstruction.NominateAuthority;
+    return FundTransferHookInstruction.PreCreateIntent;
   }
   throw new Error(
     "The provided instruction could not be identified as a fundTransferHook instruction.",
   );
 }
 
-export type ParsedFundTransferHookInstruction<TProgram extends string = ""> =
-  | ({
-      instructionType: FundTransferHookInstruction.AcceptAuthority;
-    } & ParsedAcceptAuthorityInstruction<TProgram>)
+export type ParsedFundTransferHookInstruction<
+  TProgram extends string = "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q",
+> =
   | ({
       instructionType: FundTransferHookInstruction.AfterAction;
     } & ParsedAfterActionInstruction<TProgram>)
@@ -223,21 +209,14 @@ export type ParsedFundTransferHookInstruction<TProgram extends string = ""> =
       instructionType: FundTransferHookInstruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
   | ({
-      instructionType: FundTransferHookInstruction.NominateAuthority;
-    } & ParsedNominateAuthorityInstruction<TProgram>);
+      instructionType: FundTransferHookInstruction.PreCreateIntent;
+    } & ParsedPreCreateIntentInstruction<TProgram>);
 
 export function parseFundTransferHookInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFundTransferHookInstruction<TProgram> {
   const instructionType = identifyFundTransferHookInstruction(instruction);
   switch (instructionType) {
-    case FundTransferHookInstruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
     case FundTransferHookInstruction.AfterAction: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -273,11 +252,11 @@ export function parseFundTransferHookInstruction<TProgram extends string>(
         ...parseInitializeInstruction(instruction),
       };
     }
-    case FundTransferHookInstruction.NominateAuthority: {
+    case FundTransferHookInstruction.PreCreateIntent: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: FundTransferHookInstruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
+        instructionType: FundTransferHookInstruction.PreCreateIntent,
+        ...parsePreCreateIntentInstruction(instruction),
       };
     }
     default:

@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getOptionDecoder,
@@ -72,6 +74,11 @@ export type AcpState = {
   jobCounter: bigint;
   /** PDA bump seed. */
   bump: number;
+  /**
+   * When true, all user-facing lifecycle instructions revert. Admin-toggled.
+   * Appended after `bump` so the existing on-chain layout only grows by one byte.
+   */
+  paused: boolean;
 };
 
 export type AcpStateArgs = {
@@ -94,6 +101,11 @@ export type AcpStateArgs = {
   jobCounter: number | bigint;
   /** PDA bump seed. */
   bump: number;
+  /**
+   * When true, all user-facing lifecycle instructions revert. Admin-toggled.
+   * Appended after `bump` so the existing on-chain layout only grows by one byte.
+   */
+  paused: boolean;
 };
 
 /** Gets the encoder for {@link AcpStateArgs} account data. */
@@ -109,6 +121,7 @@ export function getAcpStateEncoder(): Encoder<AcpStateArgs> {
       ["evaluatorFeeBp", getU64Encoder()],
       ["jobCounter", getU64Encoder()],
       ["bump", getU8Encoder()],
+      ["paused", getBooleanEncoder()],
     ]),
     (value) => ({ ...value, discriminator: ACP_STATE_DISCRIMINATOR }),
   );
@@ -126,6 +139,7 @@ export function getAcpStateDecoder(): Decoder<AcpState> {
     ["evaluatorFeeBp", getU64Decoder()],
     ["jobCounter", getU64Decoder()],
     ["bump", getU8Decoder()],
+    ["paused", getBooleanDecoder()],
   ]);
 }
 

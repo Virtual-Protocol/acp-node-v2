@@ -24,8 +24,11 @@ export const SUBSCRIPTION_STATE_ERROR__UNAUTHORIZED_CALLER = 0x1772; // 6002
 export const SUBSCRIPTION_STATE_ERROR__WRITER_NOT_REGISTERED = 0x1773; // 6003
 /** WriterDeactivated: Writer has been deactivated */
 export const SUBSCRIPTION_STATE_ERROR__WRITER_DEACTIVATED = 0x1774; // 6004
+/** SubExpiryNotPreCreated: sub_expiry must be pre-created; the provider calls pre_create_sub_expiry */
+export const SUBSCRIPTION_STATE_ERROR__SUB_EXPIRY_NOT_PRE_CREATED = 0x1775; // 6005
 
 export type SubscriptionStateError =
+  | typeof SUBSCRIPTION_STATE_ERROR__SUB_EXPIRY_NOT_PRE_CREATED
   | typeof SUBSCRIPTION_STATE_ERROR__SUBSCRIPTION_NOT_EXTENDED
   | typeof SUBSCRIPTION_STATE_ERROR__UNAUTHORIZED_CALLER
   | typeof SUBSCRIPTION_STATE_ERROR__WRITER_DEACTIVATED
@@ -37,6 +40,7 @@ let subscriptionStateErrorMessages:
   | undefined;
 if (process.env.NODE_ENV !== "production") {
   subscriptionStateErrorMessages = {
+    [SUBSCRIPTION_STATE_ERROR__SUB_EXPIRY_NOT_PRE_CREATED]: `sub_expiry must be pre-created; the provider calls pre_create_sub_expiry`,
     [SUBSCRIPTION_STATE_ERROR__SUBSCRIPTION_NOT_EXTENDED]: `Subscription expiry must extend beyond current`,
     [SUBSCRIPTION_STATE_ERROR__UNAUTHORIZED_CALLER]: `Unauthorized caller`,
     [SUBSCRIPTION_STATE_ERROR__WRITER_DEACTIVATED]: `Writer has been deactivated`,

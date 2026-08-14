@@ -36,6 +36,7 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
+import { findAcpStatePda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
@@ -51,6 +52,7 @@ export type FundInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountClient extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
+  TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountClientTokenAccount extends string | AccountMeta<string> = string,
   TAccountVault extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
@@ -73,6 +75,9 @@ export type FundInstruction<
             AccountSignerMeta<TAccountClient>
         : TAccountClient,
       TAccountJob extends string ? WritableAccount<TAccountJob> : TAccountJob,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
       TAccountClientTokenAccount extends string
         ? WritableAccount<TAccountClientTokenAccount>
         : TAccountClientTokenAccount,
@@ -147,9 +152,10 @@ export function getFundInstructionDataCodec(): Codec<
   );
 }
 
-export type FundInput<
+export type FundAsyncInput<
   TAccountClient extends string = string,
   TAccountJob extends string = string,
+  TAccountAcpState extends string = string,
   TAccountClientTokenAccount extends string = string,
   TAccountVault extends string = string,
   TAccountVaultAuthority extends string = string,
@@ -163,6 +169,179 @@ export type FundInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
+  acpState?: Address<TAccountAcpState>;
+  /** Optional: required when budget > 0 */
+  clientTokenAccount?: Address<TAccountClientTokenAccount>;
+  /** Optional: required when budget > 0 (init vault for escrow) */
+  vault?: Address<TAccountVault>;
+  vaultAuthority?: Address<TAccountVaultAuthority>;
+  mint?: Address<TAccountMint>;
+  tokenProgram?: Address<TAccountTokenProgram>;
+  systemProgram?: Address<TAccountSystemProgram>;
+  hookProgram?: Address<TAccountHookProgram>;
+  hookWhitelist?: Address<TAccountHookWhitelist>;
+  /** Required when hook is present and budget > 0; approved on client_token_account for budget_amount. */
+  hookDelegate?: Address<TAccountHookDelegate>;
+  /** is owned by a sub-hook (MultiHookRouter) rather than the job's hook program. */
+  delegateWhitelist?: Address<TAccountDelegateWhitelist>;
+  expectedBudget: FundInstructionDataArgs["expectedBudget"];
+  optParams: FundInstructionDataArgs["optParams"];
+};
+
+export async function getFundInstructionAsync<
+  TAccountClient extends string,
+  TAccountJob extends string,
+  TAccountAcpState extends string,
+  TAccountClientTokenAccount extends string,
+  TAccountVault extends string,
+  TAccountVaultAuthority extends string,
+  TAccountMint extends string,
+  TAccountTokenProgram extends string,
+  TAccountSystemProgram extends string,
+  TAccountHookProgram extends string,
+  TAccountHookWhitelist extends string,
+  TAccountHookDelegate extends string,
+  TAccountDelegateWhitelist extends string,
+  TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
+>(
+  input: FundAsyncInput<
+    TAccountClient,
+    TAccountJob,
+    TAccountAcpState,
+    TAccountClientTokenAccount,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountMint,
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountDelegateWhitelist
+  >,
+  config?: { programAddress?: TProgramAddress },
+): Promise<
+  FundInstruction<
+    TProgramAddress,
+    TAccountClient,
+    TAccountJob,
+    TAccountAcpState,
+    TAccountClientTokenAccount,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountMint,
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountDelegateWhitelist
+  >
+> {
+  // Program address.
+  const programAddress =
+    config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    client: { value: input.client ?? null, isWritable: true },
+    job: { value: input.job ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    clientTokenAccount: {
+      value: input.clientTokenAccount ?? null,
+      isWritable: true,
+    },
+    vault: { value: input.vault ?? null, isWritable: true },
+    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
+    mint: { value: input.mint ?? null, isWritable: false },
+    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    hookProgram: { value: input.hookProgram ?? null, isWritable: false },
+    hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
+    hookDelegate: { value: input.hookDelegate ?? null, isWritable: false },
+    delegateWhitelist: {
+      value: input.delegateWhitelist ?? null,
+      isWritable: false,
+    },
+  };
+  const accounts = originalAccounts as Record<
+    keyof typeof originalAccounts,
+    ResolvedAccount
+  >;
+
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.acpState.value) {
+    accounts.acpState.value = await findAcpStatePda();
+  }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
+  return Object.freeze({
+    accounts: [
+      getAccountMeta(accounts.client),
+      getAccountMeta(accounts.job),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.clientTokenAccount),
+      getAccountMeta(accounts.vault),
+      getAccountMeta(accounts.vaultAuthority),
+      getAccountMeta(accounts.mint),
+      getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.hookProgram),
+      getAccountMeta(accounts.hookWhitelist),
+      getAccountMeta(accounts.hookDelegate),
+      getAccountMeta(accounts.delegateWhitelist),
+    ],
+    data: getFundInstructionDataEncoder().encode(
+      args as FundInstructionDataArgs,
+    ),
+    programAddress,
+  } as FundInstruction<
+    TProgramAddress,
+    TAccountClient,
+    TAccountJob,
+    TAccountAcpState,
+    TAccountClientTokenAccount,
+    TAccountVault,
+    TAccountVaultAuthority,
+    TAccountMint,
+    TAccountTokenProgram,
+    TAccountSystemProgram,
+    TAccountHookProgram,
+    TAccountHookWhitelist,
+    TAccountHookDelegate,
+    TAccountDelegateWhitelist
+  >);
+}
+
+export type FundInput<
+  TAccountClient extends string = string,
+  TAccountJob extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountClientTokenAccount extends string = string,
+  TAccountVault extends string = string,
+  TAccountVaultAuthority extends string = string,
+  TAccountMint extends string = string,
+  TAccountTokenProgram extends string = string,
+  TAccountSystemProgram extends string = string,
+  TAccountHookProgram extends string = string,
+  TAccountHookWhitelist extends string = string,
+  TAccountHookDelegate extends string = string,
+  TAccountDelegateWhitelist extends string = string,
+> = {
+  client: TransactionSigner<TAccountClient>;
+  job: Address<TAccountJob>;
+  acpState: Address<TAccountAcpState>;
   /** Optional: required when budget > 0 */
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
   /** Optional: required when budget > 0 (init vault for escrow) */
@@ -184,6 +363,7 @@ export type FundInput<
 export function getFundInstruction<
   TAccountClient extends string,
   TAccountJob extends string,
+  TAccountAcpState extends string,
   TAccountClientTokenAccount extends string,
   TAccountVault extends string,
   TAccountVaultAuthority extends string,
@@ -199,6 +379,7 @@ export function getFundInstruction<
   input: FundInput<
     TAccountClient,
     TAccountJob,
+    TAccountAcpState,
     TAccountClientTokenAccount,
     TAccountVault,
     TAccountVaultAuthority,
@@ -215,6 +396,7 @@ export function getFundInstruction<
   TProgramAddress,
   TAccountClient,
   TAccountJob,
+  TAccountAcpState,
   TAccountClientTokenAccount,
   TAccountVault,
   TAccountVaultAuthority,
@@ -234,6 +416,7 @@ export function getFundInstruction<
   const originalAccounts = {
     client: { value: input.client ?? null, isWritable: true },
     job: { value: input.job ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
     clientTokenAccount: {
       value: input.clientTokenAccount ?? null,
       isWritable: true,
@@ -274,6 +457,7 @@ export function getFundInstruction<
     accounts: [
       getAccountMeta(accounts.client),
       getAccountMeta(accounts.job),
+      getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.clientTokenAccount),
       getAccountMeta(accounts.vault),
       getAccountMeta(accounts.vaultAuthority),
@@ -293,6 +477,7 @@ export function getFundInstruction<
     TProgramAddress,
     TAccountClient,
     TAccountJob,
+    TAccountAcpState,
     TAccountClientTokenAccount,
     TAccountVault,
     TAccountVaultAuthority,
@@ -314,20 +499,21 @@ export type ParsedFundInstruction<
   accounts: {
     client: TAccountMetas[0];
     job: TAccountMetas[1];
+    acpState: TAccountMetas[2];
     /** Optional: required when budget > 0 */
-    clientTokenAccount?: TAccountMetas[2] | undefined;
+    clientTokenAccount?: TAccountMetas[3] | undefined;
     /** Optional: required when budget > 0 (init vault for escrow) */
-    vault?: TAccountMetas[3] | undefined;
-    vaultAuthority?: TAccountMetas[4] | undefined;
-    mint?: TAccountMetas[5] | undefined;
-    tokenProgram?: TAccountMetas[6] | undefined;
-    systemProgram: TAccountMetas[7];
-    hookProgram?: TAccountMetas[8] | undefined;
-    hookWhitelist?: TAccountMetas[9] | undefined;
+    vault?: TAccountMetas[4] | undefined;
+    vaultAuthority?: TAccountMetas[5] | undefined;
+    mint?: TAccountMetas[6] | undefined;
+    tokenProgram?: TAccountMetas[7] | undefined;
+    systemProgram: TAccountMetas[8];
+    hookProgram?: TAccountMetas[9] | undefined;
+    hookWhitelist?: TAccountMetas[10] | undefined;
     /** Required when hook is present and budget > 0; approved on client_token_account for budget_amount. */
-    hookDelegate?: TAccountMetas[10] | undefined;
+    hookDelegate?: TAccountMetas[11] | undefined;
     /** is owned by a sub-hook (MultiHookRouter) rather than the job's hook program. */
-    delegateWhitelist?: TAccountMetas[11] | undefined;
+    delegateWhitelist?: TAccountMetas[12] | undefined;
   };
   data: FundInstructionData;
 };
@@ -340,7 +526,7 @@ export function parseFundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 12) {
+  if (instruction.accounts.length < 13) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -361,6 +547,7 @@ export function parseFundInstruction<
     accounts: {
       client: getNextAccount(),
       job: getNextAccount(),
+      acpState: getNextAccount(),
       clientTokenAccount: getNextOptionalAccount(),
       vault: getNextOptionalAccount(),
       vaultAuthority: getNextOptionalAccount(),

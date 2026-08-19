@@ -180,6 +180,12 @@ export class AcpAgent {
   private entryHandler: EntryHandler | null = null;
   private sessionMap = new Map<string, JobSession>();
   private addresses = new Map<ChainFamily, string>();
+  /**
+   * True from `start()` until hydration finishes. Live entries are queued rather
+   * than dispatched during that window — see `start()`.
+   */
+  private hydrating = false;
+  private pendingEntries: JobRoomEntry[] = [];
 
   constructor(
     clients: Map<ChainFamily, AcpClient>,
@@ -373,11 +379,13 @@ export class AcpAgent {
    * is not a deduplication mechanism, and hooks or fee transfers reached before
    * the revert are not free.
    *
-   * The SDK deliberately does not dedupe this — replay is what lets an agent
-   * killed mid-flow pick the job back up. Since delivery survives process
-   * restarts, so must your record of what you've acted on: persist a key like
-   * `${chainId}-${jobId}-${event.type}` before the side effect and skip entries
-   * you've already handled. An in-memory `Set` is lost on exactly the restart
+   * Within one process each entry is delivered once — sessions track entries by
+   * content key (`entryKey`), so a stream reconnect or an entry landing
+   * mid-hydration can't fire the handler twice. Across restarts it can, and
+   * deliberately so: that replay is what lets an agent killed mid-flow pick the
+   * job back up. Since delivery survives restarts, so must your record of what
+   * you've acted on — persist a key like `${chainId}-${jobId}-${event.type}`
+   * before the side effect. An in-memory `Set` is lost on exactly the restart
    * that triggers the replay.
    */
   async start(
@@ -389,13 +397,50 @@ export class AcpAgent {
     }
 
     this.started = true;
+    this.hydrating = true;
 
-    this.transport.onEntry((entry) =>
-      this.dispatch(entry).catch(console.error),
-    );
+    // The stream has to be live before hydration, or entries occurring mid-catch-up
+    // are lost outright. But dispatching them right away is worse: hydration hasn't
+    // built the session yet, so the entry would create one from no history —
+    // `inferRoles([])` silently defaults to ["provider"], and hydration then
+    // re-delivers the same entry as the job's latest. Queue instead, and drain
+    // once every session has its history.
+    this.transport.onEntry((entry) => {
+      if (this.hydrating) {
+        this.pendingEntries.push(entry);
+        return;
+      }
+      this.dispatch(entry).catch(console.error);
+    });
     await this.transport.connect(onConnected, streams);
 
-    await this.hydrateSessions();
+    try {
+      await this.hydrateSessions();
+    } finally {
+      // Drain even if hydration threw: the queue is the only path those entries
+      // have, and `dispatch` can rebuild a session on its own.
+      this.hydrating = false;
+      await this.drainPendingEntries();
+    }
+  }
+
+  /**
+   * Dispatch entries that arrived while hydration was running.
+   *
+   * Anything hydration already replayed is dropped by `dispatch` itself, which
+   * ignores an entry the session has seen — so an entry that landed in the
+   * window reaches the handler exactly once, not twice and not never.
+   */
+  private async drainPendingEntries(): Promise<void> {
+    const queued = this.pendingEntries;
+    this.pendingEntries = [];
+    for (const entry of queued) {
+      try {
+        await this.dispatch(entry);
+      } catch (err) {
+        console.error(err);
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -403,6 +448,8 @@ export class AcpAgent {
       await this.transport.disconnect();
       this.started = false;
     }
+    this.hydrating = false;
+    this.pendingEntries = [];
     this.sessionMap.clear();
   }
 
@@ -476,7 +523,12 @@ export class AcpAgent {
     initialEntries: JobRoomEntry[] = [],
   ): JobSession {
     let session = this.sessionMap.get(this.getSessionKey(chainId, jobId));
-    if (session) return session;
+    if (session) {
+      // A session built from a single live entry knows almost nothing about the
+      // job; fold in whatever history the caller has rather than discarding it.
+      if (initialEntries.length > 0) session.mergeEntries(initialEntries);
+      return session;
+    }
 
     const roles = this.inferRoles(initialEntries);
     session = new JobSession(
@@ -520,11 +572,41 @@ export class AcpAgent {
   private async dispatch(entry: JobRoomEntry): Promise<void> {
     const jobId = entry.onChainJobId;
     const chainId = entry.chainId;
-    const session = this.getOrCreateSession(jobId, chainId, []);
 
-    if (session.entries.length === 0 || !session.entries.includes(entry)) {
-      session.appendEntry(entry);
+    let session = this.getSession(chainId, jobId);
+    let sessionIsNew = false;
+    if (!session) {
+      // `job.created` carries the client/provider/evaluator addresses, so it can
+      // stand up a session on its own. Any other first-sighting cannot: roles
+      // come from the creation event, and without it `inferRoles` falls back to
+      // ["provider"] — an evaluator would quietly stop responding to the job.
+      const isCreation =
+        entry.kind === "system" && entry.event.type === "job.created";
+      let history: JobRoomEntry[] = [];
+      if (!isCreation) {
+        try {
+          history = await this.transport.getHistory(chainId, jobId);
+        } catch (err) {
+          // Carry on with the single entry rather than dropping it, but say so:
+          // without history the session falls back to the "provider" role and
+          // may ignore entries it should have handled.
+          console.error(
+            `Failed to fetch history for job ${jobId} on chain ${chainId}; ` +
+              `session roles may be incomplete`,
+            err,
+          );
+        }
+      }
+      session = this.getOrCreateSession(jobId, chainId, history);
+      sessionIsNew = true;
     }
+
+    // A known session already holding this entry means another path (hydration,
+    // or a reconnect replay) delivered it — don't fire twice. On a session we
+    // just built, the entry being present only means our own history fetch
+    // included it, and nothing has fired for it yet.
+    const entryIsNew = session.appendEntry(entry);
+    if (!entryIsNew && !sessionIsNew) return;
 
     if (entry.kind === "system" && entry.event.type === "job.created") {
       const roles = this.inferRoles([entry]);

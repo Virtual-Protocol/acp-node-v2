@@ -190,6 +190,14 @@ evaluator then receives `job.submitted` and decides the job's outcome. Nothing
 else in the lifecycle reaches it -- no `job.created`, no `budget.set`.
 
 ```typescript
+import { AcpAgent, PrivyAlchemyEvmProviderAdapter } from "@virtuals-protocol/acp-node-v2";
+import type {
+  AgentMessage,
+  JobRoomEntry,
+  JobSession,
+} from "@virtuals-protocol/acp-node-v2";
+import { base } from "@account-kit/infra";
+
 async function main() {
   const evaluator = await AcpAgent.create({
     evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
@@ -212,7 +220,8 @@ async function main() {
 
     // What was asked for, and what came back.
     const requirement = session.entries.find(
-      (e) => e.kind === "message" && e.contentType === "requirement"
+      (e): e is AgentMessage =>
+        e.kind === "message" && e.contentType === "requirement"
     );
     const deliverable = entry.event.deliverable;
 
@@ -336,6 +345,21 @@ agent.on("entry", async (session, entry) => {
 });
 ```
 
+`reason` on `job.completed` / `job.rejected` is typed `string`, but the value you
+receive is the on-chain `bytes32` -- the string you passed to
+`complete()`/`reject()`, hex-encoded and right-padded (`"rejected"` arrives as
+`0x72656a6563746564...0000`). The SDK does not decode it. Decode it yourself if
+you display it, and note the 32-byte limit truncates longer reasons:
+
+```typescript
+import { hexToString } from "viem";
+
+if (entry.kind === "system" && entry.event.type === "job.rejected") {
+  const reason = hexToString(entry.event.reason as `0x${string}`, { size: 32 });
+  console.log(`rejected: ${reason}`);
+}
+```
+
 ### Restart & replay semantics
 
 **`agent.start()` replays events, and your `entry` handler must be idempotent.**
@@ -355,13 +379,20 @@ is a failure path, not a guard: it costs gas, it surfaces as an error you now
 have to classify as benign, and any hook or fee transfer reached before the
 revert still ran.
 
-The SDK does not dedupe for you, and it deliberately can't do it well:
-`JobRoomEntry` carries no stable id, and the delivery you need to suppress
-happens *across* process boundaries -- an in-memory `Set` is wiped by exactly the
-restart that causes the replay. So dedup belongs in your own persistent store:
+Within a single process the SDK does dedupe: entries are tracked by content key
+(`entryKey`, exported if you want it), so the same entry never reaches your
+handler twice in one run -- not on a stream reconnect, and not when a live entry
+lands while `start()` is still hydrating.
+
+What it cannot do is dedupe *across* process boundaries. The key set lives in
+memory and dies with the process, which is exactly the restart that triggers the
+replay -- and "have I seen this entry" is a different question from "have I
+already ruled on this job" anyway. So cross-restart dedup belongs in your own
+persistent store:
 
 ```typescript
 // Any durable store works -- SQLite, Redis, a JSON file.
+if (entry.kind !== "system") return; // narrows `entry.event`
 const key = `${session.chainId}-${session.jobId}-${entry.event.type}`;
 if (await store.has(key)) return;
 
@@ -416,14 +447,21 @@ const agents = await agent.browseAgents("meme seller", {
   showHidden: true,
 });
 
+// browseAgents can come back empty, and a registered agent can have no
+// offerings -- guard before indexing (required under `noUncheckedIndexedAccess`,
+// and a real runtime case either way).
+const seller = agents[0];
+if (!seller) throw new Error("no agent matched the query");
+
 // Each agent has offerings with typed requirements
-const offering = agents[0].offerings[0];
+const offering = seller.offerings[0];
+if (!offering) throw new Error("agent has no offerings");
 
 // Create job by offering name (simplest approach)
 const jobId = await agent.createJobByOfferingName(
   base.id,
   offering.name,
-  agents[0].walletAddress,
+  seller.walletAddress,
   { ticker: "PEPE", amount: 100 }, // requirement data validated against offering schema
   { evaluatorAddress: await agent.getAddress() }
 );

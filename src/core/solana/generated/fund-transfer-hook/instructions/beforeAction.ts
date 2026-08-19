@@ -7,13 +7,19 @@
  */
 
 import {
+  addDecoderSizePrefix,
+  addEncoderSizePrefix,
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -21,9 +27,9 @@ import {
   transformEncoder,
   type AccountMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -63,33 +69,45 @@ export type BeforeActionInstructionData = {
   discriminator: ReadonlyUint8Array;
   jobId: bigint;
   action: number;
+  optParams: ReadonlyUint8Array;
+  caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
 export type BeforeActionInstructionDataArgs = {
   jobId: number | bigint;
   action: number;
+  optParams: ReadonlyUint8Array;
+  caller: Address;
+  variant: ReadonlyUint8Array;
 };
 
-export function getBeforeActionInstructionDataEncoder(): FixedSizeEncoder<BeforeActionInstructionDataArgs> {
+export function getBeforeActionInstructionDataEncoder(): Encoder<BeforeActionInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["jobId", getU64Encoder()],
       ["action", getU8Encoder()],
+      ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
+      ["caller", getAddressEncoder()],
+      ["variant", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: BEFORE_ACTION_DISCRIMINATOR }),
   );
 }
 
-export function getBeforeActionInstructionDataDecoder(): FixedSizeDecoder<BeforeActionInstructionData> {
+export function getBeforeActionInstructionDataDecoder(): Decoder<BeforeActionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["jobId", getU64Decoder()],
     ["action", getU8Decoder()],
+    ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
+    ["caller", getAddressDecoder()],
+    ["variant", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
 
-export function getBeforeActionInstructionDataCodec(): FixedSizeCodec<
+export function getBeforeActionInstructionDataCodec(): Codec<
   BeforeActionInstructionDataArgs,
   BeforeActionInstructionData
 > {
@@ -104,6 +122,9 @@ export type BeforeActionAsyncInput<TAccountHookState extends string = string> =
     hookState?: Address<TAccountHookState>;
     jobId: BeforeActionInstructionDataArgs["jobId"];
     action: BeforeActionInstructionDataArgs["action"];
+    optParams: BeforeActionInstructionDataArgs["optParams"];
+    caller: BeforeActionInstructionDataArgs["caller"];
+    variant: BeforeActionInstructionDataArgs["variant"];
   };
 
 export async function getBeforeActionInstructionAsync<
@@ -148,6 +169,9 @@ export type BeforeActionInput<TAccountHookState extends string = string> = {
   hookState: Address<TAccountHookState>;
   jobId: BeforeActionInstructionDataArgs["jobId"];
   action: BeforeActionInstructionDataArgs["action"];
+  optParams: BeforeActionInstructionDataArgs["optParams"];
+  caller: BeforeActionInstructionDataArgs["caller"];
+  variant: BeforeActionInstructionDataArgs["variant"];
 };
 
 export function getBeforeActionInstruction<

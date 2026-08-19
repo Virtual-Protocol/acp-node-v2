@@ -26,6 +26,7 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
+  type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
@@ -49,6 +50,7 @@ export type SetMaxHooksPerJobInstruction<
   TProgram extends string = typeof MULTI_HOOK_ROUTER_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountRouterState extends string | AccountMeta<string> = string,
+  TAccountAcpState extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -61,6 +63,9 @@ export type SetMaxHooksPerJobInstruction<
       TAccountRouterState extends string
         ? WritableAccount<TAccountRouterState>
         : TAccountRouterState,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
       ...TRemainingAccounts,
     ]
   >;
@@ -105,24 +110,37 @@ export function getSetMaxHooksPerJobInstructionDataCodec(): FixedSizeCodec<
 export type SetMaxHooksPerJobAsyncInput<
   TAccountAuthority extends string = string,
   TAccountRouterState extends string = string,
+  TAccountAcpState extends string = string,
 > = {
+  /**
+   * Must be the ACP core authority (`AcpState.authority`), verified in the
+   * handler against `acp_state`. The router has no admin of its own.
+   */
   authority: TransactionSigner<TAccountAuthority>;
   routerState?: Address<TAccountRouterState>;
+  /** PDA address, owner, and stored `authority` are validated in the handler. */
+  acpState: Address<TAccountAcpState>;
   newMax: SetMaxHooksPerJobInstructionDataArgs["newMax"];
 };
 
 export async function getSetMaxHooksPerJobInstructionAsync<
   TAccountAuthority extends string,
   TAccountRouterState extends string,
+  TAccountAcpState extends string,
   TProgramAddress extends Address = typeof MULTI_HOOK_ROUTER_PROGRAM_ADDRESS,
 >(
-  input: SetMaxHooksPerJobAsyncInput<TAccountAuthority, TAccountRouterState>,
+  input: SetMaxHooksPerJobAsyncInput<
+    TAccountAuthority,
+    TAccountRouterState,
+    TAccountAcpState
+  >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
   SetMaxHooksPerJobInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountRouterState
+    TAccountRouterState,
+    TAccountAcpState
   >
 > {
   // Program address.
@@ -133,6 +151,7 @@ export async function getSetMaxHooksPerJobInstructionAsync<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: false },
     routerState: { value: input.routerState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -152,6 +171,7 @@ export async function getSetMaxHooksPerJobInstructionAsync<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.routerState),
+      getAccountMeta(accounts.acpState),
     ],
     data: getSetMaxHooksPerJobInstructionDataEncoder().encode(
       args as SetMaxHooksPerJobInstructionDataArgs,
@@ -160,30 +180,44 @@ export async function getSetMaxHooksPerJobInstructionAsync<
   } as SetMaxHooksPerJobInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountRouterState
+    TAccountRouterState,
+    TAccountAcpState
   >);
 }
 
 export type SetMaxHooksPerJobInput<
   TAccountAuthority extends string = string,
   TAccountRouterState extends string = string,
+  TAccountAcpState extends string = string,
 > = {
+  /**
+   * Must be the ACP core authority (`AcpState.authority`), verified in the
+   * handler against `acp_state`. The router has no admin of its own.
+   */
   authority: TransactionSigner<TAccountAuthority>;
   routerState: Address<TAccountRouterState>;
+  /** PDA address, owner, and stored `authority` are validated in the handler. */
+  acpState: Address<TAccountAcpState>;
   newMax: SetMaxHooksPerJobInstructionDataArgs["newMax"];
 };
 
 export function getSetMaxHooksPerJobInstruction<
   TAccountAuthority extends string,
   TAccountRouterState extends string,
+  TAccountAcpState extends string,
   TProgramAddress extends Address = typeof MULTI_HOOK_ROUTER_PROGRAM_ADDRESS,
 >(
-  input: SetMaxHooksPerJobInput<TAccountAuthority, TAccountRouterState>,
+  input: SetMaxHooksPerJobInput<
+    TAccountAuthority,
+    TAccountRouterState,
+    TAccountAcpState
+  >,
   config?: { programAddress?: TProgramAddress },
 ): SetMaxHooksPerJobInstruction<
   TProgramAddress,
   TAccountAuthority,
-  TAccountRouterState
+  TAccountRouterState,
+  TAccountAcpState
 > {
   // Program address.
   const programAddress =
@@ -193,6 +227,7 @@ export function getSetMaxHooksPerJobInstruction<
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: false },
     routerState: { value: input.routerState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -207,6 +242,7 @@ export function getSetMaxHooksPerJobInstruction<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.routerState),
+      getAccountMeta(accounts.acpState),
     ],
     data: getSetMaxHooksPerJobInstructionDataEncoder().encode(
       args as SetMaxHooksPerJobInstructionDataArgs,
@@ -215,7 +251,8 @@ export function getSetMaxHooksPerJobInstruction<
   } as SetMaxHooksPerJobInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountRouterState
+    TAccountRouterState,
+    TAccountAcpState
   >);
 }
 
@@ -225,8 +262,14 @@ export type ParsedSetMaxHooksPerJobInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * Must be the ACP core authority (`AcpState.authority`), verified in the
+     * handler against `acp_state`. The router has no admin of its own.
+     */
     authority: TAccountMetas[0];
     routerState: TAccountMetas[1];
+    /** PDA address, owner, and stored `authority` are validated in the handler. */
+    acpState: TAccountMetas[2];
   };
   data: SetMaxHooksPerJobInstructionData;
 };
@@ -239,7 +282,7 @@ export function parseSetMaxHooksPerJobInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSetMaxHooksPerJobInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 2) {
+  if (instruction.accounts.length < 3) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -251,7 +294,11 @@ export function parseSetMaxHooksPerJobInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { authority: getNextAccount(), routerState: getNextAccount() },
+    accounts: {
+      authority: getNextAccount(),
+      routerState: getNextAccount(),
+      acpState: getNextAccount(),
+    },
     data: getSetMaxHooksPerJobInstructionDataDecoder().decode(instruction.data),
   };
 }

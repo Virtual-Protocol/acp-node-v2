@@ -6,9 +6,8 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./acceptAuthority.js";
 export * from "./afterAction.js";
 export * from "./beforeAction.js";
 export * from "./cleanupProposedTerms.js";
 export * from "./initialize.js";
-export * from "./nominateAuthority.js";
+export * from "./preCreateProposedTerms.js";

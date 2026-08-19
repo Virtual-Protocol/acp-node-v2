@@ -17,22 +17,19 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
   parseAfterActionInstruction,
   parseBeforeActionInstruction,
   parseCleanupProposedTermsInstruction,
   parseInitializeInstruction,
-  parseNominateAuthorityInstruction,
-  type ParsedAcceptAuthorityInstruction,
+  parsePreCreateProposedTermsInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedCleanupProposedTermsInstruction,
   type ParsedInitializeInstruction,
-  type ParsedNominateAuthorityInstruction,
+  type ParsedPreCreateProposedTermsInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS =
-  "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT" as Address<"BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT">;
+export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionHookAccount {
   HookMetadata,
@@ -71,29 +68,17 @@ export function identifySubscriptionHookAccount(
 }
 
 export enum SubscriptionHookInstruction {
-  AcceptAuthority,
   AfterAction,
   BeforeAction,
   CleanupProposedTerms,
   Initialize,
-  NominateAuthority,
+  PreCreateProposedTerms,
 }
 
 export function identifySubscriptionHookInstruction(
   instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): SubscriptionHookInstruction {
   const data = "data" in instruction ? instruction.data : instruction;
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([107, 86, 198, 91, 33, 12, 107, 160]),
-      ),
-      0,
-    )
-  ) {
-    return SubscriptionHookInstruction.AcceptAuthority;
-  }
   if (
     containsBytes(
       data,
@@ -142,24 +127,19 @@ export function identifySubscriptionHookInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([148, 182, 144, 91, 186, 12, 118, 18]),
+        new Uint8Array([30, 108, 232, 212, 189, 31, 122, 234]),
       ),
       0,
     )
   ) {
-    return SubscriptionHookInstruction.NominateAuthority;
+    return SubscriptionHookInstruction.PreCreateProposedTerms;
   }
   throw new Error(
     "The provided instruction could not be identified as a subscriptionHook instruction.",
   );
 }
 
-export type ParsedSubscriptionHookInstruction<
-  TProgram extends string = "BnnrK5YtjeC2mWLNg1rLf36eRttUQ8SgezBcNHfyC2DT",
-> =
-  | ({
-      instructionType: SubscriptionHookInstruction.AcceptAuthority;
-    } & ParsedAcceptAuthorityInstruction<TProgram>)
+export type ParsedSubscriptionHookInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionHookInstruction.AfterAction;
     } & ParsedAfterActionInstruction<TProgram>)
@@ -173,21 +153,14 @@ export type ParsedSubscriptionHookInstruction<
       instructionType: SubscriptionHookInstruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
   | ({
-      instructionType: SubscriptionHookInstruction.NominateAuthority;
-    } & ParsedNominateAuthorityInstruction<TProgram>);
+      instructionType: SubscriptionHookInstruction.PreCreateProposedTerms;
+    } & ParsedPreCreateProposedTermsInstruction<TProgram>);
 
 export function parseSubscriptionHookInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSubscriptionHookInstruction<TProgram> {
   const instructionType = identifySubscriptionHookInstruction(instruction);
   switch (instructionType) {
-    case SubscriptionHookInstruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
     case SubscriptionHookInstruction.AfterAction: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -216,11 +189,11 @@ export function parseSubscriptionHookInstruction<TProgram extends string>(
         ...parseInitializeInstruction(instruction),
       };
     }
-    case SubscriptionHookInstruction.NominateAuthority: {
+    case SubscriptionHookInstruction.PreCreateProposedTerms: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: SubscriptionHookInstruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
+        instructionType: SubscriptionHookInstruction.PreCreateProposedTerms,
+        ...parsePreCreateProposedTermsInstruction(instruction),
       };
     }
     default:

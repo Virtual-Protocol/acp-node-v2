@@ -22,6 +22,7 @@ import {
   parseAddWriterInstruction,
   parseInitializeInstruction,
   parseNominateAuthorityInstruction,
+  parsePreCreateSubExpiryInstruction,
   parseReactivateWriterInstruction,
   parseRemoveWriterInstruction,
   type ParsedAcceptAuthorityInstruction,
@@ -29,12 +30,12 @@ import {
   type ParsedAddWriterInstruction,
   type ParsedInitializeInstruction,
   type ParsedNominateAuthorityInstruction,
+  type ParsedPreCreateSubExpiryInstruction,
   type ParsedReactivateWriterInstruction,
   type ParsedRemoveWriterInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS =
-  "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1" as Address<"5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1">;
+export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionStateAccount {
   StateConfig,
@@ -90,6 +91,7 @@ export enum SubscriptionStateInstruction {
   AddWriter,
   Initialize,
   NominateAuthority,
+  PreCreateSubExpiry,
   ReactivateWriter,
   RemoveWriter,
 }
@@ -157,6 +159,17 @@ export function identifySubscriptionStateInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([31, 24, 156, 205, 9, 176, 248, 34]),
+      ),
+      0,
+    )
+  ) {
+    return SubscriptionStateInstruction.PreCreateSubExpiry;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([62, 184, 214, 49, 203, 151, 133, 51]),
       ),
       0,
@@ -180,9 +193,7 @@ export function identifySubscriptionStateInstruction(
   );
 }
 
-export type ParsedSubscriptionStateInstruction<
-  TProgram extends string = "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-> =
+export type ParsedSubscriptionStateInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionStateInstruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)
@@ -198,6 +209,9 @@ export type ParsedSubscriptionStateInstruction<
   | ({
       instructionType: SubscriptionStateInstruction.NominateAuthority;
     } & ParsedNominateAuthorityInstruction<TProgram>)
+  | ({
+      instructionType: SubscriptionStateInstruction.PreCreateSubExpiry;
+    } & ParsedPreCreateSubExpiryInstruction<TProgram>)
   | ({
       instructionType: SubscriptionStateInstruction.ReactivateWriter;
     } & ParsedReactivateWriterInstruction<TProgram>)
@@ -243,6 +257,13 @@ export function parseSubscriptionStateInstruction<TProgram extends string>(
       return {
         instructionType: SubscriptionStateInstruction.NominateAuthority,
         ...parseNominateAuthorityInstruction(instruction),
+      };
+    }
+    case SubscriptionStateInstruction.PreCreateSubExpiry: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SubscriptionStateInstruction.PreCreateSubExpiry,
+        ...parsePreCreateSubExpiryInstruction(instruction),
       };
     }
     case SubscriptionStateInstruction.ReactivateWriter: {

@@ -115,7 +115,7 @@ export type ReactivateWriterAsyncInput<
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   stateConfig?: Address<TAccountStateConfig>;
-  /** Existing (deactivated) writer registry PDA — sets is_active back to true (F-34). */
+  /** Existing (deactivated) writer registry PDA. */
   writerRegistry?: Address<TAccountWriterRegistry>;
   writer: ReactivateWriterInstructionDataArgs["writer"];
 };
@@ -194,7 +194,7 @@ export type ReactivateWriterInput<
 > = {
   authority: TransactionSigner<TAccountAuthority>;
   stateConfig: Address<TAccountStateConfig>;
-  /** Existing (deactivated) writer registry PDA — sets is_active back to true (F-34). */
+  /** Existing (deactivated) writer registry PDA. */
   writerRegistry: Address<TAccountWriterRegistry>;
   writer: ReactivateWriterInstructionDataArgs["writer"];
 };
@@ -262,7 +262,7 @@ export type ParsedReactivateWriterInstruction<
   accounts: {
     authority: TAccountMetas[0];
     stateConfig: TAccountMetas[1];
-    /** Existing (deactivated) writer registry PDA — sets is_active back to true (F-34). */
+    /** Existing (deactivated) writer registry PDA. */
     writerRegistry: TAccountMetas[2];
   };
   data: ReactivateWriterInstructionData;

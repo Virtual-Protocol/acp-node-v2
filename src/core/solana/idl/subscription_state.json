@@ -40,7 +40,6 @@
       "name": "WriterRegistry"
     }
   ],
-  "address": "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
   "errors": [
     {
       "code": 6000,
@@ -228,9 +227,8 @@
         },
         {
           "docs": [
-            "L-14: init_if_needed is safe here because the monotonic expiry check",
-            "(expiry > sub.expiry) prevents backward reinitialization, no close path",
-            "exists for this PDA, and access is CPI-only via registered writers."
+            "init_if_needed is safe: the monotonic expiry check prevents backward",
+            "reinitialization and no close path exists for this PDA."
           ],
           "name": "subscription_expiry",
           "pda": {
@@ -567,9 +565,91 @@
         18
       ],
       "docs": [
-        "Nominates a new authority (first step of two-step transfer)."
+        "Nominates a new authority for ownership transfer."
       ],
       "name": "nominate_authority"
+    },
+    {
+      "accounts": [
+        {
+          "docs": [
+            "Rent payer; must be the provider named in the PDA seeds (the wallet",
+            "activation debits, and the wallet the paymaster prefunds)."
+          ],
+          "name": "payer",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "subscription_expiry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  117,
+                  98,
+                  95,
+                  101,
+                  120,
+                  112,
+                  105,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "client"
+              },
+              {
+                "kind": "arg",
+                "path": "provider"
+              },
+              {
+                "kind": "arg",
+                "path": "package_id"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "client",
+          "type": "pubkey"
+        },
+        {
+          "name": "provider",
+          "type": "pubkey"
+        },
+        {
+          "name": "package_id",
+          "type": "u64"
+        }
+      ],
+      "discriminator": [
+        31,
+        24,
+        156,
+        205,
+        9,
+        176,
+        248,
+        34
+      ],
+      "docs": [
+        "Pre-creates the sub_expiry PDA with expiry = 0 (absent-equivalent),",
+        "rent paid by the provider at a CPI depth the paymaster can prefund.",
+        "Idempotent: no-op on an activated subscription."
+      ],
+      "name": "pre_create_sub_expiry"
     },
     {
       "accounts": [
@@ -603,7 +683,7 @@
         },
         {
           "docs": [
-            "Existing (deactivated) writer registry PDA — sets is_active back to true (F-34)."
+            "Existing (deactivated) writer registry PDA."
           ],
           "name": "writer_registry",
           "pda": {
@@ -721,7 +801,7 @@
         83
       ],
       "docs": [
-        "Revokes the writer role. PDA is kept alive for in-flight observability (F-34)."
+        "Revokes the writer role. PDA is kept alive for in-flight observability."
       ],
       "name": "remove_writer"
     }
@@ -897,12 +977,7 @@
     {
       "docs": [
         "Writer registry — tracks authorized programs that can write subscription data.",
-        "Equivalent to Solidity's WRITER_ROLE in AccessControl.",
-        "Seeds: [\"writer\", writer_pubkey]",
-        "",
-        "`is_active` mirrors EVM's revokeRole semantics: the PDA is never closed so",
-        "in-flight subscription jobs (whose fund step has not yet fired) can still",
-        "observe the deactivation and abort cleanly (F-34)."
+        "Seeds: [\"writer\", writer_pubkey]"
       ],
       "name": "WriterRegistry",
       "type": {
@@ -916,7 +991,7 @@
           },
           {
             "docs": [
-              "Whether this writer is currently active. Deactivated writers are kept alive (F-34)."
+              "Whether this writer is currently active; deactivated writers are kept alive."
             ],
             "name": "is_active",
             "type": "bool"

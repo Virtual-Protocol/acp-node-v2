@@ -180,6 +180,12 @@ export class AcpAgent {
   private entryHandler: EntryHandler | null = null;
   private sessionMap = new Map<string, JobSession>();
   private addresses = new Map<ChainFamily, string>();
+  /**
+   * True from `start()` until hydration finishes. Live entries are queued rather
+   * than dispatched during that window — see `start()`.
+   */
+  private hydrating = false;
+  private pendingEntries: JobRoomEntry[] = [];
 
   constructor(
     clients: Map<ChainFamily, AcpClient>,
@@ -360,6 +366,29 @@ export class AcpAgent {
     };
   }
 
+  /**
+   * Connect to the event stream, then hydrate a session for every in-flight job
+   * this wallet participates in.
+   *
+   * **Your `entry` handler must be idempotent.** Hydration re-fires the handler
+   * with the *latest* entry of each active job, so every `start()` replays
+   * whatever the job was last waiting on. Restart an evaluator while a job sits
+   * at `job.submitted` and your handler is called for that submission again — it
+   * will try to `complete()` a job it already ruled on. The contract rejects the
+   * redundant call, but don't rely on that as your control: an on-chain revert
+   * is not a deduplication mechanism, and hooks or fee transfers reached before
+   * the revert are not free.
+   *
+   * Within one process each entry is delivered once — sessions track handler
+   * delivery separately from the transcript (`tryClaimDelivery`), so a
+   * transient `getJob` failure during hydration or dispatch can retry without
+   * being mistaken for an already-handled entry. Across restarts it can, and
+   * deliberately so: that replay is what lets an agent killed mid-flow pick the
+   * job back up. Since delivery survives restarts, so must your record of what
+   * you've acted on — persist a key like `${chainId}-${jobId}-${event.type}`
+   * before the side effect. An in-memory `Set` is lost on exactly the restart
+   * that triggers the replay.
+   */
   async start(
     onConnected?: () => void,
     streams: SupportedStreams[] = DEFAULT_STREAMS,
@@ -369,13 +398,50 @@ export class AcpAgent {
     }
 
     this.started = true;
+    this.hydrating = true;
 
-    this.transport.onEntry((entry) =>
-      this.dispatch(entry).catch(console.error),
-    );
+    // The stream has to be live before hydration, or entries occurring mid-catch-up
+    // are lost outright. But dispatching them right away is worse: hydration hasn't
+    // built the session yet, so the entry would create one from no history —
+    // `inferRoles([])` silently defaults to ["provider"], and hydration then
+    // re-delivers the same entry as the job's latest. Queue instead, and drain
+    // once every session has its history.
+    this.transport.onEntry((entry) => {
+      if (this.hydrating) {
+        this.pendingEntries.push(entry);
+        return;
+      }
+      this.dispatch(entry).catch(console.error);
+    });
     await this.transport.connect(onConnected, streams);
 
-    await this.hydrateSessions();
+    try {
+      await this.hydrateSessions();
+    } finally {
+      // Drain even if hydration threw: the queue is the only path those entries
+      // have, and `dispatch` can rebuild a session on its own.
+      this.hydrating = false;
+      await this.drainPendingEntries();
+    }
+  }
+
+  /**
+   * Dispatch entries that arrived while hydration was running.
+   *
+   * Anything hydration already delivered is dropped by `dispatch` itself via
+   * `tryClaimDelivery` — so an entry that landed in the window reaches the
+   * handler exactly once, not twice and not never.
+   */
+  private async drainPendingEntries(): Promise<void> {
+    const queued = this.pendingEntries;
+    this.pendingEntries = [];
+    for (const entry of queued) {
+      try {
+        await this.dispatch(entry);
+      } catch (err) {
+        console.error(err);
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -383,6 +449,8 @@ export class AcpAgent {
       await this.transport.disconnect();
       this.started = false;
     }
+    this.hydrating = false;
+    this.pendingEntries = [];
     this.sessionMap.clear();
   }
 
@@ -406,8 +474,20 @@ export class AcpAgent {
         job.chainId,
         entries,
       );
-      await session.fetchJob();
-      this.fireHandler(session, entries[entries.length - 1]!);
+      const latest = entries[entries.length - 1]!;
+      if (!session.tryClaimDelivery(latest)) continue;
+      try {
+        await session.fetchJob();
+      } catch (err) {
+        session.unclaimDelivery(latest);
+        console.error(
+          `Failed to fetch job ${job.onChainJobId} on chain ${job.chainId} during hydration; ` +
+            `will retry on the next dispatch`,
+          err,
+        );
+        continue;
+      }
+      this.fireHandler(session, latest);
     }
   }
 
@@ -456,7 +536,12 @@ export class AcpAgent {
     initialEntries: JobRoomEntry[] = [],
   ): JobSession {
     let session = this.sessionMap.get(this.getSessionKey(chainId, jobId));
-    if (session) return session;
+    if (session) {
+      // A session built from a single live entry knows almost nothing about the
+      // job; fold in whatever history the caller has rather than discarding it.
+      if (initialEntries.length > 0) session.mergeEntries(initialEntries);
+      return session;
+    }
 
     const roles = this.inferRoles(initialEntries);
     session = new JobSession(
@@ -500,35 +585,73 @@ export class AcpAgent {
   private async dispatch(entry: JobRoomEntry): Promise<void> {
     const jobId = entry.onChainJobId;
     const chainId = entry.chainId;
-    const session = this.getOrCreateSession(jobId, chainId, []);
 
-    if (session.entries.length === 0 || !session.entries.includes(entry)) {
-      session.appendEntry(entry);
-    }
-
-    if (entry.kind === "system" && entry.event.type === "job.created") {
-      const roles = this.inferRoles([entry]);
-      const rolesChanged =
-        roles.length !== session.roles.length ||
-        roles.some((r, i) => r !== session.roles[i]);
-      if (rolesChanged) {
-        const newSession = new JobSession(
-          this,
-          [...this.addresses.values()],
-          jobId,
-          chainId,
-          roles,
-          session.entries,
-        );
-        this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
-        await newSession.fetchJob();
-        this.fireHandler(newSession, entry);
-        return;
+    const existingSession = this.getSession(chainId, jobId);
+    let activeSession: JobSession;
+    if (existingSession) {
+      activeSession = existingSession;
+    } else {
+      // `job.created` carries the client/provider/evaluator addresses, so it can
+      // stand up a session on its own. Any other first-sighting cannot: roles
+      // come from the creation event, and without it `inferRoles` falls back to
+      // ["provider"] — an evaluator would quietly stop responding to the job.
+      const isCreation =
+        entry.kind === "system" && entry.event.type === "job.created";
+      let history: JobRoomEntry[] = [];
+      if (!isCreation) {
+        try {
+          history = await this.transport.getHistory(chainId, jobId);
+        } catch (err) {
+          // Carry on with the single entry rather than dropping it, but say so:
+          // without history the session falls back to the "provider" role and
+          // may ignore entries it should have handled.
+          console.error(
+            `Failed to fetch history for job ${jobId} on chain ${chainId}; ` +
+              `session roles may be incomplete`,
+            err,
+          );
+        }
       }
+      activeSession = this.getOrCreateSession(jobId, chainId, history);
     }
 
-    await session.fetchJob();
-    this.fireHandler(session, entry);
+    activeSession.appendEntry(entry);
+    if (!activeSession.tryClaimDelivery(entry)) return;
+
+    try {
+      if (entry.kind === "system" && entry.event.type === "job.created") {
+        const roles = this.inferRoles([entry]);
+        const rolesChanged =
+          roles.length !== activeSession.roles.length ||
+          roles.some((r, i) => r !== activeSession.roles[i]);
+        if (rolesChanged) {
+          const prevSession = activeSession;
+          const newSession = new JobSession(
+            this,
+            [...this.addresses.values()],
+            jobId,
+            chainId,
+            roles,
+            activeSession.entries,
+          );
+          this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
+          prevSession.unclaimDelivery(entry);
+          if (!newSession.tryClaimDelivery(entry)) return;
+          activeSession = newSession;
+        }
+      }
+
+      await activeSession.fetchJob();
+    } catch (err) {
+      activeSession.unclaimDelivery(entry);
+      console.error(
+        `Failed to fetch job ${jobId} on chain ${chainId}; will retry on the next dispatch`,
+        err,
+      );
+      return;
+    }
+
+    this.fireHandler(activeSession, entry);
   }
 
   private fireHandler(session: JobSession, entry: JobRoomEntry): void {
@@ -612,6 +735,32 @@ export class AcpAgent {
   // Job creation (on-chain, room is created by the observer)
   // -------------------------------------------------------------------------
 
+  /**
+   * Create a job on-chain and nothing else.
+   *
+   * **This does not send a requirement message.** The job carries only
+   * `params.description`, so the provider never receives the structured ask and
+   * an evaluator has a deliverable with nothing to judge it against. Only
+   * {@link createJobFromOffering} / {@link createJobByOfferingName} post the
+   * `"requirement"` entry.
+   *
+   * If you create jobs through this path, send the requirement yourself right
+   * after:
+   *
+   * ```ts
+   * const jobId = await agent.createJob(chainId, params);
+   * await agent.sendMessage(
+   *   chainId,
+   *   jobId.toString(),
+   *   JSON.stringify({ key: "..." }),
+   *   "requirement",
+   * );
+   * ```
+   *
+   * Prefer the offering-based creators unless you need a job that isn't backed
+   * by a registry offering — they validate the requirement against the
+   * offering's JSON schema and derive `expiredAt` from its SLA.
+   */
   async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
     const client = this.getClient(chainId);
     // On Solana, createJob precomputes the job PDA from acp_state.job_counter
@@ -633,6 +782,12 @@ export class AcpAgent {
     return jobId;
   }
 
+  /**
+   * {@link createJob} with the FundTransferHook attached by default.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createFundTransferJob(
     chainId: number,
     params: CreateJobParams,
@@ -648,6 +803,12 @@ export class AcpAgent {
     });
   }
 
+  /**
+   * {@link createJob} with the SubscriptionHook attached by default.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createSubscriptionJob(
     chainId: number,
     params: CreateJobParams,
@@ -663,6 +824,13 @@ export class AcpAgent {
     });
   }
 
+  /**
+   * {@link createJob} routed through the MultiHookRouter, optionally
+   * configuring the per-selector hook layout in the same call.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createMultiHookJob(
     chainId: number,
     params: CreateJobParams,

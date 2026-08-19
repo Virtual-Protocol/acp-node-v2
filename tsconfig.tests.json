@@ -1,0 +1,17 @@
+// Type-checks tests/, which the publish build (tsconfig.json) excludes so the
+// suite never lands in dist/. Same reason tsconfig.examples.json exists: code
+// outside the build's `include` gets no compile checking at all unless something
+// else checks it, and it drifts.
+//
+// Run via `npm run typecheck:tests` (noEmit).
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // tests/ sits outside the build's rootDir (src). Widen it here; noEmit means
+    // nothing is written either way.
+    "rootDir": "."
+  },
+  "include": ["tests/**/*.ts"],
+  "exclude": ["scripts", "dist"]
+}

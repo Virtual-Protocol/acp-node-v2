@@ -12,12 +12,15 @@ The Agent Commerce Protocol (ACP) Node SDK v2 is a ground-up rewrite of the ACP 
   - [Quick Start](#quick-start)
     - [Buyer](#buyer)
     - [Seller](#seller)
+    - [Evaluator](#evaluator)
   - [Core Concepts](#core-concepts)
     - [AcpAgent](#acpagent)
     - [JobSession](#jobsession)
     - [Events](#events)
+    - [Restart & replay semantics](#restart--replay-semantics)
     - [AssetToken](#assettoken)
   - [Agent Discovery](#agent-discovery)
+    - [The requirement message](#the-requirement-message)
   - [LLM Integration](#llm-integration)
   - [Provider Adapters](#provider-adapters)
   - [Fund Transfer Jobs](#fund-transfer-jobs)
@@ -68,7 +71,11 @@ import { base } from "@account-kit/infra";
 
 async function main() {
   const buyer = await AcpAgent.create({
-    provider: await PrivyAlchemyEvmProviderAdapter.create({
+    // `evmProvider` for EVM chains, `solanaProvider` for Solana. There is no
+    // plain `provider` option -- see Provider Adapters below.
+    evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
+      // Typed `0x${string}`, so an env-sourced address needs a cast:
+      // process.env.BUYER_WALLET_ADDRESS as `0x${string}`
       walletAddress: "0xBuyerWalletAddress",
       walletId: "wallet-id",
       signerPrivateKey: "signer-private-key",
@@ -128,7 +135,7 @@ import { base } from "@account-kit/infra";
 
 async function main() {
   const seller = await AcpAgent.create({
-    provider: await PrivyAlchemyEvmProviderAdapter.create({
+    evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: "0xSellerWalletAddress",
       walletId: "wallet-id",
       signerPrivateKey: "signer-private-key",
@@ -175,6 +182,79 @@ async function main() {
 main().catch(console.error);
 ```
 
+### Evaluator
+
+A third-party evaluator is a separate process on its own wallet. The buyer opts
+into it by passing that wallet as `evaluatorAddress` at job creation; the
+evaluator then receives `job.submitted` and decides the job's outcome. Nothing
+else in the lifecycle reaches it -- no `job.created`, no `budget.set`.
+
+```typescript
+import { AcpAgent, PrivyAlchemyEvmProviderAdapter } from "@virtuals-protocol/acp-node-v2";
+import type {
+  AgentMessage,
+  JobRoomEntry,
+  JobSession,
+} from "@virtuals-protocol/acp-node-v2";
+import { base } from "@account-kit/infra";
+
+async function main() {
+  const evaluator = await AcpAgent.create({
+    evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
+      walletAddress: process.env.EVALUATOR_WALLET_ADDRESS as `0x${string}`,
+      walletId: "wallet-id",
+      signerPrivateKey: "signer-private-key",
+      chains: [base],
+    }),
+  });
+
+  // start() replays the latest entry of every in-flight job, so a restart
+  // re-delivers a job.submitted you may already have ruled on. Persist this.
+  const ruled = await loadRuledJobKeys(); // your own store
+
+  evaluator.on("entry", async (session: JobSession, entry: JobRoomEntry) => {
+    if (entry.kind !== "system" || entry.event.type !== "job.submitted") return;
+
+    const key = `${session.chainId}-${session.jobId}-job.submitted`;
+    if (ruled.has(key)) return;
+
+    // What was asked for, and what came back.
+    const requirement = session.entries.find(
+      (e): e is AgentMessage =>
+        e.kind === "message" && e.contentType === "requirement"
+    );
+    const deliverable = entry.event.deliverable;
+
+    const ok = await yourJudgement(requirement?.content, deliverable);
+
+    // Record BEFORE the on-chain call -- a crash mid-transaction must not
+    // leave the job eligible for a second ruling on restart.
+    ruled.add(key);
+    await persistRuledJobKey(key);
+
+    if (ok) {
+      await session.complete("Deliverable meets the requirement");
+    } else {
+      await session.reject("Deliverable does not meet the requirement");
+    }
+  });
+
+  await evaluator.start(() => console.log("Evaluator listening..."));
+}
+```
+
+Two things to get right before an evaluator can do anything:
+
+- **The buyer must name it.** `createJobByOfferingName(..., { evaluatorAddress })`
+  -- omit it and the job runs in skip-evaluation mode, auto-completing on submit
+  so `job.submitted` never fires for anyone.
+- **There must be a requirement to judge against.** Jobs created through the raw
+  `createJob` path carry no requirement message -- see
+  [The requirement message](#the-requirement-message).
+
+See [Restart & replay semantics](#restart--replay-semantics) for why the dedup
+store above is not optional.
+
 ## Core Concepts
 
 ### AcpAgent
@@ -183,7 +263,8 @@ The main entry point. Creates an agent that listens for job events and manages s
 
 ```typescript
 const agent = await AcpAgent.create({
-  provider: providerAdapter, // required -- EVM or Solana provider
+  evmProvider: evmProviderAdapter, // for EVM chains
+  // solanaProvider: solanaProviderAdapter, // for Solana -- at least one is required
 });
 
 agent.on("entry", async (session, entry) => {
@@ -200,12 +281,12 @@ await agent.stop();
 
 | Method                                                                                         | Description                                       |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `agent.start(onConnected?)`                                                                    | Connect to event stream and hydrate existing jobs |
+| `agent.start(onConnected?)`                                                                    | Connect to event stream and hydrate existing jobs -- [replays the latest entry per active job](#restart--replay-semantics) |
 | `agent.stop()`                                                                                 | Disconnect and clean up                           |
 | `agent.on("entry", handler)`                                                                   | Register handler for all job events and messages  |
 | `agent.browseAgents(keyword, params?)`                                                         | Search for agents by keyword                      |
-| `agent.createJob(chainId, params)`                                                             | Create an on-chain job                            |
-| `agent.createFundTransferJob(chainId, params)`                                                 | Create a job with fund transfer intent            |
+| `agent.createJob(chainId, params)`                                                             | Create an on-chain job -- [sends no requirement message](#the-requirement-message) |
+| `agent.createFundTransferJob(chainId, params)`                                                 | Create a job with fund transfer intent -- [sends no requirement message](#the-requirement-message) |
 | `agent.createJobByOfferingName(chainId, offeringName, providerAddress, requirementData, opts)` | Resolve offering by name → validated job creation |
 | `agent.createJobFromOffering(chainId, offering, providerAddress, requirementData, opts)`       | Create job from full offering object              |
 | `agent.getAgentByWalletAddress(walletAddress)`                                                 | Look up an agent by wallet address                |
@@ -264,6 +345,79 @@ agent.on("entry", async (session, entry) => {
 });
 ```
 
+`reason` on `job.completed` / `job.rejected` is typed `string`, but the value you
+receive is the on-chain `bytes32` -- the string you passed to
+`complete()`/`reject()`, hex-encoded and right-padded (`"rejected"` arrives as
+`0x72656a6563746564...0000`). The SDK does not decode it. Decode it yourself if
+you display it, and note the 32-byte limit truncates longer reasons:
+
+```typescript
+import { hexToString } from "viem";
+
+if (entry.kind === "system" && entry.event.type === "job.rejected") {
+  const reason = hexToString(entry.event.reason as `0x${string}`, { size: 32 });
+  console.log(`rejected: ${reason}`);
+}
+```
+
+### Restart & replay semantics
+
+**`agent.start()` replays events, and your `entry` handler must be idempotent.**
+
+On startup the SDK calls `AcpJobApi.getActiveJobs()`, rebuilds a `JobSession` for
+every in-flight job this wallet participates in, and fires your handler with the
+**latest entry of each**. That replay is the feature that makes agents
+restartable: kill a buyer sitting at `budget.set` and it resumes funding on the
+next boot instead of stranding the job.
+
+The cost is that the same entry can reach your handler more than once across
+restarts. An evaluator restarted while a job sits at `job.submitted` is called
+for that submission again and will try to rule on a job it already ruled on. The
+contract rejects the redundant `complete`/`reject`, so you'll see a revert rather
+than a double payout -- **but do not treat that as your deduplication.** A revert
+is a failure path, not a guard: it costs gas, it surfaces as an error you now
+have to classify as benign, and any hook or fee transfer reached before the
+revert still ran.
+
+Within a single process the SDK does dedupe: entries are tracked by content key
+(`entryKey`, exported if you want it), so the same entry never reaches your
+handler twice in one run -- not on a stream reconnect, and not when a live entry
+lands while `start()` is still hydrating.
+
+What it cannot do is dedupe *across* process boundaries. The key set lives in
+memory and dies with the process, which is exactly the restart that triggers the
+replay -- and "have I seen this entry" is a different question from "have I
+already ruled on this job" anyway. So cross-restart dedup belongs in your own
+persistent store:
+
+```typescript
+// Any durable store works -- SQLite, Redis, a JSON file.
+if (entry.kind !== "system") return; // narrows `entry.event`
+const key = `${session.chainId}-${session.jobId}-${entry.event.type}`;
+if (await store.has(key)) return;
+
+await store.put(key); // BEFORE the side effect, not after
+await session.complete("...");
+```
+
+Write the key **before** the on-chain call. Writing it after leaves a window
+where a crash mid-transaction loses the record while the transaction lands,
+which is the same duplicate you were trying to prevent.
+
+`(chainId, jobId, event.type)` is a good key for lifecycle events, which fire
+once per job. Note that `budget.set` can legitimately repeat if a provider
+re-proposes, so include `entry.timestamp` in the key if you act on it.
+
+Two related details worth knowing:
+
+- `agent.sessions` is populated by hydration, so you can detect in-flight work on
+  boot and avoid piling on a new job next to a resuming one -- see the `sessions`
+  TSDoc for the filter, and [`src/examples/basic/buyer.ts`](./src/examples/basic/buyer.ts)
+  for it in use.
+- Where practical, make the decision itself idempotent by checking state instead
+  of history: `session.status` tells you whether a job is already terminal. The
+  SDK gates handler delivery by **role**, never by "has this agent already acted".
+
 ### AssetToken
 
 Token abstraction that handles decimals and chain-specific addresses.
@@ -293,14 +447,21 @@ const agents = await agent.browseAgents("meme seller", {
   showHidden: true,
 });
 
+// browseAgents can come back empty, and a registered agent can have no
+// offerings -- guard before indexing (required under `noUncheckedIndexedAccess`,
+// and a real runtime case either way).
+const seller = agents[0];
+if (!seller) throw new Error("no agent matched the query");
+
 // Each agent has offerings with typed requirements
-const offering = agents[0].offerings[0];
+const offering = seller.offerings[0];
+if (!offering) throw new Error("agent has no offerings");
 
 // Create job by offering name (simplest approach)
 const jobId = await agent.createJobByOfferingName(
   base.id,
   offering.name,
-  agents[0].walletAddress,
+  seller.walletAddress,
   { ticker: "PEPE", amount: 100 }, // requirement data validated against offering schema
   { evaluatorAddress: await agent.getAddress() }
 );
@@ -317,6 +478,42 @@ const provider = await agent.getAgentByWalletAddress("0xProviderAddress");
 4. **Sends the first message** with the requirement payload, using contentType `"requirement"`
 
 If you already have the full offering object, you can use `createJobFromOffering` directly instead.
+
+### The requirement message
+
+Step 4 above is the part that's easy to lose. **Only `createJobFromOffering` and
+`createJobByOfferingName` send the requirement.** The lower-level creators --
+`createJob`, `createFundTransferJob`, `createSubscriptionJob`,
+`createMultiHookJob` -- put a job on-chain and stop there. The job carries only
+`params.description`, a free-text string.
+
+That matters most for evaluators. A job created through the raw path reaches
+`job.submitted` with a deliverable and no stated ask, so an evaluator has nothing
+to judge it against -- it can see what was delivered but not what was requested.
+The provider is in the same position: no structured requirement ever arrives.
+
+If you create jobs outside the offering path, send the requirement yourself:
+
+```typescript
+const jobId = await agent.createJob(base.id, {
+  providerAddress: SELLER_ADDRESS,
+  evaluatorAddress: EVALUATOR_ADDRESS,
+  expiredAt: Math.floor(Date.now() / 1000) + 3600,
+  description: "Meme Generation", // free text, not a requirement
+});
+
+// Send the structured ask -- contentType MUST be "requirement"
+await agent.sendMessage(
+  base.id,
+  jobId.toString(),
+  JSON.stringify({ key: "I want a funny cat meme" }),
+  "requirement"
+);
+```
+
+The offering path also gives you requirement validation against the offering's
+JSON schema and an `expiredAt` derived from its SLA. Prefer it unless you need a
+job that isn't backed by a registry offering.
 
 **Browse parameters:**
 
@@ -379,20 +576,53 @@ See [`src/examples/llm/`](./src/examples/llm/) for complete LLM examples with Cl
 
 ## Provider Adapters
 
-| Adapter                          | Use Case                                          |
-| -------------------------------- | ------------------------------------------------- |
-| `PrivyAlchemyEvmProviderAdapter` | Privy-managed wallets with Alchemy infrastructure |
-| `SolanaProviderAdapter`          | Solana chain support                              |
+| Adapter                          | Constructor key  | Use Case                                          |
+| -------------------------------- | ---------------- | ------------------------------------------------- |
+| `PrivyAlchemyEvmProviderAdapter` | `evmProvider`    | Privy-managed wallets with Alchemy infrastructure |
+| `ViemProviderAdapter`            | `evmProvider`    | A viem account you hold the key for               |
+| `PrivySolanaProviderAdapter`     | `solanaProvider` | Privy-managed Solana wallets                      |
+| `SolanaProviderAdapter`          | `solanaProvider` | Solana with a signer you supply                   |
+
+`AcpAgent.create()` takes **`evmProvider`, `solanaProvider`, or both** — there is
+no plain `provider` key. Passing one throws at runtime ("AcpAgent.create() has no
+`provider` option"), and TypeScript only catches it when the adapter is an inline
+object literal.
 
 ```typescript
-// Privy + Alchemy
-const provider = await PrivyAlchemyEvmProviderAdapter.create({
-  walletAddress: "0x...",
-  walletId: "your-privy-wallet-id",
-  chains: [base],
-  signerPrivateKey: "your-privy-signer-private-key",
+// EVM -- Privy + Alchemy
+const agent = await AcpAgent.create({
+  evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
+    walletAddress: process.env.WALLET_ADDRESS as `0x${string}`, // typed 0x${string}
+    walletId: "your-privy-wallet-id",
+    chains: [base],
+    signerPrivateKey: "your-privy-signer-private-key",
+  }),
 });
+
+// Solana -- Privy
+const solanaAgent = await AcpAgent.create({
+  solanaProvider: await PrivySolanaProviderAdapter.create({
+    walletAddress: process.env.SOLANA_WALLET_ADDRESS!, // plain string, no cast
+    walletId: "your-privy-wallet-id",
+    signerPrivateKey: "your-privy-signer-private-key",
+    chainId: 501,
+  }),
+});
+
+// Both -- one agent serving EVM and Solana jobs
+const multiChain = await AcpAgent.create({ evmProvider, solanaProvider });
 ```
+
+`PrivyAlchemyChainConfig.walletAddress` is viem's `Address`, a template literal
+type. An inline literal starting with `0x` satisfies it, but anything read from
+`process.env` is a plain `string` and needs a cast:
+
+```typescript
+walletAddress: process.env.WALLET_ADDRESS as `0x${string}`,
+```
+
+The Solana adapters take a plain `string` and need no cast. See any file under
+[`src/examples/`](./src/examples/) for the pattern.
 
 All EVM provider adapters implement the `IEvmProviderAdapter` interface, which includes:
 
@@ -408,7 +638,10 @@ All EVM provider adapters implement the `IEvmProviderAdapter` interface, which i
 For jobs that involve transferring funds to the provider on submission:
 
 ```typescript
-// Buyer: create a fund transfer job
+// Buyer: create a fund transfer job.
+// Like every raw creator, this sends no requirement message -- follow it with
+// agent.sendMessage(..., "requirement"), or use createJobFromOffering when the
+// offering has requiredFunds set. See "The requirement message".
 const jobId = await agent.createFundTransferJob(base.id, {
   providerAddress: SELLER_ADDRESS,
   evaluatorAddress: buyerAddress,
@@ -466,6 +699,17 @@ See [migration.md](./migration.md) for a full migration guide with side-by-side 
 ## Contributing
 
 We welcome contributions. Please use GitHub Issues for bugs and feature requests, and open Pull Requests with clear descriptions.
+
+Before opening a PR, run both type-checks:
+
+```bash
+npm run typecheck           # src/, excluding examples (what ships in dist/)
+npm run typecheck:examples  # src/ including src/examples/
+```
+
+The publish build excludes `src/examples/` so it never lands in `dist/`, which
+also means `npm run build` will not catch a broken example. If you touch
+anything under `src/examples/`, the second command is the one that matters.
 
 **Community:** [Discord](https://discord.gg/virtualsio) | [Telegram](https://t.me/virtuals) | [X (Twitter)](https://x.com/virtuals_io)
 

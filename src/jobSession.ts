@@ -6,6 +6,7 @@ import type {
   AgentRole,
   AcpJobEventType,
 } from "./events/types.js";
+import { entryKey } from "./events/entryKey.js";
 import type { AcpAgent } from "./acpAgent.js";
 import { AcpJob } from "./acpJob.js";
 import { AssetToken } from "./core/assetToken.js";
@@ -176,6 +177,10 @@ export class JobSession {
   private _job: AcpJob | null = null;
   private readonly agent: AcpAgent;
   private readonly agentAddresses: Set<string>;
+  /** Keys of everything in `entries`, so membership is content- not reference-based. */
+  private readonly entryKeys = new Set<string>();
+  /** Keys whose handler delivery completed (distinct from merely being in the transcript). */
+  private readonly deliveredEntryKeys = new Set<string>();
 
   constructor(
     agent: AcpAgent,
@@ -190,7 +195,7 @@ export class JobSession {
     this.jobId = jobId;
     this.chainId = chainId;
     this.roles = roles;
-    this.entries.push(...initialEntries);
+    for (const entry of initialEntries) this.appendEntry(entry);
   }
 
   get job(): AcpJob | null {
@@ -216,8 +221,61 @@ export class JobSession {
   // Entry management
   // -------------------------------------------------------------------------
 
-  appendEntry(entry: JobRoomEntry): void {
+  /** True if this exact entry is already in `entries` (compared by content). */
+  hasEntry(entry: JobRoomEntry): boolean {
+    return this.entryKeys.has(entryKey(entry));
+  }
+
+  /**
+   * Reserve delivery for `entry`. Returns false if it was already delivered or
+   * claimed by a concurrent path. Call {@link unclaimDelivery} when
+   * `fetchJob()` fails so a later dispatch or hydration replay can retry.
+   */
+  tryClaimDelivery(entry: JobRoomEntry): boolean {
+    const key = entryKey(entry);
+    if (this.deliveredEntryKeys.has(key)) return false;
+    this.deliveredEntryKeys.add(key);
+    return true;
+  }
+
+  /** Release a delivery claim after a failed pre-handler step. */
+  unclaimDelivery(entry: JobRoomEntry): void {
+    this.deliveredEntryKeys.delete(entryKey(entry));
+  }
+
+  /**
+   * Append an entry, ignoring one already present.
+   *
+   * Idempotent on purpose: hydration and the live stream can both produce the
+   * same entry as separate objects, and appending it twice would duplicate the
+   * transcript. Handler delivery is tracked separately via {@link tryClaimDelivery}.
+   */
+  appendEntry(entry: JobRoomEntry): boolean {
+    const key = entryKey(entry);
+    if (this.entryKeys.has(key)) return false;
+    this.entryKeys.add(key);
     this.entries.push(entry);
+    return true;
+  }
+
+  /**
+   * Fold fetched history into this session, keeping `entries` ordered by
+   * timestamp.
+   *
+   * Order matters beyond tidiness: `status` reads backwards for the newest
+   * system event, so appending older history after a newer live entry would
+   * walk the job's status backwards.
+   */
+  mergeEntries(entries: JobRoomEntry[]): number {
+    const fresh = entries.filter((e) => !this.hasEntry(e));
+    if (fresh.length === 0) return 0;
+    for (const entry of fresh) {
+      this.entryKeys.add(entryKey(entry));
+      this.entries.push(entry);
+    }
+    // Array#sort is stable, so entries sharing a timestamp keep arrival order.
+    this.entries.sort((a, b) => a.timestamp - b.timestamp);
+    return fresh.length;
   }
 
   // -------------------------------------------------------------------------

@@ -1,0 +1,16 @@
+// Type-checks src/examples/, which the publish build (tsconfig.json) excludes.
+//
+// The examples are the code people copy first, so a compile error there is a
+// docs bug with a runtime cost. tsconfig.json excludes them on purpose — they
+// must not ship in dist/ — which meant nothing type-checked them and every EVM
+// example drifted to a `provider:` key that `AcpAgent.create` never accepted.
+//
+// Run via `npm run typecheck:examples` (noEmit, so nothing lands in dist/).
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["scripts", "dist", "tests"]
+}

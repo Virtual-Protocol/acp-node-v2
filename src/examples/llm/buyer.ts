@@ -146,7 +146,7 @@ function toAnthropicMessages(
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    provider: await PrivyAlchemyEvmProviderAdapter.create({
+    evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: requireEnv("BUYER_WALLET_ADDRESS") as `0x${string}`,
       walletId: requireEnv("BUYER_WALLET_ID"),
       signerPrivateKey: requireEnv("BUYER_SIGNER_PRIVATE_KEY"),
@@ -248,7 +248,7 @@ async function main(): Promise<void> {
     if (messages.length === 0) return;
 
     const response = await anthropic.messages.create({
-      model: "gemini-3.1-flash-lite-preview",
+      model: "claude-opus-5",
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages,
@@ -403,7 +403,7 @@ async function pickOfferingWithLlm(
   };
 
   const response = await anthropic.messages.create({
-    model: "gemini-3.1-flash-lite-preview",
+    model: "claude-opus-5",
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [

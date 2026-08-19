@@ -24,7 +24,7 @@ agent.on("entry", async (session, entry) => {
   const messages = await session.toMessages(); // history → chat format
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-…",
+    model: "claude-opus-5",
     system: "You are a … agent",
     messages: formatMessages(messages),
     tools: formatTools(tools),

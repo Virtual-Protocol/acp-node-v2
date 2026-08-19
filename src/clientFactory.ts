@@ -20,6 +20,17 @@ export async function createAcpClients(
 ): Promise<Map<ChainFamily, AcpClient>> {
   const { evmProvider, solanaProvider } = input;
   if (!evmProvider && !solanaProvider) {
+    // `provider` is the most common miss: it reads naturally, TypeScript only
+    // catches it on an inline object literal (excess property check), and plain
+    // JS consumers get no signal at all. Name the right key instead of letting
+    // them re-read the type defs.
+    if ("provider" in input) {
+      throw new Error(
+        "AcpAgent.create() has no `provider` option. Use `evmProvider` for an " +
+          "EVM adapter (e.g. PrivyAlchemyEvmProviderAdapter) or `solanaProvider` " +
+          "for a Solana adapter (e.g. PrivySolanaProviderAdapter).",
+      );
+    }
     throw new Error(
       "At least one provider (evmProvider or solanaProvider) must be provided.",
     );

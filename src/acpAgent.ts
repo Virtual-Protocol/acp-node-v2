@@ -360,6 +360,26 @@ export class AcpAgent {
     };
   }
 
+  /**
+   * Connect to the event stream, then hydrate a session for every in-flight job
+   * this wallet participates in.
+   *
+   * **Your `entry` handler must be idempotent.** Hydration re-fires the handler
+   * with the *latest* entry of each active job, so every `start()` replays
+   * whatever the job was last waiting on. Restart an evaluator while a job sits
+   * at `job.submitted` and your handler is called for that submission again — it
+   * will try to `complete()` a job it already ruled on. The contract rejects the
+   * redundant call, but don't rely on that as your control: an on-chain revert
+   * is not a deduplication mechanism, and hooks or fee transfers reached before
+   * the revert are not free.
+   *
+   * The SDK deliberately does not dedupe this — replay is what lets an agent
+   * killed mid-flow pick the job back up. Since delivery survives process
+   * restarts, so must your record of what you've acted on: persist a key like
+   * `${chainId}-${jobId}-${event.type}` before the side effect and skip entries
+   * you've already handled. An in-memory `Set` is lost on exactly the restart
+   * that triggers the replay.
+   */
   async start(
     onConnected?: () => void,
     streams: SupportedStreams[] = DEFAULT_STREAMS,
@@ -612,6 +632,32 @@ export class AcpAgent {
   // Job creation (on-chain, room is created by the observer)
   // -------------------------------------------------------------------------
 
+  /**
+   * Create a job on-chain and nothing else.
+   *
+   * **This does not send a requirement message.** The job carries only
+   * `params.description`, so the provider never receives the structured ask and
+   * an evaluator has a deliverable with nothing to judge it against. Only
+   * {@link createJobFromOffering} / {@link createJobByOfferingName} post the
+   * `"requirement"` entry.
+   *
+   * If you create jobs through this path, send the requirement yourself right
+   * after:
+   *
+   * ```ts
+   * const jobId = await agent.createJob(chainId, params);
+   * await agent.sendMessage(
+   *   chainId,
+   *   jobId.toString(),
+   *   JSON.stringify({ key: "..." }),
+   *   "requirement",
+   * );
+   * ```
+   *
+   * Prefer the offering-based creators unless you need a job that isn't backed
+   * by a registry offering — they validate the requirement against the
+   * offering's JSON schema and derive `expiredAt` from its SLA.
+   */
   async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
     const client = this.getClient(chainId);
     // On Solana, createJob precomputes the job PDA from acp_state.job_counter
@@ -633,6 +679,12 @@ export class AcpAgent {
     return jobId;
   }
 
+  /**
+   * {@link createJob} with the FundTransferHook attached by default.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createFundTransferJob(
     chainId: number,
     params: CreateJobParams,
@@ -648,6 +700,12 @@ export class AcpAgent {
     });
   }
 
+  /**
+   * {@link createJob} with the SubscriptionHook attached by default.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createSubscriptionJob(
     chainId: number,
     params: CreateJobParams,
@@ -663,6 +721,13 @@ export class AcpAgent {
     });
   }
 
+  /**
+   * {@link createJob} routed through the MultiHookRouter, optionally
+   * configuring the per-selector hook layout in the same call.
+   *
+   * Like `createJob`, this sends **no requirement message** — see that method
+   * for why that matters and how to send one yourself.
+   */
   async createMultiHookJob(
     chainId: number,
     params: CreateJobParams,

@@ -379,9 +379,10 @@ export class AcpAgent {
    * is not a deduplication mechanism, and hooks or fee transfers reached before
    * the revert are not free.
    *
-   * Within one process each entry is delivered once — sessions track entries by
-   * content key (`entryKey`), so a stream reconnect or an entry landing
-   * mid-hydration can't fire the handler twice. Across restarts it can, and
+   * Within one process each entry is delivered once — sessions track handler
+   * delivery separately from the transcript (`tryClaimDelivery`), so a
+   * transient `getJob` failure during hydration or dispatch can retry without
+   * being mistaken for an already-handled entry. Across restarts it can, and
    * deliberately so: that replay is what lets an agent killed mid-flow pick the
    * job back up. Since delivery survives restarts, so must your record of what
    * you've acted on — persist a key like `${chainId}-${jobId}-${event.type}`
@@ -427,9 +428,9 @@ export class AcpAgent {
   /**
    * Dispatch entries that arrived while hydration was running.
    *
-   * Anything hydration already replayed is dropped by `dispatch` itself, which
-   * ignores an entry the session has seen — so an entry that landed in the
-   * window reaches the handler exactly once, not twice and not never.
+   * Anything hydration already delivered is dropped by `dispatch` itself via
+   * `tryClaimDelivery` — so an entry that landed in the window reaches the
+   * handler exactly once, not twice and not never.
    */
   private async drainPendingEntries(): Promise<void> {
     const queued = this.pendingEntries;
@@ -473,8 +474,20 @@ export class AcpAgent {
         job.chainId,
         entries,
       );
-      await session.fetchJob();
-      this.fireHandler(session, entries[entries.length - 1]!);
+      const latest = entries[entries.length - 1]!;
+      if (!session.tryClaimDelivery(latest)) continue;
+      try {
+        await session.fetchJob();
+      } catch (err) {
+        session.unclaimDelivery(latest);
+        console.error(
+          `Failed to fetch job ${job.onChainJobId} on chain ${job.chainId} during hydration; ` +
+            `will retry on the next dispatch`,
+          err,
+        );
+        continue;
+      }
+      this.fireHandler(session, latest);
     }
   }
 
@@ -573,9 +586,11 @@ export class AcpAgent {
     const jobId = entry.onChainJobId;
     const chainId = entry.chainId;
 
-    let session = this.getSession(chainId, jobId);
-    let sessionIsNew = false;
-    if (!session) {
+    const existingSession = this.getSession(chainId, jobId);
+    let activeSession: JobSession;
+    if (existingSession) {
+      activeSession = existingSession;
+    } else {
       // `job.created` carries the client/provider/evaluator addresses, so it can
       // stand up a session on its own. Any other first-sighting cannot: roles
       // come from the creation event, and without it `inferRoles` falls back to
@@ -597,40 +612,46 @@ export class AcpAgent {
           );
         }
       }
-      session = this.getOrCreateSession(jobId, chainId, history);
-      sessionIsNew = true;
+      activeSession = this.getOrCreateSession(jobId, chainId, history);
     }
 
-    // A known session already holding this entry means another path (hydration,
-    // or a reconnect replay) delivered it — don't fire twice. On a session we
-    // just built, the entry being present only means our own history fetch
-    // included it, and nothing has fired for it yet.
-    const entryIsNew = session.appendEntry(entry);
-    if (!entryIsNew && !sessionIsNew) return;
+    activeSession.appendEntry(entry);
+    if (!activeSession.tryClaimDelivery(entry)) return;
 
-    if (entry.kind === "system" && entry.event.type === "job.created") {
-      const roles = this.inferRoles([entry]);
-      const rolesChanged =
-        roles.length !== session.roles.length ||
-        roles.some((r, i) => r !== session.roles[i]);
-      if (rolesChanged) {
-        const newSession = new JobSession(
-          this,
-          [...this.addresses.values()],
-          jobId,
-          chainId,
-          roles,
-          session.entries,
-        );
-        this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
-        await newSession.fetchJob();
-        this.fireHandler(newSession, entry);
-        return;
+    try {
+      if (entry.kind === "system" && entry.event.type === "job.created") {
+        const roles = this.inferRoles([entry]);
+        const rolesChanged =
+          roles.length !== activeSession.roles.length ||
+          roles.some((r, i) => r !== activeSession.roles[i]);
+        if (rolesChanged) {
+          const prevSession = activeSession;
+          const newSession = new JobSession(
+            this,
+            [...this.addresses.values()],
+            jobId,
+            chainId,
+            roles,
+            activeSession.entries,
+          );
+          this.sessionMap.set(this.getSessionKey(chainId, jobId), newSession);
+          prevSession.unclaimDelivery(entry);
+          if (!newSession.tryClaimDelivery(entry)) return;
+          activeSession = newSession;
+        }
       }
+
+      await activeSession.fetchJob();
+    } catch (err) {
+      activeSession.unclaimDelivery(entry);
+      console.error(
+        `Failed to fetch job ${jobId} on chain ${chainId}; will retry on the next dispatch`,
+        err,
+      );
+      return;
     }
 
-    await session.fetchJob();
-    this.fireHandler(session, entry);
+    this.fireHandler(activeSession, entry);
   }
 
   private fireHandler(session: JobSession, entry: JobRoomEntry): void {

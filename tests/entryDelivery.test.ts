@@ -77,6 +77,8 @@ type FakeOpts = {
   /** Jobs `getActiveJobs()` reports; empty means nothing to hydrate. */
   activeJobs?: { chainId: number; onChainJobId: string }[];
   jobStatus?: AcpJobStatus;
+  /** Fail the first N `getJob()` calls (simulates observer lag). */
+  getJobFailCount?: number;
 };
 
 class FakeTransport implements AcpChatTransport {
@@ -107,11 +109,19 @@ class FakeTransport implements AcpChatTransport {
 }
 
 class FakeApi implements AcpJobApi {
+  getJobCalls = 0;
   constructor(private readonly opts: FakeOpts) {}
   async getActiveJobs() {
     return this.opts.activeJobs ?? [{ chainId: CHAIN, onChainJobId: JOB }];
   }
   async getJob(): Promise<OffChainJob | null> {
+    this.getJobCalls++;
+    if (
+      this.opts.getJobFailCount !== undefined &&
+      this.getJobCalls <= this.opts.getJobFailCount
+    ) {
+      throw new Error("observer lag");
+    }
     return {
       chainId: CHAIN,
       onChainJobId: JOB,
@@ -147,7 +157,8 @@ type Harness = {
 
 async function harness(myAddress: string, opts: FakeOpts = {}): Promise<Harness> {
   const transport = new FakeTransport(opts);
-  const agent = new AcpAgent(new Map(), transport, new FakeApi(opts));
+  const api = new FakeApi(opts);
+  const agent = new AcpAgent(new Map(), transport, api);
   // buildTransportContext() normally fills this from the provider adapters.
   (agent as unknown as { addresses: Map<string, string> }).addresses.set(
     "evm",
@@ -290,6 +301,36 @@ const tests: Array<[string, () => Promise<void>]> = [
         session.entries.map((e) => e.timestamp),
         [1_000, 2_000, 3_000],
       );
+    },
+  ],
+  [
+    "a transient getJob failure during hydration retries on drain, not zero times",
+    async () => {
+      const h = await harness(PROVIDER, {
+        duringHydration: () => [fundedEntry()],
+        history: () => [createdEntry(), fundedEntry()],
+        getJobFailCount: 1,
+      });
+      assert.equal(
+        h.firesOf("job.funded"),
+        1,
+        "hydration failure must not permanently skip the handler",
+      );
+    },
+  ],
+  [
+    "a transient getJob failure on live dispatch retries on reconnect replay",
+    async () => {
+      const h = await harness(PROVIDER, {
+        activeJobs: [],
+        history: () => [createdEntry(), fundedEntry()],
+        getJobFailCount: 1,
+      });
+      h.transport.emit(fundedEntry());
+      await tick();
+      h.transport.emit(fundedEntry()); // reconnect replay after fetchJob recovers
+      await tick(60);
+      assert.equal(h.firesOf("job.funded"), 1);
     },
   ],
 ];

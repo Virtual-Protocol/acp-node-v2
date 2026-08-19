@@ -179,6 +179,8 @@ export class JobSession {
   private readonly agentAddresses: Set<string>;
   /** Keys of everything in `entries`, so membership is content- not reference-based. */
   private readonly entryKeys = new Set<string>();
+  /** Keys whose handler delivery completed (distinct from merely being in the transcript). */
+  private readonly deliveredEntryKeys = new Set<string>();
 
   constructor(
     agent: AcpAgent,
@@ -225,12 +227,28 @@ export class JobSession {
   }
 
   /**
+   * Reserve delivery for `entry`. Returns false if it was already delivered or
+   * claimed by a concurrent path. Call {@link unclaimDelivery} when
+   * `fetchJob()` fails so a later dispatch or hydration replay can retry.
+   */
+  tryClaimDelivery(entry: JobRoomEntry): boolean {
+    const key = entryKey(entry);
+    if (this.deliveredEntryKeys.has(key)) return false;
+    this.deliveredEntryKeys.add(key);
+    return true;
+  }
+
+  /** Release a delivery claim after a failed pre-handler step. */
+  unclaimDelivery(entry: JobRoomEntry): void {
+    this.deliveredEntryKeys.delete(entryKey(entry));
+  }
+
+  /**
    * Append an entry, ignoring one already present.
    *
    * Idempotent on purpose: hydration and the live stream can both produce the
    * same entry as separate objects, and appending it twice would duplicate the
-   * transcript. Returns whether the entry was new — callers use that to decide
-   * whether the handler still owes a delivery for it.
+   * transcript. Handler delivery is tracked separately via {@link tryClaimDelivery}.
    */
   appendEntry(entry: JobRoomEntry): boolean {
     const key = entryKey(entry);

@@ -252,7 +252,13 @@
           "writable": true
         },
         {
-          "name": "provider",
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "name": "platform_treasury",
           "writable": true
         }
       ],
@@ -381,38 +387,38 @@
               {
                 "kind": "const",
                 "value": [
-                  20,
-                  0,
-                  166,
-                  80,
-                  93,
-                  113,
-                  128,
-                  167,
-                  240,
-                  179,
-                  33,
-                  165,
-                  80,
-                  28,
-                  221,
-                  130,
-                  51,
-                  63,
-                  58,
-                  69,
+                  82,
+                  35,
+                  22,
+                  92,
+                  78,
+                  34,
+                  36,
+                  77,
+                  223,
+                  4,
+                  88,
+                  68,
+                  137,
+                  148,
+                  42,
                   102,
-                  183,
-                  31,
-                  211,
+                  63,
                   194,
-                  2,
-                  150,
+                  165,
+                  181,
+                  196,
+                  243,
+                  93,
+                  127,
+                  58,
+                  161,
+                  228,
+                  131,
+                  1,
                   90,
-                  229,
-                  86,
                   114,
-                  131
+                  14
                 ]
               }
             ]
@@ -585,12 +591,23 @@
             "type": "u64"
           },
           {
+            "docs": [
+              "Provider recorded on the terms. Informational only — it is no longer the",
+              "rent destination; see `rent_destination`."
+            ],
             "name": "provider",
             "type": "pubkey"
           },
           {
             "name": "lamports_refunded",
             "type": "u64"
+          },
+          {
+            "docs": [
+              "Where the reclaimed rent actually went (the platform treasury)."
+            ],
+            "name": "rent_destination",
+            "type": "pubkey"
           }
         ],
         "kind": "struct"

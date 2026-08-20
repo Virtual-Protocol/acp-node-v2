@@ -52,7 +52,8 @@ export type CleanupProposedTermsInstruction<
   TAccountHookState extends string | AccountMeta<string> = string,
   TAccountJobAccount extends string | AccountMeta<string> = string,
   TAccountProposedTerms extends string | AccountMeta<string> = string,
-  TAccountProvider extends string | AccountMeta<string> = string,
+  TAccountAcpState extends string | AccountMeta<string> = string,
+  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -71,9 +72,12 @@ export type CleanupProposedTermsInstruction<
       TAccountProposedTerms extends string
         ? WritableAccount<TAccountProposedTerms>
         : TAccountProposedTerms,
-      TAccountProvider extends string
-        ? WritableAccount<TAccountProvider>
-        : TAccountProvider,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
+      TAccountPlatformTreasury extends string
+        ? WritableAccount<TAccountPlatformTreasury>
+        : TAccountPlatformTreasury,
       ...TRemainingAccounts,
     ]
   >;
@@ -122,7 +126,8 @@ export type CleanupProposedTermsAsyncInput<
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
   TAccountProposedTerms extends string = string,
-  TAccountProvider extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountPlatformTreasury extends string = string,
 > = {
   /** Permissionless trigger; the only authorization is that the job has expired. */
   caller: TransactionSigner<TAccountCaller>;
@@ -131,7 +136,9 @@ export type CleanupProposedTermsAsyncInput<
   jobAccount: Address<TAccountJobAccount>;
   /** Manually closed after the provider check. */
   proposedTerms: Address<TAccountProposedTerms>;
-  provider: Address<TAccountProvider>;
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  platformTreasury: Address<TAccountPlatformTreasury>;
   jobId: CleanupProposedTermsInstructionDataArgs["jobId"];
 };
 
@@ -140,7 +147,8 @@ export async function getCleanupProposedTermsInstructionAsync<
   TAccountHookState extends string,
   TAccountJobAccount extends string,
   TAccountProposedTerms extends string,
-  TAccountProvider extends string,
+  TAccountAcpState extends string,
+  TAccountPlatformTreasury extends string,
   TProgramAddress extends Address = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
 >(
   input: CleanupProposedTermsAsyncInput<
@@ -148,7 +156,8 @@ export async function getCleanupProposedTermsInstructionAsync<
     TAccountHookState,
     TAccountJobAccount,
     TAccountProposedTerms,
-    TAccountProvider
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -158,7 +167,8 @@ export async function getCleanupProposedTermsInstructionAsync<
     TAccountHookState,
     TAccountJobAccount,
     TAccountProposedTerms,
-    TAccountProvider
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >
 > {
   // Program address.
@@ -171,7 +181,11 @@ export async function getCleanupProposedTermsInstructionAsync<
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
     proposedTerms: { value: input.proposedTerms ?? null, isWritable: true },
-    provider: { value: input.provider ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -193,7 +207,8 @@ export async function getCleanupProposedTermsInstructionAsync<
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
       getAccountMeta(accounts.proposedTerms),
-      getAccountMeta(accounts.provider),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.platformTreasury),
     ],
     data: getCleanupProposedTermsInstructionDataEncoder().encode(
       args as CleanupProposedTermsInstructionDataArgs,
@@ -205,7 +220,8 @@ export async function getCleanupProposedTermsInstructionAsync<
     TAccountHookState,
     TAccountJobAccount,
     TAccountProposedTerms,
-    TAccountProvider
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >);
 }
 
@@ -214,7 +230,8 @@ export type CleanupProposedTermsInput<
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
   TAccountProposedTerms extends string = string,
-  TAccountProvider extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountPlatformTreasury extends string = string,
 > = {
   /** Permissionless trigger; the only authorization is that the job has expired. */
   caller: TransactionSigner<TAccountCaller>;
@@ -223,7 +240,9 @@ export type CleanupProposedTermsInput<
   jobAccount: Address<TAccountJobAccount>;
   /** Manually closed after the provider check. */
   proposedTerms: Address<TAccountProposedTerms>;
-  provider: Address<TAccountProvider>;
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  platformTreasury: Address<TAccountPlatformTreasury>;
   jobId: CleanupProposedTermsInstructionDataArgs["jobId"];
 };
 
@@ -232,7 +251,8 @@ export function getCleanupProposedTermsInstruction<
   TAccountHookState extends string,
   TAccountJobAccount extends string,
   TAccountProposedTerms extends string,
-  TAccountProvider extends string,
+  TAccountAcpState extends string,
+  TAccountPlatformTreasury extends string,
   TProgramAddress extends Address = typeof SUBSCRIPTION_HOOK_PROGRAM_ADDRESS,
 >(
   input: CleanupProposedTermsInput<
@@ -240,7 +260,8 @@ export function getCleanupProposedTermsInstruction<
     TAccountHookState,
     TAccountJobAccount,
     TAccountProposedTerms,
-    TAccountProvider
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >,
   config?: { programAddress?: TProgramAddress },
 ): CleanupProposedTermsInstruction<
@@ -249,7 +270,8 @@ export function getCleanupProposedTermsInstruction<
   TAccountHookState,
   TAccountJobAccount,
   TAccountProposedTerms,
-  TAccountProvider
+  TAccountAcpState,
+  TAccountPlatformTreasury
 > {
   // Program address.
   const programAddress =
@@ -261,7 +283,11 @@ export function getCleanupProposedTermsInstruction<
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
     proposedTerms: { value: input.proposedTerms ?? null, isWritable: true },
-    provider: { value: input.provider ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -278,7 +304,8 @@ export function getCleanupProposedTermsInstruction<
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
       getAccountMeta(accounts.proposedTerms),
-      getAccountMeta(accounts.provider),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.platformTreasury),
     ],
     data: getCleanupProposedTermsInstructionDataEncoder().encode(
       args as CleanupProposedTermsInstructionDataArgs,
@@ -290,7 +317,8 @@ export function getCleanupProposedTermsInstruction<
     TAccountHookState,
     TAccountJobAccount,
     TAccountProposedTerms,
-    TAccountProvider
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >);
 }
 
@@ -307,7 +335,9 @@ export type ParsedCleanupProposedTermsInstruction<
     jobAccount: TAccountMetas[2];
     /** Manually closed after the provider check. */
     proposedTerms: TAccountMetas[3];
-    provider: TAccountMetas[4];
+    /** against `hook_state.acp_program`. Read only to source the treasury. */
+    acpState: TAccountMetas[4];
+    platformTreasury: TAccountMetas[5];
   };
   data: CleanupProposedTermsInstructionData;
 };
@@ -320,7 +350,7 @@ export function parseCleanupProposedTermsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCleanupProposedTermsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+  if (instruction.accounts.length < 6) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -337,7 +367,8 @@ export function parseCleanupProposedTermsInstruction<
       hookState: getNextAccount(),
       jobAccount: getNextAccount(),
       proposedTerms: getNextAccount(),
-      provider: getNextAccount(),
+      acpState: getNextAccount(),
+      platformTreasury: getNextAccount(),
     },
     data: getCleanupProposedTermsInstructionDataDecoder().decode(
       instruction.data,

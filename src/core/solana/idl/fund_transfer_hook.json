@@ -401,6 +401,19 @@
         {
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
           "name": "token_program"
+        },
+        {
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "docs": [
+            "equal `acp_state.platform_treasury`."
+          ],
+          "name": "platform_treasury",
+          "writable": true
         }
       ],
       "args": [
@@ -428,8 +441,11 @@
       "accounts": [
         {
           "docs": [
-            "The original actor who paid for the intent (provider for fund requests).",
-            "Receives the reclaimed rent lamports."
+            "The original actor who proposed the intent (provider for fund requests).",
+            "Still required to authorize the close even though the rent now goes to",
+            "the treasury: the intent PDA is reused in place by the next proposal, so",
+            "letting a stranger deallocate it would force the sponsor to pay its rent",
+            "again for no gain to anyone."
           ],
           "name": "actor",
           "signer": true,
@@ -486,8 +502,43 @@
           }
         },
         {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
           "address": "11111111111111111111111111111111",
           "name": "system_program"
+        },
+        {
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "docs": [
+            "`acp_state.platform_treasury`."
+          ],
+          "name": "platform_treasury",
+          "writable": true
         }
       ],
       "args": [
@@ -614,38 +665,38 @@
               {
                 "kind": "const",
                 "value": [
-                  99,
-                  80,
-                  179,
-                  118,
-                  113,
-                  157,
-                  172,
-                  156,
-                  120,
-                  235,
-                  172,
-                  99,
-                  23,
-                  155,
-                  108,
-                  227,
-                  80,
-                  135,
-                  184,
-                  199,
-                  34,
-                  228,
-                  170,
-                  203,
-                  0,
-                  150,
+                  246,
+                  71,
+                  52,
+                  188,
+                  141,
+                  72,
+                  100,
+                  245,
+                  18,
                   10,
-                  8,
-                  205,
-                  195,
-                  225,
-                  17
+                  17,
+                  229,
+                  45,
+                  152,
+                  144,
+                  5,
+                  191,
+                  169,
+                  137,
+                  86,
+                  3,
+                  180,
+                  252,
+                  183,
+                  196,
+                  60,
+                  27,
+                  104,
+                  33,
+                  19,
+                  36,
+                  51
                 ]
               }
             ]

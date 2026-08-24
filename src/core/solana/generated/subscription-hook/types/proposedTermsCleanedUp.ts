@@ -22,14 +22,26 @@ import {
 
 export type ProposedTermsCleanedUp = {
   jobId: bigint;
+  /**
+   * Provider recorded on the terms. Informational only — it is no longer the
+   * rent destination; see `rent_destination`.
+   */
   provider: Address;
   lamportsRefunded: bigint;
+  /** Where the reclaimed rent actually went (the platform treasury). */
+  rentDestination: Address;
 };
 
 export type ProposedTermsCleanedUpArgs = {
   jobId: number | bigint;
+  /**
+   * Provider recorded on the terms. Informational only — it is no longer the
+   * rent destination; see `rent_destination`.
+   */
   provider: Address;
   lamportsRefunded: number | bigint;
+  /** Where the reclaimed rent actually went (the platform treasury). */
+  rentDestination: Address;
 };
 
 export function getProposedTermsCleanedUpEncoder(): FixedSizeEncoder<ProposedTermsCleanedUpArgs> {
@@ -37,6 +49,7 @@ export function getProposedTermsCleanedUpEncoder(): FixedSizeEncoder<ProposedTer
     ["jobId", getU64Encoder()],
     ["provider", getAddressEncoder()],
     ["lamportsRefunded", getU64Encoder()],
+    ["rentDestination", getAddressEncoder()],
   ]);
 }
 
@@ -45,6 +58,7 @@ export function getProposedTermsCleanedUpDecoder(): FixedSizeDecoder<ProposedTer
     ["jobId", getU64Decoder()],
     ["provider", getAddressDecoder()],
     ["lamportsRefunded", getU64Decoder()],
+    ["rentDestination", getAddressDecoder()],
   ]);
 }
 

@@ -253,7 +253,13 @@
           "writable": true
         },
         {
-          "name": "provider",
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "name": "platform_treasury",
           "writable": true
         }
       ],
@@ -586,12 +592,23 @@
             "type": "u64"
           },
           {
+            "docs": [
+              "Provider recorded on the terms. Informational only — it is no longer the",
+              "rent destination; see `rent_destination`."
+            ],
             "name": "provider",
             "type": "pubkey"
           },
           {
             "name": "lamports_refunded",
             "type": "u64"
+          },
+          {
+            "docs": [
+              "Where the reclaimed rent actually went (the platform treasury)."
+            ],
+            "name": "rent_destination",
+            "type": "pubkey"
           }
         ],
         "kind": "struct"

@@ -32,6 +32,7 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
+import { findHookStatePda } from "../pdas/index.js";
 import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
@@ -50,8 +51,11 @@ export type CloseIntentInstruction<
   TAccountActor extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
   TAccountFundRequestMap extends string | AccountMeta<string> = string,
+  TAccountHookState extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
+  TAccountAcpState extends string | AccountMeta<string> = string,
+  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -67,9 +71,18 @@ export type CloseIntentInstruction<
       TAccountFundRequestMap extends string
         ? ReadonlyAccount<TAccountFundRequestMap>
         : TAccountFundRequestMap,
+      TAccountHookState extends string
+        ? ReadonlyAccount<TAccountHookState>
+        : TAccountHookState,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
+      TAccountPlatformTreasury extends string
+        ? WritableAccount<TAccountPlatformTreasury>
+        : TAccountPlatformTreasury,
       ...TRemainingAccounts,
     ]
   >;
@@ -108,15 +121,21 @@ export function getCloseIntentInstructionDataCodec(): FixedSizeCodec<
   );
 }
 
-export type CloseIntentInput<
+export type CloseIntentAsyncInput<
   TAccountActor extends string = string,
   TAccountIntent extends string = string,
   TAccountFundRequestMap extends string = string,
+  TAccountHookState extends string = string,
   TAccountSystemProgram extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountPlatformTreasury extends string = string,
 > = {
   /**
-   * The original actor who paid for the intent (provider for fund requests).
-   * Receives the reclaimed rent lamports.
+   * The original actor who proposed the intent (provider for fund requests).
+   * Still required to authorize the close even though the rent now goes to
+   * the treasury: the intent PDA is reused in place by the next proposal, so
+   * letting a stranger deallocate it would force the sponsor to pay its rent
+   * again for no gain to anyone.
    */
   actor: TransactionSigner<TAccountActor>;
   /**
@@ -126,30 +145,46 @@ export type CloseIntentInput<
   intent: Address<TAccountIntent>;
   /** Per-job fund request intent map; prevents closing the currently active intent. */
   fundRequestMap: Address<TAccountFundRequestMap>;
+  hookState?: Address<TAccountHookState>;
   systemProgram?: Address<TAccountSystemProgram>;
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  /** `acp_state.platform_treasury`. */
+  platformTreasury: Address<TAccountPlatformTreasury>;
   intentId: CloseIntentInstructionDataArgs["intentId"];
 };
 
-export function getCloseIntentInstruction<
+export async function getCloseIntentInstructionAsync<
   TAccountActor extends string,
   TAccountIntent extends string,
   TAccountFundRequestMap extends string,
+  TAccountHookState extends string,
   TAccountSystemProgram extends string,
+  TAccountAcpState extends string,
+  TAccountPlatformTreasury extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
-  input: CloseIntentInput<
+  input: CloseIntentAsyncInput<
     TAccountActor,
     TAccountIntent,
     TAccountFundRequestMap,
-    TAccountSystemProgram
+    TAccountHookState,
+    TAccountSystemProgram,
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >,
   config?: { programAddress?: TProgramAddress },
-): CloseIntentInstruction<
-  TProgramAddress,
-  TAccountActor,
-  TAccountIntent,
-  TAccountFundRequestMap,
-  TAccountSystemProgram
+): Promise<
+  CloseIntentInstruction<
+    TProgramAddress,
+    TAccountActor,
+    TAccountIntent,
+    TAccountFundRequestMap,
+    TAccountHookState,
+    TAccountSystemProgram,
+    TAccountAcpState,
+    TAccountPlatformTreasury
+  >
 > {
   // Program address.
   const programAddress =
@@ -160,7 +195,137 @@ export function getCloseIntentInstruction<
     actor: { value: input.actor ?? null, isWritable: true },
     intent: { value: input.intent ?? null, isWritable: true },
     fundRequestMap: { value: input.fundRequestMap ?? null, isWritable: false },
+    hookState: { value: input.hookState ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
+  };
+  const accounts = originalAccounts as Record<
+    keyof typeof originalAccounts,
+    ResolvedAccount
+  >;
+
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.hookState.value) {
+    accounts.hookState.value = await findHookStatePda();
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
+  return Object.freeze({
+    accounts: [
+      getAccountMeta(accounts.actor),
+      getAccountMeta(accounts.intent),
+      getAccountMeta(accounts.fundRequestMap),
+      getAccountMeta(accounts.hookState),
+      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.platformTreasury),
+    ],
+    data: getCloseIntentInstructionDataEncoder().encode(
+      args as CloseIntentInstructionDataArgs,
+    ),
+    programAddress,
+  } as CloseIntentInstruction<
+    TProgramAddress,
+    TAccountActor,
+    TAccountIntent,
+    TAccountFundRequestMap,
+    TAccountHookState,
+    TAccountSystemProgram,
+    TAccountAcpState,
+    TAccountPlatformTreasury
+  >);
+}
+
+export type CloseIntentInput<
+  TAccountActor extends string = string,
+  TAccountIntent extends string = string,
+  TAccountFundRequestMap extends string = string,
+  TAccountHookState extends string = string,
+  TAccountSystemProgram extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountPlatformTreasury extends string = string,
+> = {
+  /**
+   * The original actor who proposed the intent (provider for fund requests).
+   * Still required to authorize the close even though the rent now goes to
+   * the treasury: the intent PDA is reused in place by the next proposal, so
+   * letting a stranger deallocate it would force the sponsor to pay its rent
+   * again for no gain to anyone.
+   */
+  actor: TransactionSigner<TAccountActor>;
+  /**
+   * The intent PDA to close; must be unsigned and non-escrow. The address
+   * does not encode the intent id, so `intent.id == intent_id` is asserted explicitly.
+   */
+  intent: Address<TAccountIntent>;
+  /** Per-job fund request intent map; prevents closing the currently active intent. */
+  fundRequestMap: Address<TAccountFundRequestMap>;
+  hookState: Address<TAccountHookState>;
+  systemProgram?: Address<TAccountSystemProgram>;
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  /** `acp_state.platform_treasury`. */
+  platformTreasury: Address<TAccountPlatformTreasury>;
+  intentId: CloseIntentInstructionDataArgs["intentId"];
+};
+
+export function getCloseIntentInstruction<
+  TAccountActor extends string,
+  TAccountIntent extends string,
+  TAccountFundRequestMap extends string,
+  TAccountHookState extends string,
+  TAccountSystemProgram extends string,
+  TAccountAcpState extends string,
+  TAccountPlatformTreasury extends string,
+  TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
+>(
+  input: CloseIntentInput<
+    TAccountActor,
+    TAccountIntent,
+    TAccountFundRequestMap,
+    TAccountHookState,
+    TAccountSystemProgram,
+    TAccountAcpState,
+    TAccountPlatformTreasury
+  >,
+  config?: { programAddress?: TProgramAddress },
+): CloseIntentInstruction<
+  TProgramAddress,
+  TAccountActor,
+  TAccountIntent,
+  TAccountFundRequestMap,
+  TAccountHookState,
+  TAccountSystemProgram,
+  TAccountAcpState,
+  TAccountPlatformTreasury
+> {
+  // Program address.
+  const programAddress =
+    config?.programAddress ?? FUND_TRANSFER_HOOK_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    actor: { value: input.actor ?? null, isWritable: true },
+    intent: { value: input.intent ?? null, isWritable: true },
+    fundRequestMap: { value: input.fundRequestMap ?? null, isWritable: false },
+    hookState: { value: input.hookState ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    platformTreasury: {
+      value: input.platformTreasury ?? null,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -182,7 +347,10 @@ export function getCloseIntentInstruction<
       getAccountMeta(accounts.actor),
       getAccountMeta(accounts.intent),
       getAccountMeta(accounts.fundRequestMap),
+      getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.platformTreasury),
     ],
     data: getCloseIntentInstructionDataEncoder().encode(
       args as CloseIntentInstructionDataArgs,
@@ -193,7 +361,10 @@ export function getCloseIntentInstruction<
     TAccountActor,
     TAccountIntent,
     TAccountFundRequestMap,
-    TAccountSystemProgram
+    TAccountHookState,
+    TAccountSystemProgram,
+    TAccountAcpState,
+    TAccountPlatformTreasury
   >);
 }
 
@@ -204,8 +375,11 @@ export type ParsedCloseIntentInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     /**
-     * The original actor who paid for the intent (provider for fund requests).
-     * Receives the reclaimed rent lamports.
+     * The original actor who proposed the intent (provider for fund requests).
+     * Still required to authorize the close even though the rent now goes to
+     * the treasury: the intent PDA is reused in place by the next proposal, so
+     * letting a stranger deallocate it would force the sponsor to pay its rent
+     * again for no gain to anyone.
      */
     actor: TAccountMetas[0];
     /**
@@ -215,7 +389,12 @@ export type ParsedCloseIntentInstruction<
     intent: TAccountMetas[1];
     /** Per-job fund request intent map; prevents closing the currently active intent. */
     fundRequestMap: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
+    hookState: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
+    /** against `hook_state.acp_program`. Read only to source the treasury. */
+    acpState: TAccountMetas[5];
+    /** `acp_state.platform_treasury`. */
+    platformTreasury: TAccountMetas[6];
   };
   data: CloseIntentInstructionData;
 };
@@ -228,7 +407,7 @@ export function parseCloseIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCloseIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+  if (instruction.accounts.length < 7) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -244,7 +423,10 @@ export function parseCloseIntentInstruction<
       actor: getNextAccount(),
       intent: getNextAccount(),
       fundRequestMap: getNextAccount(),
+      hookState: getNextAccount(),
       systemProgram: getNextAccount(),
+      acpState: getNextAccount(),
+      platformTreasury: getNextAccount(),
     },
     data: getCloseIntentInstructionDataDecoder().decode(instruction.data),
   };

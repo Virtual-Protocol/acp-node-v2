@@ -136,7 +136,7 @@ const ROUTER_STATE_GATES: StateGate[] = [
 // abandoned job's ProposedTerms PDA requires the job to have reached Expired
 // (cleanup_proposed_terms.rs:47 — state only, no clock check), which happens
 // on claim_refund. Its job account is at index 2:
-// caller, hook_state, job_account, proposed_terms, provider.
+// caller, hook_state, job_account, proposed_terms, acp_state, platform_treasury.
 // No expiry gate: Expired IS the terminal state the instruction wants, so
 // job.expiredAt being in the past is the precondition, not a disqualifier.
 const SUB_HOOK_STATE_GATES: StateGate[] = [

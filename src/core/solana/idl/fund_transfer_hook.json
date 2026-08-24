@@ -402,6 +402,19 @@
         {
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
           "name": "token_program"
+        },
+        {
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "docs": [
+            "equal `acp_state.platform_treasury`."
+          ],
+          "name": "platform_treasury",
+          "writable": true
         }
       ],
       "args": [
@@ -429,8 +442,11 @@
       "accounts": [
         {
           "docs": [
-            "The original actor who paid for the intent (provider for fund requests).",
-            "Receives the reclaimed rent lamports."
+            "The original actor who proposed the intent (provider for fund requests).",
+            "Still required to authorize the close even though the rent now goes to",
+            "the treasury: the intent PDA is reused in place by the next proposal, so",
+            "letting a stranger deallocate it would force the sponsor to pay its rent",
+            "again for no gain to anyone."
           ],
           "name": "actor",
           "signer": true,
@@ -487,8 +503,43 @@
           }
         },
         {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
           "address": "11111111111111111111111111111111",
           "name": "system_program"
+        },
+        {
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ],
+          "name": "acp_state"
+        },
+        {
+          "docs": [
+            "`acp_state.platform_treasury`."
+          ],
+          "name": "platform_treasury",
+          "writable": true
         }
       ],
       "args": [

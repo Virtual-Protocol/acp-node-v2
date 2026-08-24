@@ -62,6 +62,14 @@ export const MULTI_HOOK_ROUTER_ERROR__INVALID_HOOK_METADATA = 0x1785; // 6021
 export const MULTI_HOOK_ROUTER_ERROR__INVALID_OPT_PARAMS_MODE = 0x1786; // 6022
 /** HookNotExecutable: Hook program account is not executable */
 export const MULTI_HOOK_ROUTER_ERROR__HOOK_NOT_EXECUTABLE = 0x1787; // 6023
+/** RentPayerMissing: Growing the router needs a rent payer and the system program */
+export const MULTI_HOOK_ROUTER_ERROR__RENT_PAYER_MISSING = 0x1788; // 6024
+/** InvalidRefundRecipient: Rent destination is not acp_state.sponsor */
+export const MULTI_HOOK_ROUTER_ERROR__INVALID_REFUND_RECIPIENT = 0x1789; // 6025
+/** WrongStatus: Job is not in a terminal state */
+export const MULTI_HOOK_ROUTER_ERROR__WRONG_STATUS = 0x178a; // 6026
+/** TooManyCachedHooks: Cached hook metadata exceeds 5 x max_hooks_per_job entries */
+export const MULTI_HOOK_ROUTER_ERROR__TOO_MANY_CACHED_HOOKS = 0x178b; // 6027
 
 export type MultiHookRouterError =
   | typeof MULTI_HOOK_ROUTER_ERROR__ACCOUNT_SLICE_OUT_OF_BOUNDS
@@ -78,15 +86,19 @@ export type MultiHookRouterError =
   | typeof MULTI_HOOK_ROUTER_ERROR__INVALID_JOB
   | typeof MULTI_HOOK_ROUTER_ERROR__INVALID_MAX_HOOKS
   | typeof MULTI_HOOK_ROUTER_ERROR__INVALID_OPT_PARAMS_MODE
+  | typeof MULTI_HOOK_ROUTER_ERROR__INVALID_REFUND_RECIPIENT
   | typeof MULTI_HOOK_ROUTER_ERROR__INVALID_SELECTOR
   | typeof MULTI_HOOK_ROUTER_ERROR__ONLY_A_C_P_CONTRACT
   | typeof MULTI_HOOK_ROUTER_ERROR__ONLY_JOB_CLIENT
   | typeof MULTI_HOOK_ROUTER_ERROR__OPT_PARAMS_TOO_SHORT
+  | typeof MULTI_HOOK_ROUTER_ERROR__RENT_PAYER_MISSING
   | typeof MULTI_HOOK_ROUTER_ERROR__SUB_HOOK_NOT_WHITELISTED
+  | typeof MULTI_HOOK_ROUTER_ERROR__TOO_MANY_CACHED_HOOKS
   | typeof MULTI_HOOK_ROUTER_ERROR__TOO_MANY_HOOKS
   | typeof MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER
   | typeof MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_PROGRAM
   | typeof MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_WHITELIST
+  | typeof MULTI_HOOK_ROUTER_ERROR__WRONG_STATUS
   | typeof MULTI_HOOK_ROUTER_ERROR__ZERO_ADDRESS;
 
 let multiHookRouterErrorMessages:
@@ -108,15 +120,19 @@ if (process.env.NODE_ENV !== "production") {
     [MULTI_HOOK_ROUTER_ERROR__INVALID_JOB]: `Invalid job account`,
     [MULTI_HOOK_ROUTER_ERROR__INVALID_MAX_HOOKS]: `Max hooks per job must be >= 1`,
     [MULTI_HOOK_ROUTER_ERROR__INVALID_OPT_PARAMS_MODE]: `Invalid opt_params mode byte: must be 0x00 (Broadcast) or 0x01 (PerHook)`,
+    [MULTI_HOOK_ROUTER_ERROR__INVALID_REFUND_RECIPIENT]: `Rent destination is not acp_state.sponsor`,
     [MULTI_HOOK_ROUTER_ERROR__INVALID_SELECTOR]: `Action is not a hookable selector (only SetBudget, Fund, Submit, Complete, Reject)`,
     [MULTI_HOOK_ROUTER_ERROR__ONLY_A_C_P_CONTRACT]: `Only the ACP contract can call this`,
     [MULTI_HOOK_ROUTER_ERROR__ONLY_JOB_CLIENT]: `Only the job client can configure hooks`,
     [MULTI_HOOK_ROUTER_ERROR__OPT_PARAMS_TOO_SHORT]: `opt_params too short to parse header`,
+    [MULTI_HOOK_ROUTER_ERROR__RENT_PAYER_MISSING]: `Growing the router needs a rent payer and the system program`,
     [MULTI_HOOK_ROUTER_ERROR__SUB_HOOK_NOT_WHITELISTED]: `Sub-hook is not whitelisted on the ACP core`,
+    [MULTI_HOOK_ROUTER_ERROR__TOO_MANY_CACHED_HOOKS]: `Cached hook metadata exceeds 5 x max_hooks_per_job entries`,
     [MULTI_HOOK_ROUTER_ERROR__TOO_MANY_HOOKS]: `Too many hooks for this job`,
     [MULTI_HOOK_ROUTER_ERROR__UNAUTHORIZED_CALLER]: `Unauthorized caller`,
     [MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_PROGRAM]: `Wrong hook program in remaining accounts`,
     [MULTI_HOOK_ROUTER_ERROR__WRONG_HOOK_WHITELIST]: `Wrong hook whitelist account: not the canonical PDA for this hook`,
+    [MULTI_HOOK_ROUTER_ERROR__WRONG_STATUS]: `Job is not in a terminal state`,
     [MULTI_HOOK_ROUTER_ERROR__ZERO_ADDRESS]: `Zero address not allowed`,
   };
 }

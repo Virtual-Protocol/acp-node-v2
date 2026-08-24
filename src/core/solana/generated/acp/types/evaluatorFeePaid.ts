@@ -21,20 +21,20 @@ import {
 } from "@solana/kit";
 
 export type EvaluatorFeePaid = {
-  jobId: bigint;
+  job: Address;
   evaluator: Address;
   amount: bigint;
 };
 
 export type EvaluatorFeePaidArgs = {
-  jobId: number | bigint;
+  job: Address;
   evaluator: Address;
   amount: number | bigint;
 };
 
 export function getEvaluatorFeePaidEncoder(): FixedSizeEncoder<EvaluatorFeePaidArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["evaluator", getAddressEncoder()],
     ["amount", getU64Encoder()],
   ]);
@@ -42,7 +42,7 @@ export function getEvaluatorFeePaidEncoder(): FixedSizeEncoder<EvaluatorFeePaidA
 
 export function getEvaluatorFeePaidDecoder(): FixedSizeDecoder<EvaluatorFeePaid> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["evaluator", getAddressDecoder()],
     ["amount", getU64Decoder()],
   ]);

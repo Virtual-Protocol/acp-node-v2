@@ -7,26 +7,32 @@
  */
 
 import {
+  getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
+  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
-export async function findStateConfigPda(
+export type JobSeeds = {
+  client: Address;
+  seed: number | bigint;
+};
+
+export async function findJobPda(
+  seeds: JobSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1" as Address<"5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1">,
+    programAddress = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(
-        new Uint8Array([
-          115, 116, 97, 116, 101, 95, 99, 111, 110, 102, 105, 103,
-        ]),
-      ),
+      getBytesEncoder().encode(new Uint8Array([106, 111, 98])),
+      getAddressEncoder().encode(seeds.client),
+      getU64Encoder().encode(seeds.seed),
     ],
   });
 }

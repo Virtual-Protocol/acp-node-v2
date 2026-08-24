@@ -8,29 +8,32 @@
 
 import {
   combineCodec,
+  getAddressDecoder,
+  getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
   getU64Encoder,
+  type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type BudgetSet = { jobId: bigint; amount: bigint };
+export type BudgetSet = { job: Address; amount: bigint };
 
-export type BudgetSetArgs = { jobId: number | bigint; amount: number | bigint };
+export type BudgetSetArgs = { job: Address; amount: number | bigint };
 
 export function getBudgetSetEncoder(): FixedSizeEncoder<BudgetSetArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["amount", getU64Encoder()],
   ]);
 }
 
 export function getBudgetSetDecoder(): FixedSizeDecoder<BudgetSet> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["amount", getU64Decoder()],
   ]);
 }

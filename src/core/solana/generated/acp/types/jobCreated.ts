@@ -7,6 +7,8 @@
  */
 
 import {
+  addDecoderSizePrefix,
+  addEncoderSizePrefix,
   combineCodec,
   getAddressDecoder,
   getAddressEncoder,
@@ -14,57 +16,60 @@ import {
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
+  getU32Decoder,
+  getU32Encoder,
+  getUtf8Decoder,
+  getUtf8Encoder,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
 } from "@solana/kit";
 
 export type JobCreated = {
-  jobId: bigint;
+  job: Address;
   client: Address;
   provider: Address;
   evaluator: Address;
   expiredAt: bigint;
   hook: Address;
+  description: string;
 };
 
 export type JobCreatedArgs = {
-  jobId: number | bigint;
+  job: Address;
   client: Address;
   provider: Address;
   evaluator: Address;
   expiredAt: number | bigint;
   hook: Address;
+  description: string;
 };
 
-export function getJobCreatedEncoder(): FixedSizeEncoder<JobCreatedArgs> {
+export function getJobCreatedEncoder(): Encoder<JobCreatedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["client", getAddressEncoder()],
     ["provider", getAddressEncoder()],
     ["evaluator", getAddressEncoder()],
     ["expiredAt", getI64Encoder()],
     ["hook", getAddressEncoder()],
+    ["description", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
   ]);
 }
 
-export function getJobCreatedDecoder(): FixedSizeDecoder<JobCreated> {
+export function getJobCreatedDecoder(): Decoder<JobCreated> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["client", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["evaluator", getAddressDecoder()],
     ["expiredAt", getI64Decoder()],
     ["hook", getAddressDecoder()],
+    ["description", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
   ]);
 }
 
-export function getJobCreatedCodec(): FixedSizeCodec<
-  JobCreatedArgs,
-  JobCreated
-> {
+export function getJobCreatedCodec(): Codec<JobCreatedArgs, JobCreated> {
   return combineCodec(getJobCreatedEncoder(), getJobCreatedDecoder());
 }

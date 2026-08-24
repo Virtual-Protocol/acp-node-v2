@@ -163,10 +163,10 @@ export function routerContext(chainId: number): RouterContext {
  */
 export async function routerPrefixAccounts(
   ctx: RouterContext,
-  jobId: bigint
+  job: Address
 ): Promise<AccountMetaLike[]> {
   return [
-    ro(await mh.hookRouterPda(ctx.router, jobId)),
+    ro(await mh.hookRouterPda(ctx.router, job)),
     ro(await mh.routerStatePda(ctx.router)),
     ro(SYSVAR_INSTRUCTIONS_ID),
   ];
@@ -241,7 +241,6 @@ async function hookFraming(
 export async function buildSetBudgetFanOut(
   ctx: RouterContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     /** The provider signing setBudget; pays proposed_terms rent. */
     seller: Address;
@@ -263,7 +262,7 @@ export async function buildSetBudgetFanOut(
       w(subHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
       ws(p.seller),
-      w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+      w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
       ro(p.jobPda),
       ro(
         await mh.subExpiryPda(
@@ -287,8 +286,8 @@ export async function buildSetBudgetFanOut(
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
       ws(p.seller),
-      w(await mh.intentPda(ctx.fundHook, p.jobId, INTENT_KIND_FUND_REQUEST)),
-      w(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobId)),
+      w(await mh.intentPda(ctx.fundHook, p.jobPda, INTENT_KIND_FUND_REQUEST)),
+      w(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobPda)),
       ro(p.jobPda),
       ro(SYSTEM_PROGRAM_ID),
     ];
@@ -305,7 +304,7 @@ export async function buildSetBudgetFanOut(
       },
     ]),
     extraAccounts: [
-      ...(await routerPrefixAccounts(ctx, p.jobId)),
+      ...(await routerPrefixAccounts(ctx, p.jobPda)),
       ...(await hookFraming(ctx, ctx.subHook)),
       ...subSlice,
       ...(await hookFraming(ctx, ctx.fundHook)),
@@ -324,7 +323,6 @@ export async function buildSetBudgetFanOut(
 export async function buildFundFanOut(
   ctx: RouterContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     proposedTerms: { duration: bigint; packageId: bigint } | null;
     fundIntent: {
@@ -347,7 +345,7 @@ export async function buildFundFanOut(
   const subSlice: AccountMetaLike[] = [
     w(subHookState),
     ro(SYSVAR_INSTRUCTIONS_ID),
-    ro(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+    ro(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
   ];
   const subParams = p.proposedTerms
     ? mh.encodeSubParams(p.proposedTerms.duration, p.proposedTerms.packageId)
@@ -359,8 +357,8 @@ export async function buildFundFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobId)),
-      w(await mh.intentPda(ctx.fundHook, p.jobId, INTENT_KIND_FUND_REQUEST)),
+      ro(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobPda)),
+      w(await mh.intentPda(ctx.fundHook, p.jobPda, INTENT_KIND_FUND_REQUEST)),
       w(p.fundIntent.fromAta),
       w(p.fundIntent.recipientAta),
       ro(TOKEN_PROGRAM_ID),
@@ -378,7 +376,7 @@ export async function buildFundFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobId)),
+      ro(await mh.fundRequestIntentIdPda(ctx.fundHook, p.jobPda)),
     ];
     fundParams = new Uint8Array(0);
   }
@@ -389,7 +387,7 @@ export async function buildFundFanOut(
       { accountCount: fundSlice.length, params: fundParams },
     ]),
     extraAccounts: [
-      ...(await routerPrefixAccounts(ctx, p.jobId)),
+      ...(await routerPrefixAccounts(ctx, p.jobPda)),
       ...(await hookFraming(ctx, ctx.subHook)),
       ...subSlice,
       ...(await hookFraming(ctx, ctx.fundHook)),
@@ -407,7 +405,6 @@ export async function buildFundFanOut(
 export async function buildSubmitFanOut(
   ctx: RouterContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     seller: Address;
     escrow: {
@@ -432,8 +429,8 @@ export async function buildSubmitFanOut(
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
       ws(p.seller),
-      w(await mh.intentPda(ctx.fundHook, p.jobId, INTENT_KIND_ESCROW)),
-      w(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobId)),
+      w(await mh.intentPda(ctx.fundHook, p.jobPda, INTENT_KIND_ESCROW)),
+      w(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobPda)),
       w(p.escrow.providerAta),
       w(p.escrow.escrowVault),
       ro(p.escrow.escrowAuthority),
@@ -452,7 +449,7 @@ export async function buildSubmitFanOut(
       { accountCount: fundSlice.length, params: fundParams },
     ]),
     extraAccounts: [
-      ...(await routerPrefixAccounts(ctx, p.jobId)),
+      ...(await routerPrefixAccounts(ctx, p.jobPda)),
       ...(await hookFraming(ctx, ctx.fundHook)),
       ...fundSlice,
     ],
@@ -461,18 +458,18 @@ export async function buildSubmitFanOut(
 
 /**
  * complete fan-out. The subscription hook activates the subscription via CPI
- * into subscription-state (payer = provider, who MUST co-sign: sub-state's
- * ActivateSubscription declares payer as Signer — it pays sub_expiry rent and
- * receives the proposed_terms rent refund). The fund hook releases the escrow
- * bond to the client.
+ * into subscription-state, payer = provider. Pre-F-118, ActivateSubscription
+ * declared payer as Signer because it allocated sub_expiry there; since
+ * sub_expiry is now pre-created at set_budget, activation allocates nothing
+ * and the provider's signature is no longer required. The fund hook releases
+ * the escrow bond to the client.
  *
- * `requiredExtraSigner` is the provider address whenever terms exist; the
- * caller must include that signer in the transaction or the send fails.
+ * `requiredExtraSigner` is always null post-F-118 — kept as a return field so
+ * a future signer requirement doesn't need a call-site shape change.
  */
 export async function buildCompleteFanOut(
   ctx: RouterContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     provider: Address;
     clientAddress: Address;
@@ -497,8 +494,8 @@ export async function buildCompleteFanOut(
     subSlice = [
       w(subHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
-      ws(p.provider),
+      w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
+      w(p.provider),
       ro(p.jobPda),
       ro(ctx.subState),
       ro(await mh.writerRegistryPda(ctx.subState, ctx.subHook)),
@@ -521,7 +518,7 @@ export async function buildCompleteFanOut(
     subSlice = [
       w(subHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+      ro(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
     ];
   }
 
@@ -530,8 +527,8 @@ export async function buildCompleteFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobId)),
-      w(await mh.intentPda(ctx.fundHook, p.jobId, INTENT_KIND_ESCROW)),
+      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobPda)),
+      w(await mh.intentPda(ctx.fundHook, p.jobPda, INTENT_KIND_ESCROW)),
       w(p.escrow.escrowVault),
       w(p.escrow.clientAta),
       ro(p.escrow.escrowAuthority),
@@ -545,7 +542,7 @@ export async function buildCompleteFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobId)),
+      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobPda)),
     ];
   }
 
@@ -555,13 +552,13 @@ export async function buildCompleteFanOut(
       { accountCount: fundSlice.length, params: new Uint8Array(0) },
     ]),
     extraAccounts: [
-      ...(await routerPrefixAccounts(ctx, p.jobId)),
+      ...(await routerPrefixAccounts(ctx, p.jobPda)),
       ...(await hookFraming(ctx, ctx.subHook)),
       ...subSlice,
       ...(await hookFraming(ctx, ctx.fundHook)),
       ...fundSlice,
     ],
-    requiredExtraSigner: p.packageId !== null ? p.provider : null,
+    requiredExtraSigner: null,
   };
 }
 
@@ -582,7 +579,6 @@ export async function buildCompleteFanOut(
 export async function buildSubSetBudgetAccounts(
   ctx: SubscriptionContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     seller: Address;
     clientAddress: Address;
@@ -597,7 +593,7 @@ export async function buildSubSetBudgetAccounts(
     w(hookState),
     ro(SYSVAR_INSTRUCTIONS_ID),
     ws(p.seller),
-    w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+    w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
     ro(p.jobPda),
     ro(
       await mh.subExpiryPda(
@@ -614,12 +610,12 @@ export async function buildSubSetBudgetAccounts(
 /** fund: post_fund validates the client's terms echo — remaining [sysvar, proposed_terms]. */
 export async function buildSubFundAccounts(
   ctx: SubscriptionContext,
-  jobId: bigint
+  job: Address
 ): Promise<AccountMetaLike[]> {
   return [
     w(await mh.hookStatePda(ctx.subHook)),
     ro(SYSVAR_INSTRUCTIONS_ID),
-    ro(await mh.proposedTermsPda(ctx.subHook, jobId)),
+    ro(await mh.proposedTermsPda(ctx.subHook, job)),
   ];
 }
 
@@ -640,15 +636,15 @@ export async function buildSubSubmitAccounts(
 
 /**
  * complete: post_complete activates the subscription — remaining [sysvar,
- * proposed_terms(w), payer(signer,w), job, sub_state_program,
- * writer_registry, subscription_expiry(w), system] after hook_state. The
- * payer must be the provider and must SIGN (it pays sub_expiry rent and
- * receives the proposed_terms refund). With no terms the minimal set no-ops.
+ * proposed_terms(w), payer(w), job, sub_state_program, writer_registry,
+ * subscription_expiry(w), system] after hook_state. Pre-F-118 the payer had
+ * to SIGN (it allocated sub_expiry there); since sub_expiry is now
+ * pre-created at set_budget, activation allocates nothing and no signature is
+ * required. With no terms the minimal set no-ops.
  */
 export async function buildSubCompleteAccounts(
   ctx: SubscriptionContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     provider: Address;
     clientAddress: Address;
@@ -665,7 +661,7 @@ export async function buildSubCompleteAccounts(
       accounts: [
         w(hookState),
         ro(SYSVAR_INSTRUCTIONS_ID),
-        ro(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+        ro(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
       ],
       requiredExtraSigner: null,
     };
@@ -674,8 +670,8 @@ export async function buildSubCompleteAccounts(
     accounts: [
       w(hookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
-      ws(p.provider),
+      w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
+      w(p.provider),
       ro(p.jobPda),
       ro(ctx.subState),
       ro(await mh.writerRegistryPda(ctx.subState, ctx.subHook)),
@@ -689,7 +685,7 @@ export async function buildSubCompleteAccounts(
       ),
       ro(SYSTEM_PROGRAM_ID),
     ],
-    requiredExtraSigner: p.provider,
+    requiredExtraSigner: null,
   };
 }
 
@@ -700,12 +696,12 @@ export async function buildSubCompleteAccounts(
  */
 export async function buildSubRejectAccounts(
   ctx: SubscriptionContext,
-  p: { jobId: bigint; provider: Address }
+  p: { jobPda: Address; provider: Address }
 ): Promise<AccountMetaLike[]> {
   return [
     w(await mh.hookStatePda(ctx.subHook)),
     ro(SYSVAR_INSTRUCTIONS_ID),
-    w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+    w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
     w(p.provider),
   ];
 }
@@ -719,7 +715,6 @@ export async function buildSubRejectAccounts(
 export async function buildRejectFanOut(
   ctx: RouterContext,
   p: {
-    jobId: bigint;
     jobPda: Address;
     /** Rent refund recipient; must equal the proposed_terms provider. */
     provider: Address;
@@ -740,7 +735,7 @@ export async function buildRejectFanOut(
   const subSlice: AccountMetaLike[] = [
     w(subHookState),
     ro(SYSVAR_INSTRUCTIONS_ID),
-    w(await mh.proposedTermsPda(ctx.subHook, p.jobId)),
+    w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
     w(p.provider),
   ];
 
@@ -749,8 +744,8 @@ export async function buildRejectFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobId)),
-      w(await mh.intentPda(ctx.fundHook, p.jobId, INTENT_KIND_ESCROW)),
+      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobPda)),
+      w(await mh.intentPda(ctx.fundHook, p.jobPda, INTENT_KIND_ESCROW)),
       w(p.escrow.escrowVault),
       w(p.escrow.providerAta),
       ro(p.escrow.escrowAuthority),
@@ -764,7 +759,7 @@ export async function buildRejectFanOut(
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
-      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobId)),
+      ro(await mh.providerEscrowIntentIdPda(ctx.fundHook, p.jobPda)),
     ];
   }
 
@@ -774,7 +769,7 @@ export async function buildRejectFanOut(
       { accountCount: fundSlice.length, params: new Uint8Array(0) },
     ]),
     extraAccounts: [
-      ...(await routerPrefixAccounts(ctx, p.jobId)),
+      ...(await routerPrefixAccounts(ctx, p.jobPda)),
       ...(await hookFraming(ctx, ctx.subHook)),
       ...subSlice,
       ...(await hookFraming(ctx, ctx.fundHook)),

@@ -21,7 +21,7 @@ import {
 } from "@solana/kit";
 
 export type PayableTransferExecuted = {
-  jobId: bigint;
+  jobKey: Address;
   intentId: bigint;
   from: Address;
   to: Address;
@@ -30,7 +30,7 @@ export type PayableTransferExecuted = {
 };
 
 export type PayableTransferExecutedArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   intentId: number | bigint;
   from: Address;
   to: Address;
@@ -40,7 +40,7 @@ export type PayableTransferExecutedArgs = {
 
 export function getPayableTransferExecutedEncoder(): FixedSizeEncoder<PayableTransferExecutedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["intentId", getU64Encoder()],
     ["from", getAddressEncoder()],
     ["to", getAddressEncoder()],
@@ -51,7 +51,7 @@ export function getPayableTransferExecutedEncoder(): FixedSizeEncoder<PayableTra
 
 export function getPayableTransferExecutedDecoder(): FixedSizeDecoder<PayableTransferExecuted> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["intentId", getU64Decoder()],
     ["from", getAddressDecoder()],
     ["to", getAddressDecoder()],

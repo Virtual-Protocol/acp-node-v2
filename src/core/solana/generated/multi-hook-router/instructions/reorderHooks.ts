@@ -18,8 +18,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -84,13 +82,13 @@ export type ReorderHooksInstruction<
 
 export type ReorderHooksInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hooks: Array<Address>;
 };
 
 export type ReorderHooksInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   hooks: Array<Address>;
 };
@@ -99,7 +97,7 @@ export function getReorderHooksInstructionDataEncoder(): Encoder<ReorderHooksIns
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["hooks", getArrayEncoder(getAddressEncoder())],
     ]),
@@ -110,7 +108,7 @@ export function getReorderHooksInstructionDataEncoder(): Encoder<ReorderHooksIns
 export function getReorderHooksInstructionDataDecoder(): Decoder<ReorderHooksInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hooks", getArrayDecoder(getAddressDecoder())],
   ]);
@@ -136,7 +134,7 @@ export type ReorderHooksAsyncInput<
   job: Address<TAccountJob>;
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
-  jobId: ReorderHooksInstructionDataArgs["jobId"];
+  jobKey: ReorderHooksInstructionDataArgs["jobKey"];
   action: ReorderHooksInstructionDataArgs["action"];
   hooks: ReorderHooksInstructionDataArgs["hooks"];
 };
@@ -186,7 +184,7 @@ export async function getReorderHooksInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
@@ -224,7 +222,7 @@ export type ReorderHooksInput<
   job: Address<TAccountJob>;
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
-  jobId: ReorderHooksInstructionDataArgs["jobId"];
+  jobKey: ReorderHooksInstructionDataArgs["jobKey"];
   action: ReorderHooksInstructionDataArgs["action"];
   hooks: ReorderHooksInstructionDataArgs["hooks"];
 };

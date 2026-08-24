@@ -8,3 +8,5 @@
 
 export * from "./acpState.js";
 export * from "./hookWhitelist.js";
+export * from "./job.js";
+export * from "./vault.js";

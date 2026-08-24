@@ -7,22 +7,24 @@
  */
 
 import {
+  getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
-  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
 export type ProviderEscrowIntentIdSeeds = {
-  jobId: number | bigint;
+  jobKey: Address;
 };
 
 export async function findProviderEscrowIntentIdPda(
   seeds: ProviderEscrowIntentIdSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
-  const { programAddress = "" as Address<""> } = config;
+  const {
+    programAddress = "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q" as Address<"HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q">,
+  } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
@@ -32,7 +34,7 @@ export async function findProviderEscrowIntentIdPda(
           119, 95, 105, 110, 116, 101, 110, 116, 95, 105, 100,
         ]),
       ),
-      getU64Encoder().encode(seeds.jobId),
+      getAddressEncoder().encode(seeds.jobKey),
     ],
   });
 }

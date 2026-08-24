@@ -16,7 +16,9 @@ import {
 export async function findAcpStatePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
-  const { programAddress = "" as Address<""> } = config;
+  const {
+    programAddress = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">,
+  } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [

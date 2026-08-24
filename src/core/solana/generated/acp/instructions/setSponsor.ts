@@ -26,116 +26,95 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
-  type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
-  type WritableSignerAccount,
 } from "@solana/kit";
 import { findAcpStatePda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
-export const MIGRATE_STATE_DISCRIMINATOR = new Uint8Array([
-  34, 189, 226, 222, 218, 156, 19, 213,
+export const SET_SPONSOR_DISCRIMINATOR = new Uint8Array([
+  217, 184, 101, 32, 234, 70, 199, 138,
 ]);
 
-export function getMigrateStateDiscriminatorBytes() {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    MIGRATE_STATE_DISCRIMINATOR,
-  );
+export function getSetSponsorDiscriminatorBytes() {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(SET_SPONSOR_DISCRIMINATOR);
 }
 
-export type MigrateStateInstruction<
+export type SetSponsorInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
       TAccountAuthority extends string
-        ? WritableSignerAccount<TAccountAuthority> &
+        ? ReadonlySignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
       TAccountAcpState extends string
         ? WritableAccount<TAccountAcpState>
         : TAccountAcpState,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type MigrateStateInstructionData = {
+export type SetSponsorInstructionData = {
   discriminator: ReadonlyUint8Array;
   sponsor: Address;
 };
 
-export type MigrateStateInstructionDataArgs = { sponsor: Address };
+export type SetSponsorInstructionDataArgs = { sponsor: Address };
 
-export function getMigrateStateInstructionDataEncoder(): FixedSizeEncoder<MigrateStateInstructionDataArgs> {
+export function getSetSponsorInstructionDataEncoder(): FixedSizeEncoder<SetSponsorInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["sponsor", getAddressEncoder()],
     ]),
-    (value) => ({ ...value, discriminator: MIGRATE_STATE_DISCRIMINATOR }),
+    (value) => ({ ...value, discriminator: SET_SPONSOR_DISCRIMINATOR }),
   );
 }
 
-export function getMigrateStateInstructionDataDecoder(): FixedSizeDecoder<MigrateStateInstructionData> {
+export function getSetSponsorInstructionDataDecoder(): FixedSizeDecoder<SetSponsorInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["sponsor", getAddressDecoder()],
   ]);
 }
 
-export function getMigrateStateInstructionDataCodec(): FixedSizeCodec<
-  MigrateStateInstructionDataArgs,
-  MigrateStateInstructionData
+export function getSetSponsorInstructionDataCodec(): FixedSizeCodec<
+  SetSponsorInstructionDataArgs,
+  SetSponsorInstructionData
 > {
   return combineCodec(
-    getMigrateStateInstructionDataEncoder(),
-    getMigrateStateInstructionDataDecoder(),
+    getSetSponsorInstructionDataEncoder(),
+    getSetSponsorInstructionDataDecoder(),
   );
 }
 
-export type MigrateStateAsyncInput<
+export type SetSponsorAsyncInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  /** field (offset [8..40]) against the signer in the handler. */
   acpState?: Address<TAccountAcpState>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  sponsor: MigrateStateInstructionDataArgs["sponsor"];
+  sponsor: SetSponsorInstructionDataArgs["sponsor"];
 };
 
-export async function getMigrateStateInstructionAsync<
+export async function getSetSponsorInstructionAsync<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: MigrateStateAsyncInput<
-    TAccountAuthority,
-    TAccountAcpState,
-    TAccountSystemProgram
-  >,
+  input: SetSponsorAsyncInput<TAccountAuthority, TAccountAcpState>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  MigrateStateInstruction<
-    TProgramAddress,
-    TAccountAuthority,
-    TAccountAcpState,
-    TAccountSystemProgram
-  >
+  SetSponsorInstruction<TProgramAddress, TAccountAuthority, TAccountAcpState>
 > {
   // Program address.
   const programAddress =
@@ -143,9 +122,8 @@ export async function getMigrateStateInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -159,69 +137,49 @@ export async function getMigrateStateInstructionAsync<
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.systemProgram),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode(
-      args as MigrateStateInstructionDataArgs,
+    data: getSetSponsorInstructionDataEncoder().encode(
+      args as SetSponsorInstructionDataArgs,
     ),
     programAddress,
-  } as MigrateStateInstruction<
+  } as SetSponsorInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountAcpState,
-    TAccountSystemProgram
+    TAccountAcpState
   >);
 }
 
-export type MigrateStateInput<
+export type SetSponsorInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  /** field (offset [8..40]) against the signer in the handler. */
   acpState: Address<TAccountAcpState>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  sponsor: MigrateStateInstructionDataArgs["sponsor"];
+  sponsor: SetSponsorInstructionDataArgs["sponsor"];
 };
 
-export function getMigrateStateInstruction<
+export function getSetSponsorInstruction<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: MigrateStateInput<
-    TAccountAuthority,
-    TAccountAcpState,
-    TAccountSystemProgram
-  >,
+  input: SetSponsorInput<TAccountAuthority, TAccountAcpState>,
   config?: { programAddress?: TProgramAddress },
-): MigrateStateInstruction<
-  TProgramAddress,
-  TAccountAuthority,
-  TAccountAcpState,
-  TAccountSystemProgram
-> {
+): SetSponsorInstruction<TProgramAddress, TAccountAuthority, TAccountAcpState> {
   // Program address.
   const programAddress =
     config?.programAddress ?? AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -231,54 +189,44 @@ export function getMigrateStateInstruction<
   // Original args.
   const args = { ...input };
 
-  // Resolve default values.
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
-
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.systemProgram),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode(
-      args as MigrateStateInstructionDataArgs,
+    data: getSetSponsorInstructionDataEncoder().encode(
+      args as SetSponsorInstructionDataArgs,
     ),
     programAddress,
-  } as MigrateStateInstruction<
+  } as SetSponsorInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountAcpState,
-    TAccountSystemProgram
+    TAccountAcpState
   >);
 }
 
-export type ParsedMigrateStateInstruction<
+export type ParsedSetSponsorInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    /** field (offset [8..40]) against the signer in the handler. */
     acpState: TAccountMetas[1];
-    systemProgram: TAccountMetas[2];
   };
-  data: MigrateStateInstructionData;
+  data: SetSponsorInstructionData;
 };
 
-export function parseMigrateStateInstruction<
+export function parseSetSponsorInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedMigrateStateInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+): ParsedSetSponsorInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 2) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -290,11 +238,7 @@ export function parseMigrateStateInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: {
-      authority: getNextAccount(),
-      acpState: getNextAccount(),
-      systemProgram: getNextAccount(),
-    },
-    data: getMigrateStateInstructionDataDecoder().decode(instruction.data),
+    accounts: { authority: getNextAccount(), acpState: getNextAccount() },
+    data: getSetSponsorInstructionDataDecoder().decode(instruction.data),
   };
 }

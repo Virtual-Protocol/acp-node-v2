@@ -83,16 +83,16 @@ export type InitializeInstruction<
 export type InitializeInstructionData = {
   discriminator: ReadonlyUint8Array;
   platformTreasury: Address;
+  sponsor: Address;
   platformFeeBp: bigint;
   evaluatorFeeBp: bigint;
-  jobCounter: bigint;
 };
 
 export type InitializeInstructionDataArgs = {
   platformTreasury: Address;
+  sponsor: Address;
   platformFeeBp: number | bigint;
   evaluatorFeeBp: number | bigint;
-  jobCounter: number | bigint;
 };
 
 export function getInitializeInstructionDataEncoder(): FixedSizeEncoder<InitializeInstructionDataArgs> {
@@ -100,9 +100,9 @@ export function getInitializeInstructionDataEncoder(): FixedSizeEncoder<Initiali
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["platformTreasury", getAddressEncoder()],
+      ["sponsor", getAddressEncoder()],
       ["platformFeeBp", getU64Encoder()],
       ["evaluatorFeeBp", getU64Encoder()],
-      ["jobCounter", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: INITIALIZE_DISCRIMINATOR }),
   );
@@ -112,9 +112,9 @@ export function getInitializeInstructionDataDecoder(): FixedSizeDecoder<Initiali
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["platformTreasury", getAddressDecoder()],
+    ["sponsor", getAddressDecoder()],
     ["platformFeeBp", getU64Decoder()],
     ["evaluatorFeeBp", getU64Decoder()],
-    ["jobCounter", getU64Decoder()],
   ]);
 }
 
@@ -141,9 +141,9 @@ export type InitializeAsyncInput<
   paymentToken: Address<TAccountPaymentToken>;
   systemProgram?: Address<TAccountSystemProgram>;
   platformTreasury: InitializeInstructionDataArgs["platformTreasury"];
+  sponsor: InitializeInstructionDataArgs["sponsor"];
   platformFeeBp: InitializeInstructionDataArgs["platformFeeBp"];
   evaluatorFeeBp: InitializeInstructionDataArgs["evaluatorFeeBp"];
-  jobCounter: InitializeInstructionDataArgs["jobCounter"];
 };
 
 export async function getInitializeInstructionAsync<
@@ -252,9 +252,9 @@ export type InitializeInput<
   paymentToken: Address<TAccountPaymentToken>;
   systemProgram?: Address<TAccountSystemProgram>;
   platformTreasury: InitializeInstructionDataArgs["platformTreasury"];
+  sponsor: InitializeInstructionDataArgs["sponsor"];
   platformFeeBp: InitializeInstructionDataArgs["platformFeeBp"];
   evaluatorFeeBp: InitializeInstructionDataArgs["evaluatorFeeBp"];
-  jobCounter: InitializeInstructionDataArgs["jobCounter"];
 };
 
 export function getInitializeInstruction<

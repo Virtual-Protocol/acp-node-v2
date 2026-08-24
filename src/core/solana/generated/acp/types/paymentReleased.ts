@@ -21,20 +21,20 @@ import {
 } from "@solana/kit";
 
 export type PaymentReleased = {
-  jobId: bigint;
+  job: Address;
   provider: Address;
   amount: bigint;
 };
 
 export type PaymentReleasedArgs = {
-  jobId: number | bigint;
+  job: Address;
   provider: Address;
   amount: number | bigint;
 };
 
 export function getPaymentReleasedEncoder(): FixedSizeEncoder<PaymentReleasedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["provider", getAddressEncoder()],
     ["amount", getU64Encoder()],
   ]);
@@ -42,7 +42,7 @@ export function getPaymentReleasedEncoder(): FixedSizeEncoder<PaymentReleasedArg
 
 export function getPaymentReleasedDecoder(): FixedSizeDecoder<PaymentReleased> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["amount", getU64Decoder()],
   ]);

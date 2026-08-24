@@ -1,156 +1,30 @@
 {
-  "accounts": [
-    {
-      "discriminator": [
-        115,
-        10,
-        133,
-        59,
-        77,
-        84,
-        106,
-        104
-      ],
-      "name": "FundRequestIntentId"
-    },
-    {
-      "discriminator": [
-        119,
-        227,
-        48,
-        236,
-        101,
-        194,
-        218,
-        85
-      ],
-      "name": "HookMetadata"
-    },
-    {
-      "discriminator": [
-        10,
-        13,
-        71,
-        116,
-        92,
-        105,
-        237,
-        231
-      ],
-      "name": "HookState"
-    },
-    {
-      "discriminator": [
-        247,
-        162,
-        35,
-        165,
-        254,
-        111,
-        129,
-        109
-      ],
-      "name": "Intent"
-    },
-    {
-      "discriminator": [
-        132,
-        9,
-        212,
-        245,
-        34,
-        170,
-        187,
-        104
-      ],
-      "name": "ProviderEscrowIntentId"
-    }
-  ],
-  "events": [
-    {
-      "discriminator": [
-        127,
-        229,
-        67,
-        202,
-        91,
-        56,
-        164,
-        0
-      ],
-      "name": "IntentClosed"
-    },
-    {
-      "discriminator": [
-        162,
-        221,
-        142,
-        204,
-        198,
-        234,
-        97,
-        188
-      ],
-      "name": "IntentSigned"
-    },
-    {
-      "discriminator": [
-        101,
-        118,
-        73,
-        187,
-        15,
-        74,
-        57,
-        97
-      ],
-      "name": "NewIntent"
-    },
-    {
-      "discriminator": [
-        71,
-        24,
-        78,
-        26,
-        156,
-        102,
-        16,
-        91
-      ],
-      "name": "PayableFundsEscrowed"
-    },
-    {
-      "discriminator": [
-        128,
-        69,
-        197,
-        251,
-        154,
-        144,
-        198,
-        57
-      ],
-      "name": "PayableFundsRefunded"
-    },
-    {
-      "discriminator": [
-        164,
-        216,
-        121,
-        127,
-        187,
-        55,
-        131,
-        55
-      ],
-      "name": "PayableTransferExecuted"
-    }
-  ],
+  "metadata": {
+    "name": "fund_transfer_hook",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Fund Transfer Hook - fund requests and provider escrow for ACP"
+  },
   "instructions": [
     {
+      "name": "after_action",
+      "docs": [
+        "Post-action hook callback."
+      ],
+      "discriminator": [
+        100,
+        247,
+        61,
+        195,
+        161,
+        140,
+        250,
+        73
+      ],
       "accounts": [
         {
           "name": "hook_state",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -169,14 +43,13 @@
                 ]
               }
             ]
-          },
-          "writable": true
+          }
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -194,23 +67,23 @@
           "name": "variant",
           "type": "bytes"
         }
-      ],
-      "discriminator": [
-        100,
-        247,
-        61,
-        195,
-        161,
-        140,
-        250,
-        73
-      ],
-      "docs": [
-        "Post-action hook callback."
-      ],
-      "name": "after_action"
+      ]
     },
     {
+      "name": "before_action",
+      "docs": [
+        "Pre-action hook callback."
+      ],
+      "discriminator": [
+        5,
+        61,
+        71,
+        243,
+        197,
+        108,
+        160,
+        137
+      ],
       "accounts": [
         {
           "name": "hook_state",
@@ -237,8 +110,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -256,23 +129,23 @@
           "name": "variant",
           "type": "bytes"
         }
-      ],
-      "discriminator": [
-        5,
-        61,
-        71,
-        243,
-        197,
-        108,
-        160,
-        137
-      ],
-      "docs": [
-        "Pre-action hook callback."
-      ],
-      "name": "before_action"
+      ]
     },
     {
+      "name": "claim_escrow_refund",
+      "docs": [
+        "Refunds escrowed provider tokens after the core job expires. Permissionless."
+      ],
+      "discriminator": [
+        180,
+        244,
+        255,
+        206,
+        147,
+        149,
+        56,
+        223
+      ],
       "accounts": [
         {
           "name": "caller",
@@ -339,31 +212,31 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           }
         },
         {
+          "name": "intent",
           "docs": [
             "The job-scoped escrow intent. The map is not part of the address",
             "derivation, so the id equality is asserted explicitly."
           ],
-          "name": "intent",
           "writable": true
         },
         {
+          "name": "escrow_vault",
           "docs": [
             "Escrow vault holding the escrowed tokens"
           ],
-          "name": "escrow_vault",
           "writable": true
         },
         {
+          "name": "provider_token_account",
           "docs": [
             "Provider's token account to receive refund"
           ],
-          "name": "provider_token_account",
           "writable": true
         },
         {
@@ -393,113 +266,105 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           }
         },
         {
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-          "name": "token_program"
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
+          "name": "acp_state",
           "docs": [
             "against `hook_state.acp_program`. Read only to source the treasury."
-          ],
-          "name": "acp_state"
+          ]
         },
         {
+          "name": "sponsor",
           "docs": [
-            "equal `acp_state.platform_treasury`."
+            "equal `acp_state.sponsor`."
           ],
-          "name": "platform_treasury",
           "writable": true
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        180,
-        244,
-        255,
-        206,
-        147,
-        149,
-        56,
-        223
-      ],
-      "docs": [
-        "Refunds escrowed provider tokens after the core job expires. Permissionless."
-      ],
-      "name": "claim_escrow_refund"
+      ]
     },
     {
+      "name": "close_job_hook_accounts",
+      "docs": [
+        "Reclaim a terminal job's intents and intent-id maps to",
+        "`acp_state.sponsor`. Permissionless — the caller receives nothing — and",
+        "idempotent per account, so it can be swept blindly over terminal jobs.",
+        "Blocks while the escrow is unsettled, so it cannot strand a provider's",
+        "stake by closing the accounts `claim_escrow_refund` needs."
+      ],
+      "discriminator": [
+        77,
+        224,
+        55,
+        159,
+        116,
+        59,
+        13,
+        125
+      ],
       "accounts": [
         {
+          "name": "caller",
           "docs": [
-            "The original actor who proposed the intent (provider for fund requests).",
-            "Still required to authorize the close even though the rent now goes to",
-            "the treasury: the intent PDA is reused in place by the next proposal, so",
-            "letting a stranger deallocate it would force the sponsor to pay its rent",
-            "again for no gain to anyone."
+            "Permissionless. Rent goes to `acp_state.sponsor`, so the caller gains",
+            "nothing and there is no race incentive. Doubles as a sweep for jobs whose",
+            "terminal-transaction bundle failed to land."
           ],
-          "name": "actor",
-          "signer": true,
-          "writable": true
+          "signer": true
         },
         {
+          "name": "job",
           "docs": [
-            "The intent PDA to close; must be unsigned and non-escrow. The address",
-            "does not encode the intent id, so `intent.id == intent_id` is asserted explicitly."
-          ],
-          "name": "intent",
-          "writable": true
+            "`deserialize_job` against `hook_state.acp_program`."
+          ]
         },
         {
+          "name": "fund_request_intent",
           "docs": [
-            "Per-job fund request intent map; prevents closing the currently active intent."
+            "All four are optional and individually skipped when already empty: a",
+            "zero-budget job may have no escrow leg, and a job that never had a fund",
+            "request has no kind-0 intent. Each is verified against its canonical",
+            "seeds before anything is drained."
           ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "escrow_intent",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "fund_request_map",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  117,
-                  110,
-                  100,
-                  95,
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116,
-                  95,
-                  105,
-                  110,
-                  116,
-                  101,
-                  110,
-                  116,
-                  95,
-                  105,
-                  100
-                ]
-              },
-              {
-                "account": "Intent",
-                "kind": "account",
-                "path": "intent.job_id"
-              }
-            ]
-          }
+          "docs": [
+            "`Account<FundRequestIntentId>`: a typed account is deserialized at entry,",
+            "so a second call on an already-closed map would fail",
+            "`AccountNotInitialized` and break the blind-sweep idempotence the bundled",
+            "close depends on. The cost is that `FundRequestIntentId` no longer",
+            "appears in the IDL — `close_intent` was its last typed reference — so",
+            "off-chain readers must decode it manually. Its layout is",
+            "`job_key: Pubkey, intent_id: u64, bump: u8` after the 8-byte discriminator."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "escrow_map",
+          "writable": true,
+          "optional": true
         },
         {
           "name": "hook_state",
@@ -524,53 +389,44 @@
           }
         },
         {
-          "address": "11111111111111111111111111111111",
-          "name": "system_program"
-        },
-        {
-          "docs": [
-            "against `hook_state.acp_program`. Read only to source the treasury."
-          ],
           "name": "acp_state"
         },
         {
-          "docs": [
-            "`acp_state.platform_treasury`."
-          ],
-          "name": "platform_treasury",
+          "name": "sponsor",
           "writable": true
         }
       ],
       "args": [
         {
-          "name": "intent_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        112,
-        245,
-        154,
-        249,
-        57,
-        126,
-        54,
-        122
-      ],
-      "docs": [
-        "Closes an orphaned unsigned non-escrow intent, reclaiming rent to the actor."
-      ],
-      "name": "close_intent"
+      ]
     },
     {
+      "name": "initialize",
+      "docs": [
+        "Initializes the fund-transfer-hook state. Caller must be the program's upgrade authority."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "writable": true
+          "writable": true,
+          "signer": true
         },
         {
           "name": "hook_state",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -589,14 +445,14 @@
                 ]
               }
             ]
-          },
-          "writable": true
+          }
         },
         {
+          "name": "hook_metadata",
           "docs": [
             "Self-declared metadata read by multi-hook-router for completeness checks."
           ],
-          "name": "hook_metadata",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -618,49 +474,11 @@
                 ]
               }
             ]
-          },
-          "writable": true
+          }
         },
         {
           "name": "program_data",
           "pda": {
-            "program": {
-              "kind": "const",
-              "value": [
-                2,
-                168,
-                246,
-                145,
-                78,
-                136,
-                161,
-                176,
-                226,
-                16,
-                21,
-                62,
-                247,
-                99,
-                174,
-                43,
-                0,
-                194,
-                185,
-                61,
-                22,
-                193,
-                36,
-                210,
-                192,
-                83,
-                122,
-                16,
-                4,
-                128,
-                0,
-                0
-              ]
-            },
             "seeds": [
               {
                 "kind": "const",
@@ -699,12 +517,49 @@
                   51
                 ]
               }
-            ]
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
           }
         },
         {
-          "address": "11111111111111111111111111111111",
-          "name": "system_program"
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -712,32 +567,34 @@
           "name": "acp_program",
           "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "docs": [
-        "Initializes the fund-transfer-hook state. Caller must be the program's upgrade authority."
-      ],
-      "name": "initialize"
+      ]
     },
     {
+      "name": "pre_create_intent",
+      "docs": [
+        "Pre-creates the intent + intent-id map PDAs for a job, zeroed, rent",
+        "paid by the job's provider at a CPI depth the paymaster can prefund.",
+        "Idempotent: no-op when the accounts already exist."
+      ],
+      "discriminator": [
+        157,
+        244,
+        37,
+        181,
+        86,
+        92,
+        73,
+        162
+      ],
       "accounts": [
         {
+          "name": "payer",
           "docs": [
             "Rent payer; must be the job's provider (the wallet the lifecycle",
             "handlers debit, and the wallet the paymaster prefunds)."
           ],
-          "name": "payer",
-          "signer": true,
-          "writable": true
+          "writable": true,
+          "signer": true
         },
         {
           "name": "hook_state",
@@ -762,95 +619,197 @@
           }
         },
         {
+          "name": "job",
           "docs": [
             "via `deserialize_job` against `hook_state.acp_program`."
-          ],
-          "name": "job"
+          ]
         },
         {
           "name": "intent",
           "writable": true
         },
         {
+          "name": "intent_map",
           "docs": [
             "(seed prefix depends on `kind`)."
           ],
-          "name": "intent_map",
           "writable": true
         },
         {
-          "address": "11111111111111111111111111111111",
-          "name": "system_program"
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "kind",
           "type": "u8"
         }
-      ],
-      "discriminator": [
-        157,
-        244,
-        37,
-        181,
-        86,
-        92,
-        73,
-        162
-      ],
-      "docs": [
-        "Pre-creates the intent + intent-id map PDAs for a job, zeroed, rent",
-        "paid by the job's provider at a CPI depth the paymaster can prefund.",
-        "Idempotent: no-op when the accounts already exist."
-      ],
-      "name": "pre_create_intent"
+      ]
     }
   ],
-  "metadata": {
-    "description": "Fund Transfer Hook - fund requests and provider escrow for ACP",
-    "name": "fund_transfer_hook",
-    "spec": "0.1.0",
-    "version": "0.1.0"
-  },
-  "types": [
+  "accounts": [
     {
-      "docs": [
-        "Maps a job to a fund request intent ID.",
-        "Seeds: [\"fund_request_intent_id\", job_id]"
-      ],
-      "name": "FundRequestIntentId",
-      "type": {
-        "fields": [
-          {
-            "name": "job_id",
-            "type": "u64"
-          },
-          {
-            "name": "intent_id",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ],
-        "kind": "struct"
-      }
+      "name": "HookMetadata",
+      "discriminator": [
+        119,
+        227,
+        48,
+        236,
+        101,
+        194,
+        218,
+        85
+      ]
     },
     {
+      "name": "HookState",
+      "discriminator": [
+        10,
+        13,
+        71,
+        116,
+        92,
+        105,
+        237,
+        231
+      ]
+    },
+    {
+      "name": "Intent",
+      "discriminator": [
+        247,
+        162,
+        35,
+        165,
+        254,
+        111,
+        129,
+        109
+      ]
+    },
+    {
+      "name": "ProviderEscrowIntentId",
+      "discriminator": [
+        132,
+        9,
+        212,
+        245,
+        34,
+        170,
+        187,
+        104
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "IntentClosed",
+      "discriminator": [
+        127,
+        229,
+        67,
+        202,
+        91,
+        56,
+        164,
+        0
+      ]
+    },
+    {
+      "name": "IntentSigned",
+      "discriminator": [
+        162,
+        221,
+        142,
+        204,
+        198,
+        234,
+        97,
+        188
+      ]
+    },
+    {
+      "name": "JobHookAccountsClosed",
+      "discriminator": [
+        180,
+        89,
+        65,
+        138,
+        208,
+        224,
+        61,
+        244
+      ]
+    },
+    {
+      "name": "NewIntent",
+      "discriminator": [
+        101,
+        118,
+        73,
+        187,
+        15,
+        74,
+        57,
+        97
+      ]
+    },
+    {
+      "name": "PayableFundsEscrowed",
+      "discriminator": [
+        71,
+        24,
+        78,
+        26,
+        156,
+        102,
+        16,
+        91
+      ]
+    },
+    {
+      "name": "PayableFundsRefunded",
+      "discriminator": [
+        128,
+        69,
+        197,
+        251,
+        154,
+        144,
+        198,
+        57
+      ]
+    },
+    {
+      "name": "PayableTransferExecuted",
+      "discriminator": [
+        164,
+        216,
+        121,
+        127,
+        187,
+        55,
+        131,
+        55
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "HookMetadata",
       "docs": [
         "Hook self-declaration of which selectors this hook implements; read by",
         "multi-hook-router. Seeds: [\"hook_metadata\"].",
         "",
         "Bitmask layout: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
       ],
-      "name": "HookMetadata",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "required_selectors",
@@ -860,16 +819,16 @@
             "name": "bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "HookState",
       "docs": [
         "Global hook state — stores intent counter and config."
       ],
-      "name": "HookState",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "acp_program",
@@ -883,25 +842,25 @@
             "name": "bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "Intent",
       "docs": [
         "An intent record (fund request or provider escrow).",
-        "Seeds: [\"intent\", job_id, kind]"
+        "Seeds: [\"intent\", job_key, kind]"
       ],
-      "name": "Intent",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "id",
             "type": "u64"
           },
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "actor",
@@ -936,19 +895,19 @@
             "type": "u8"
           },
           {
+            "name": "escrow_bump",
             "docs": [
               "Cached escrow authority PDA bump; 0 for non-escrow intents."
             ],
-            "name": "escrow_bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
       "name": "IntentClosed",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "intent_id",
@@ -958,13 +917,13 @@
             "name": "actor",
             "type": "pubkey"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
       "name": "IntentSigned",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "intent_id",
@@ -978,17 +937,42 @@
             "name": "is_approved",
             "type": "bool"
           }
-        ],
-        "kind": "struct"
+        ]
+      }
+    },
+    {
+      "name": "JobHookAccountsClosed",
+      "docs": [
+        "Emitted when a terminal job's fund-transfer-hook PDAs are reclaimed.",
+        "`rent_destination` is recorded so indexers can see where the lamports went,",
+        "following the precedent set by `ProposedTermsCleanedUp`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          }
+        ]
       }
     },
     {
       "name": "NewIntent",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "actor",
@@ -998,17 +982,17 @@
             "name": "intent_id",
             "type": "u64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
       "name": "PayableFundsEscrowed",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "intent_id",
@@ -1026,17 +1010,17 @@
             "name": "amount",
             "type": "u64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
       "name": "PayableFundsRefunded",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "intent_id",
@@ -1054,17 +1038,17 @@
             "name": "amount",
             "type": "u64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
       "name": "PayableTransferExecuted",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "intent_id",
@@ -1086,21 +1070,21 @@
             "name": "amount",
             "type": "u64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "ProviderEscrowIntentId",
       "docs": [
         "Maps a job to a provider escrow intent ID.",
-        "Seeds: [\"provider_escrow_intent_id\", job_id]"
+        "Seeds: [\"provider_escrow_intent_id\", job_key]"
       ],
-      "name": "ProviderEscrowIntentId",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "intent_id",
@@ -1110,8 +1094,7 @@
             "name": "bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     }
   ]

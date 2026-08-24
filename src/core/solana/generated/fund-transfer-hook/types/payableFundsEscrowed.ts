@@ -21,7 +21,7 @@ import {
 } from "@solana/kit";
 
 export type PayableFundsEscrowed = {
-  jobId: bigint;
+  jobKey: Address;
   intentId: bigint;
   sender: Address;
   token: Address;
@@ -29,7 +29,7 @@ export type PayableFundsEscrowed = {
 };
 
 export type PayableFundsEscrowedArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   intentId: number | bigint;
   sender: Address;
   token: Address;
@@ -38,7 +38,7 @@ export type PayableFundsEscrowedArgs = {
 
 export function getPayableFundsEscrowedEncoder(): FixedSizeEncoder<PayableFundsEscrowedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["intentId", getU64Encoder()],
     ["sender", getAddressEncoder()],
     ["token", getAddressEncoder()],
@@ -48,7 +48,7 @@ export function getPayableFundsEscrowedEncoder(): FixedSizeEncoder<PayableFundsE
 
 export function getPayableFundsEscrowedDecoder(): FixedSizeDecoder<PayableFundsEscrowed> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["intentId", getU64Decoder()],
     ["sender", getAddressDecoder()],
     ["token", getAddressDecoder()],

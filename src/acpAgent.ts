@@ -966,10 +966,11 @@ export class AcpAgent {
         chainId,
         "SubscriptionHook",
       );
+      const jobPda = await acpClient.resolveJobPda(chainId, jobId);
       const terms = await fetchProposedTerms(
         acpClient.getProvider().getRpc(chainId),
         subHook as SolanaAddress,
-        jobId,
+        jobPda,
         ACP_COMMITMENT,
       );
       // Absent PDA mirrors the EVM zero-struct read for "nothing proposed".
@@ -1381,7 +1382,8 @@ export class AcpAgent {
         chainId,
         "MultiHookRouter",
       );
-      const pda = await hookRouterPda(routerAddress as SolanaAddress, jobId);
+      const jobPda = await client.resolveJobPda(chainId, jobId);
+      const pda = await hookRouterPda(routerAddress as SolanaAddress, jobPda);
       const maybe = await fetchMaybeHookRouter(
         client.getProvider().getRpc(chainId),
         pda,

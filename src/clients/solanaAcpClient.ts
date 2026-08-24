@@ -3,7 +3,9 @@ import {
   type Signature,
   AccountRole,
   getProgramDerivedAddress,
+  getAddressDecoder,
   getAddressEncoder,
+  getU64Decoder,
   getU64Encoder,
   getUtf8Encoder,
 } from "@solana/kit";
@@ -22,6 +24,7 @@ import {
   encodeSubParams,
   decodeSubParams,
   fetchProposedTerms,
+  fetchMaybeFundRequestIntentId,
   hookRouterPda,
   routerStatePda,
   subExpiryPda,
@@ -101,10 +104,9 @@ import { getSetBudgetInstruction } from "../core/solana/generated/acp/instructio
 import { getFundInstruction } from "../core/solana/generated/acp/instructions/fund.js";
 import { getSubmitInstructionAsync } from "../core/solana/generated/acp/instructions/submit.js";
 import { getCompleteInstructionAsync } from "../core/solana/generated/acp/instructions/complete.js";
-import { getRejectInstructionAsync } from "../core/solana/generated/acp/instructions/reject.js";
+import { getRejectInstruction } from "../core/solana/generated/acp/instructions/reject.js";
 import { getBatchConfigureHooksInstructionAsync } from "../core/solana/generated/multi-hook-router/instructions/batchConfigureHooks.js";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated.js";
-import { fetchMaybeFundRequestIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/fundRequestIntentId.js";
 import { fetchMaybeProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
 import { fetchIntent } from "../core/solana/generated/fund-transfer-hook/accounts/intent.js";
 
@@ -119,19 +121,20 @@ const EMPTY_OPT_PARAMS = new Uint8Array(0);
 // No generated errors module exists for the hook, hence the local constant.
 const HOOK_INVALID_JOB_CODE = 6000;
 
-// Anchor framework ConstraintSeeds (2006). On CreateJob this is the job-counter
-// race: the SDK derives the job PDA from acp_state.job_counter + 1 read at
-// prepare time, while the program re-derives from its live counter — a
-// back-to-back createJob can advance the counter in between. The code is
-// framework-generic (every Anchor account constraint emits it), so a 2006 is
-// treated as stale ONLY when the logs also carry the CreateJob marker.
+// Anchor framework ConstraintSeeds (2006). On CreateJob this means the job PDA
+// the SDK derived is already taken — a collision on the client-chosen random
+// u64 seed. Retrying re-runs createJob, which draws a fresh seed, so the retry
+// is the correct recovery. The code is framework-generic (every Anchor account
+// constraint emits it), so a 2006 is treated as stale ONLY when the logs also
+// carry the CreateJob marker.
 const ACP_CONSTRAINT_SEEDS_CODE = 2006;
 
-// Marker strings (lowercased) identifying the createJob counter race in
+// Marker strings (lowercased) identifying a CreateJob seed collision in
 // sponsor-simulation error text. All three must be present: the sponsor prefix
 // scopes it to a simulation failure (tx never broadcast, retry is safe), the
 // instruction marker scopes it to CreateJob (other instructions derive the job
-// PDA from the job_id param — a 2006 there is a genuine bug, never retried).
+// PDA from a known client+seed pair — a 2006 there is a genuine bug, never
+// retried).
 const CREATE_JOB_SEEDS_RACE_MARKERS = [
   "alchemy_requestfeepayer failed",
   "instruction: createjob",
@@ -180,8 +183,9 @@ const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
 
 export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private readonly provider: ISolanaProviderAdapter;
-  // Job PDAs are per-cluster: the same job id exists independently on devnet
-  // and mainnet, so cache entries are keyed `${chainId}:${jobId}`.
+  // Job PDAs are per-cluster (the same job id exists independently on devnet
+  // and mainnet) AND per-client (jobId is a caller-chosen seed, unique only
+  // within one client, not globally) — see jobPdaCacheKey.
   private jobPdaCache: Map<string, Address> = new Map();
 
   private constructor(
@@ -286,10 +290,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     chainId: number,
     err: unknown
   ): Promise<boolean> {
-    // Sponsor-simulation form of the createJob counter race: a plain Error
+    // Sponsor-simulation form of a CreateJob seed collision: a plain Error
     // whose text (cause chain included) carries the requestFeePayer prefix
     // plus the CreateJob + ConstraintSeeds markers. Never broadcast, so a
-    // re-prepare cannot double-create.
+    // re-prepare cannot double-create; it also draws a fresh seed.
     const text = collectErrorText(err).toLowerCase();
     if (CREATE_JOB_SEEDS_RACE_MARKERS.every((m) => text.includes(m))) {
       return true;
@@ -378,16 +382,22 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     chainId: number,
     params: CreateJobParams
   ): Promise<PreparedSolanaTx> {
-    const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
 
-    const acpStatePda = await this.deriveAcpStatePda(chainId);
-    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
-    // On-chain job_counter stores the LAST issued ID (EVM jobCounter
-    // parity); the job we are about to create receives counter+1.
-    const jobCounter = acpState.data.jobCounter + 1n;
+    // The job's identity is its own account address, derived from
+    // ["job", client, seed] — `seed` is a caller-chosen u64 uniquifier, not a
+    // re-usable identifier, and need only be unique per client (the program's
+    // `init` rejects a reuse by the same client). A random value is therefore
+    // both sufficient and race-free: unlike the old acp_state.job_counter + 1
+    // scheme, two concurrent createJob calls (even from the same client) no
+    // longer contend on one shared counter and cannot collide with each other
+    // by racing a read.
+    const seedBytes = new Uint8Array(8);
+    crypto.getRandomValues(seedBytes);
+    const seed = getU64Decoder().decode(seedBytes);
 
-    const jobPda = await this.deriveJobPda(chainId, signer.address, jobCounter);
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
+    const jobPda = await this.deriveJobPda(chainId, signer.address, seed);
 
     let hookWhitelist: Address | undefined;
     if (params.hookAddress) {
@@ -410,6 +420,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         client: signer,
         job: jobPda,
         acpState: acpStatePda,
+        seed,
         provider: params.providerAddress as Address,
         evaluator,
         description: params.description,
@@ -427,7 +438,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       // The router has no hook_state PDA; it validates through its per-job
       // hook_router PDA, router_state, and the instructions sysvar.
       extraAccounts.push(
-        ...(await routerPrefixAccounts(routerContext(chainId), jobCounter))
+        ...(await routerPrefixAccounts(routerContext(chainId), jobPda))
       );
     } else if (params.hookAddress) {
       const hookStatePda = await this.deriveHookStatePda(
@@ -436,7 +447,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       extraAccounts.push({ address: hookStatePda, role: AccountRole.READONLY });
     }
 
-    this.jobPdaCache.set(`${chainId}:${jobCounter}`, jobPda);
+    this.jobPdaCache.set(this.jobPdaCacheKey(chainId, signer.address, seed), jobPda);
 
     return this.wrapMany(chainId, [
       {
@@ -456,14 +467,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const jobPda = await this.resolveJobPda(chainId, params.jobId, params.clientAddress);
     const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
 
-    let mintAddress: Address;
-    if (job.data.budgetMint.__option === "Some") {
-      mintAddress = job.data.budgetMint.value;
-    } else {
-      const acpStatePda = await this.deriveAcpStatePda(chainId);
-      const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
-      mintAddress = acpState.data.paymentToken;
-    }
+    // No vault exists yet at setBudget time (fund() creates it), and
+    // budget_mint no longer exists on Job — the payment mint is the single
+    // global acp_state.payment_token, checked against a caller's choice only
+    // at fund, not stored per-job.
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
+    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
+    const mintAddress = acpState.data.paymentToken;
 
     const hookAddress =
       job.data.hookAddress.__option === "Some"
@@ -484,7 +494,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       return this.setBudgetViaRouter(chainId, params, {
         signer,
         jobPda,
-        jobId: job.data.jobId,
         clientAddress: job.data.client,
         providerAddress: job.data.provider,
         mintAddress,
@@ -495,7 +504,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       return this.setBudgetViaSubscriptionHook(chainId, params, {
         signer,
         jobPda,
-        jobId: job.data.jobId,
         clientAddress: job.data.client,
         providerAddress: job.data.provider,
         mintAddress,
@@ -507,7 +515,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         caller: signer,
         job: jobPda,
-        budgetMint: mintAddress,
         acpState: await this.deriveAcpStatePda(chainId),
         amount: params.amount,
         ...(hookAddress ? { hookProgram: hookAddress } : {}),
@@ -543,12 +550,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       // renegotiation appendix (the hook overwrites the intent in place).
       const intentPda = await this.deriveIntentPda(
         hookAddress,
-        job.data.jobId,
+        jobPda,
         INTENT_KIND_FUND_REQUEST
       );
       const fundRequestIntentIdPda = await this.deriveFundRequestIntentIdPda(
         hookAddress,
-        job.data.jobId
+        jobPda
       );
 
       extraAccounts.push(
@@ -591,29 +598,21 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(chainId, jobPda);
 
-    let mintAddress: Address;
-    if (job.data.budgetMint.__option === "Some") {
-      mintAddress = job.data.budgetMint.value;
-    } else {
-      const acpStatePda = await this.deriveAcpStatePda(chainId);
-      const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
-      mintAddress = acpState.data.paymentToken;
-    }
+    // No vault exists yet — fund() is what creates it (program `init`, not a
+    // client-side ATA). budget_mint no longer exists on Job, so the mint is
+    // simply the single global acp_state.payment_token; fund is also where
+    // the allowlist check against it now happens on-chain.
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
+    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
+    const mintAddress = acpState.data.paymentToken;
 
-    const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+    const vaultPda = await this.deriveVaultPda(chainId, jobPda);
     const clientAta = await this.deriveAta(signer.address, mintAddress);
 
     const createClientAtaIx = this.buildCreateAtaIdempotentIx(
       signer.address,
       clientAta,
       signer.address,
-      mintAddress
-    );
-
-    const createVaultAtaIx = this.buildCreateAtaIdempotentIx(
-      signer.address,
-      vaultAta,
-      vaultAuthorityPda,
       mintAddress
     );
 
@@ -628,11 +627,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         jobPda,
         job,
         mintAddress,
-        vaultAta,
+        vaultPda,
         clientAta,
         vaultAuthorityPda,
         createClientAtaIx,
-        createVaultAtaIx,
       });
     }
     if (hookAddress && isSubscriptionHook(chainId, hookAddress)) {
@@ -641,11 +639,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         jobPda,
         job,
         mintAddress,
-        vaultAta,
+        vaultPda,
         clientAta,
         vaultAuthorityPda,
         createClientAtaIx,
-        createVaultAtaIx,
       });
     }
 
@@ -677,7 +674,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
       const hookStatePda = await this.deriveHookStatePda(hookAddress);
       const fundRequestIntentIdPda =
-        await this.deriveFundRequestIntentIdPda(hookAddress, job.data.jobId);
+        await this.deriveFundRequestIntentIdPda(hookAddress, jobPda);
       // A hooked job may have no fund-request at all (nothing proposed,
       // or proposal cancelled — intent_id 0 sentinel). Even then, post_fund
       // still requires the fund-request map PDA at remaining[1]
@@ -700,7 +697,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       } else {
       const intentPda = await this.deriveIntentPda(
         hookAddress,
-        job.data.jobId,
+        jobPda,
         INTENT_KIND_FUND_REQUEST
       );
       const intent = await fetchIntent(rpc, intentPda, {
@@ -777,7 +774,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         acpState: await this.deriveAcpStatePda(chainId),
         job: jobPda,
         clientTokenAccount: clientAta,
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         mint: mintAddress,
         ...(hookAddress ? { hookProgram: hookAddress } : {}),
@@ -795,7 +792,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     return this.wrapMany(chainId, [
       createClientAtaIx,
-      createVaultAtaIx,
       ...hookPreIxs,
       {
         programAddress: ix.programAddress,
@@ -861,14 +857,17 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const acpStatePda = await this.deriveAcpStatePda(chainId);
       const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
-      let mintAddress: Address;
-      if (job.data.budgetMint.__option === "Some") {
-        mintAddress = job.data.budgetMint.value;
-      } else {
-        mintAddress = acpState.data.paymentToken;
+      // budget_mint no longer exists on Job; the vault is a program-derived
+      // account created at fund() time, so — since isFunded guarantees fund()
+      // already ran — its own mint is authoritative and always fetchable here.
+      const vaultPda = await this.deriveVaultPda(chainId, jobPda);
+      const mintAddress = await this.fetchVaultMint(chainId, vaultPda);
+      if (!mintAddress) {
+        throw new Error(
+          `submit: vault ${vaultPda} not found for a funded job (budget > 0); ` +
+            `fund() should have created it.`
+        );
       }
-
-      const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
       const providerAta = await this.deriveAta(signer.address, mintAddress);
       const treasuryAta = await this.deriveAta(
         acpState.data.platformTreasury,
@@ -891,11 +890,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       );
 
       vaultAccounts = {
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
-        platformTreasury: acpState.data.platformTreasury,
+        // Native rent destination on close; distinct from platformTreasury,
+        // which only ever receives the SPL fee via treasuryTokenAccount.
+        sponsor: acpState.data.sponsor,
       };
 
       if (hookAddress) {
@@ -931,17 +932,17 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         // concurrent intent-creating transactions on the same hook.
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          job.data.jobId,
+          jobPda,
           INTENT_KIND_ESCROW
         );
         const provEscrowIntentIdPda =
           await this.deriveProviderEscrowIntentIdPda(
             hookAddress,
-            job.data.jobId
+            jobPda
           );
         const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
           hookAddress,
-          job.data.jobId
+          jobPda
         );
         const escrowVault = await this.deriveAta(
           escrowAuthorityPda,
@@ -1175,14 +1176,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpStatePda = await this.deriveAcpStatePda(chainId);
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
 
-    let mintAddress: Address;
-    if (job.data.budgetMint.__option === "Some") {
-      mintAddress = job.data.budgetMint.value;
-    } else {
-      mintAddress = acpState.data.paymentToken;
-    }
-
-    const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+    // complete() runs on zero-budget jobs too, where no vault was ever
+    // created — fetchVaultMint then returns null and acp_state.payment_token
+    // (the same fallback budgetMint.None used) stands in. It is never actually
+    // read from for a zero-budget job; the derived accounts below just need a
+    // valid mint to compute ATAs against.
+    const vaultPda = await this.deriveVaultPda(chainId, jobPda);
+    const mintAddress =
+      (await this.fetchVaultMint(chainId, vaultPda)) ?? acpState.data.paymentToken;
     const providerAta = await this.deriveAta(job.data.provider, mintAddress);
     const treasuryAta = await this.deriveAta(
       acpState.data.platformTreasury,
@@ -1234,7 +1235,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const provEscrowIntentIdPda =
         await this.deriveProviderEscrowIntentIdPda(
           hookAddress,
-          job.data.jobId
+          jobPda
         );
       // The escrow-map PDA is mandatory at the hook's remaining[1] even with
       // no escrow: auto_sign_escrow fails IncompleteHookAccountSet (6019) on
@@ -1258,7 +1259,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          job.data.jobId,
+          jobPda,
           INTENT_KIND_ESCROW
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
@@ -1266,7 +1267,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         });
         const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
           hookAddress,
-          job.data.jobId
+          jobPda
         );
         const escrowVault = await this.deriveAta(
           escrowAuthorityPda,
@@ -1301,12 +1302,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         evaluator: signer,
         job: jobPda,
         acpState: acpStatePda,
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
         ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
         ...(hookAddress ? { hookProgram: hookAddress } : {}),
         ...(hookAddress
           ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
@@ -1355,13 +1356,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (isFunded && job.data.budgetAmount > 0n) {
       vaultAuthority = await this.deriveVaultAuthorityPda(chainId, jobPda);
 
-      let mintAddress: Address;
-      if (job.data.budgetMint.__option === "Some") {
-        mintAddress = job.data.budgetMint.value;
-      } else {
-        mintAddress = acpState.data.paymentToken;
+      vault = await this.deriveVaultPda(chainId, jobPda);
+      const mintAddress = await this.fetchVaultMint(chainId, vault);
+      if (!mintAddress) {
+        throw new Error(
+          `reject: vault ${vault} not found for a funded job (budget > 0); ` +
+            `fund() should have created it.`
+        );
       }
-      vault = await this.deriveAta(vaultAuthority, mintAddress);
       clientTokenAccount = await this.deriveAta(job.data.client, mintAddress);
     }
 
@@ -1379,7 +1381,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         vault,
         vaultAuthority,
         clientTokenAccount,
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
       });
     }
     if (hookAddress && isSubscriptionHook(chainId, hookAddress)) {
@@ -1391,7 +1393,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         vault,
         vaultAuthority,
         clientTokenAccount,
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
       });
     }
 
@@ -1406,7 +1408,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const provEscrowIntentIdPda =
         await this.deriveProviderEscrowIntentIdPda(
           hookAddress,
-          job.data.jobId
+          jobPda
         );
       // The escrow-map PDA is mandatory at the hook's remaining[1] even with
       // no escrow: auto_sign_escrow fails IncompleteHookAccountSet (6019) on
@@ -1430,7 +1432,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
-          job.data.jobId,
+          jobPda,
           INTENT_KIND_ESCROW
         );
         const intent = await fetchIntent(rpc, escrowIntentPda, {
@@ -1438,7 +1440,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         });
         const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
           hookAddress,
-          job.data.jobId
+          jobPda
         );
         const escrowVault = await this.deriveAta(
           escrowAuthorityPda,
@@ -1459,7 +1461,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       }
     }
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async: the Async variant auto-derives a
+    // real vault PDA whenever this is omitted (findVaultPda), regardless of
+    // whether the job was ever funded — on a never-funded job that reverts
+    // AccountNotInitialized instead of taking the program's None-account
+    // convention (its own program id, read-only, as the sentinel — which is
+    // what an omitted account correctly resolves to here).
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: signer,
         job: jobPda,
@@ -1467,7 +1476,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ...(vault ? { vault } : {}),
         ...(vaultAuthority ? { vaultAuthority } : {}),
         ...(clientTokenAccount ? { clientTokenAccount } : {}),
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         ...(hookAddress ? { hookProgram: hookAddress } : {}),
         ...(hookAddress
           ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
@@ -1489,38 +1499,64 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     ]);
   }
 
-  override async getJobIdFromTxHash(
+  /**
+   * Decodes the JobCreated event out of a confirmed transaction's logs, or
+   * null if the transaction is missing or carries no such event. Shared by
+   * getJobIdFromTxHash (needs `.job`) and getJob's description recovery
+   * (needs `.description`) so the log-scanning logic lives in one place.
+   */
+  private async decodeJobCreatedFromTx(
     chainId: number,
     txHash: string
-  ): Promise<bigint | null> {
+  ): Promise<import("../core/solana/generated/acp/types/jobCreated.js").JobCreated | null> {
     const rpc = this.provider.getRpc(chainId);
-
     const tx = await rpc
       .getTransaction(txHash as Signature, {
         encoding: "json",
         maxSupportedTransactionVersion: 0,
       })
       .send();
-
     if (!tx) return null;
 
-    const logs = tx.meta?.logMessages ?? [];
     const decoder = getJobCreatedDecoder();
-
-    for (const log of logs) {
+    for (const log of tx.meta?.logMessages ?? []) {
       if (!log.startsWith("Program data: ")) continue;
       const data = Uint8Array.from(
         atob(log.slice("Program data: ".length)),
         (c) => c.charCodeAt(0)
       );
-
       if (data.length < 8) continue;
       if (!JOB_CREATED_EVENT_DISC.every((b, i) => data[i] === b)) continue;
-
-      return decoder.decode(data.slice(8)).jobId;
+      return decoder.decode(data.slice(8));
     }
-
     return null;
+  }
+
+  /**
+   * Recovers the chain-agnostic bigint jobId (the seed passed to createJob)
+   * from a confirmed createJob transaction.
+   *
+   * The job's identity is now its own account address, and JobCreated only
+   * carries that address (`job`), not the seed — the seed is a write-once
+   * input, not part of the job's on-chain identity, so the event does not
+   * echo it. This decodes the event to find the address, then fetches the
+   * job account itself and reads `seed` back off it (the account still
+   * stores it, purely so the PDA can be re-derived). One extra RPC round
+   * trip versus the old counter-value-in-the-event scheme, in exchange for
+   * keeping this method's external bigint contract unchanged.
+   */
+  override async getJobIdFromTxHash(
+    chainId: number,
+    txHash: string
+  ): Promise<bigint | null> {
+    const event = await this.decodeJobCreatedFromTx(chainId, txHash);
+    if (!event) return null;
+
+    const rpc = this.provider.getRpc(chainId);
+    const jobAccount = await fetchJob(rpc, event.job, {
+      commitment: ACP_COMMITMENT,
+    });
+    return jobAccount.data.seed;
   }
 
   /**
@@ -1562,12 +1598,30 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       });
       const job = jobAccount.data;
 
+      // description moved to event-only (JobCreated.description) — it is no
+      // longer stored on the Job account at all. Recover it from the job's
+      // creation transaction, the only place it still exists on-chain. Best
+      // effort: a job created before an RPC's log-retention window, or one
+      // whose creation tx cannot be located, degrades to "" rather than
+      // failing the whole read.
+      let description = "";
+      const createSig = await rpc
+        .getSignaturesForAddress(jobPda, { commitment: "confirmed" })
+        .send();
+      if (createSig.length > 0) {
+        const event = await this.decodeJobCreatedFromTx(
+          chainId,
+          createSig[createSig.length - 1]!.signature
+        );
+        if (event) description = event.description;
+      }
+
       return {
-        id: job.jobId,
+        id: job.seed,
         client: job.client,
         provider: job.provider,
         evaluator: job.evaluator,
-        description: job.description,
+        description,
         budget: job.budgetAmount,
         expiredAt: job.expiredAt,
         status: job.state as number,
@@ -1667,10 +1721,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         client: signer,
         job: jobPda,
-        hookRouter: await hookRouterPda(ctx.router, params.jobId),
+        hookRouter: await hookRouterPda(ctx.router, jobPda),
         routerState: await routerStatePda(ctx.router),
         systemProgram: "11111111111111111111111111111111" as Address,
-        jobId: params.jobId,
+        jobKey: jobPda,
         ...lists,
       },
       { programAddress: ctx.router }
@@ -1702,22 +1756,26 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   /**
    * Complete a subscription-activating job — a multi-hook (router) job or a
    * standalone subscription-hook job. EAGER — sends immediately and returns
-   * the signature, deviating from the prepared pattern because subscription
-   * activation requires the provider's co-signature (sub-state's
-   * ActivateSubscription declares the rent payer a Signer), and a runtime
-   * signer cannot ride in prepared data.
+   * the signature, deviating from the prepared pattern because it needs a
+   * runtime lookup-table/retry-guard setup that doesn't ride in prepared
+   * data.
+   *
+   * `providerSigner` is accepted for backward compatibility but is no longer
+   * required (F-118): the provider used to have to co-sign because
+   * ActivateSubscription's on-chain payer was declared a Signer, allocating
+   * sub_expiry at activation. sub_expiry is now pre-created at set_budget, so
+   * activation allocates nothing and the evaluator completes alone.
    *
    * Router jobs additionally need an address lookup table (the fan-out
    * account set exceeds the legacy tx size) — they compress against the
    * persistent complete ALT (MULTI_HOOK_COMPLETE_ALT_ADDRESSES). Standalone
    * subscription jobs fit a legacy transaction and need no table. Both kinds
-   * send through the sponsored multi-signer path (sponsorLookupTables), so
-   * fees and rents — including first-activation sub_expiry — are prefunded
-   * and no wallet needs SOL.
+   * send through the sponsored path, so fees and rents — including
+   * first-activation sub_expiry — are prefunded and no wallet needs SOL.
    */
   async completeSubscriptionJob(
     chainId: number,
-    params: CompleteParams & { providerSigner: SolanaSigner }
+    params: CompleteParams & { providerSigner?: SolanaSigner }
   ): Promise<string> {
     const rpc = this.provider.getRpc(chainId);
     const signer = this.provider.getSigner();
@@ -1742,12 +1800,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           "submitPrepared for other jobs."
       );
     }
-    if (params.providerSigner.address !== job.data.provider) {
+    // providerSigner is no longer required (F-118) — only validate it when a
+    // caller supplies one, so a stale/wrong signer isn't silently ignored.
+    if (
+      params.providerSigner &&
+      params.providerSigner.address !== job.data.provider
+    ) {
       throw new Error(
         `completeSubscriptionJob: providerSigner ${params.providerSigner.address} ` +
-          `is not the job's provider ${job.data.provider} — the provider must ` +
-          `co-sign (it pays the subscription rent and receives the ` +
-          `proposed_terms refund).`
+          `is not the job's provider ${job.data.provider}.`
       );
     }
 
@@ -1778,12 +1839,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpState = await fetchAcpState(rpc, acpStatePda, {
       commitment: ACP_COMMITMENT,
     });
-    const mintAddress =
-      job.data.budgetMint.__option === "Some"
-        ? job.data.budgetMint.value
-        : acpState.data.paymentToken;
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(chainId, jobPda);
-    const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+    const vaultPda = await this.deriveVaultPda(chainId, jobPda);
+    const mintAddress =
+      (await this.fetchVaultMint(chainId, vaultPda)) ?? acpState.data.paymentToken;
     const providerAta = await this.deriveAta(job.data.provider, mintAddress);
     const treasuryAta = await this.deriveAta(
       acpState.data.platformTreasury,
@@ -1812,7 +1871,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const terms = await fetchProposedTerms(
       rpc,
       ctx.subHook,
-      job.data.jobId,
+      jobPda,
       ACP_COMMITMENT
     );
 
@@ -1823,7 +1882,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     } | null = null;
     const provEscrowIntentIdPda = await this.deriveProviderEscrowIntentIdPda(
       ctx.fundHook,
-      job.data.jobId
+      jobPda
     );
     const maybePeii = await fetchMaybeProviderEscrowIntentId(
       rpc,
@@ -1835,7 +1894,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
       const escrowIntentPda = await this.deriveIntentPda(
         ctx.fundHook,
-        job.data.jobId,
+        jobPda,
         INTENT_KIND_ESCROW
       );
       const intent = await fetchIntent(rpc, escrowIntentPda, {
@@ -1843,7 +1902,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       });
       const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
         ctx.fundHook,
-        job.data.jobId
+        jobPda
       );
       const escrowVault = await this.deriveAta(
         escrowAuthorityPda,
@@ -1869,7 +1928,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     const fanOut = await buildCompleteFanOut(ctx, {
-      jobId: job.data.jobId,
       jobPda,
       provider: job.data.provider,
       clientAddress: job.data.client,
@@ -1882,12 +1940,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         evaluator: signer,
         job: jobPda,
         acpState: acpStatePda,
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
         ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
         hookProgram: ctx.router,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, ctx.router),
         reason: encodeReasonBytes(params.reason),
@@ -1948,7 +2006,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       hookRentPreCreated = existing.value !== null;
     }
     const result = await this.provider.sendInstructions(chainId, instructions, {
-      extraSigners: fanOut.requiredExtraSigner ? [params.providerSigner] : [],
+      extraSigners:
+        fanOut.requiredExtraSigner && params.providerSigner
+          ? [params.providerSigner]
+          : [],
       lookupTables: { [lut]: addresses },
       retryGuard: guard,
       sponsorLookupTables: true,
@@ -2039,7 +2100,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     s: {
       signer: SolanaSigner;
       jobPda: Address;
-      jobId: bigint;
       clientAddress: Address;
       providerAddress: Address;
       mintAddress: Address;
@@ -2072,7 +2132,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         signer: s.signer,
         jobPda: s.jobPda,
-        jobId: s.jobId,
         clientAddress: s.clientAddress,
         providerAddress: s.providerAddress,
         fundRequestIntent: false,
@@ -2083,7 +2142,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
 
     const extraAccounts = await buildSubSetBudgetAccounts(sctx, {
-      jobId: s.jobId,
       jobPda: s.jobPda,
       seller: s.signer.address,
       clientAddress: s.clientAddress,
@@ -2094,7 +2152,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         caller: s.signer,
         job: s.jobPda,
-        budgetMint: s.mintAddress,
         acpState: await this.deriveAcpStatePda(chainId),
         amount: params.amount,
         hookProgram: sctx.subHook,
@@ -2125,11 +2182,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       jobPda: Address;
       job: Awaited<ReturnType<typeof fetchJob>>;
       mintAddress: Address;
-      vaultAta: Address;
+      vaultPda: Address;
       clientAta: Address;
       vaultAuthorityPda: Address;
       createClientAtaIx: SolanaInstructionLike;
-      createVaultAtaIx: SolanaInstructionLike;
     }
   ): Promise<PreparedSolanaTx> {
     const sctx = subscriptionContext(chainId);
@@ -2140,7 +2196,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const terms = await fetchProposedTerms(
       rpc,
       sctx.subHook,
-      s.job.data.jobId,
+      s.jobPda,
       ACP_COMMITMENT
     );
     const optParams = terms
@@ -2154,7 +2210,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         acpState: await this.deriveAcpStatePda(chainId),
         job: s.jobPda,
         clientTokenAccount: s.clientAta,
-        vault: s.vaultAta,
+        vault: s.vaultPda,
         vaultAuthority: s.vaultAuthorityPda,
         mint: s.mintAddress,
         hookProgram: sctx.subHook,
@@ -2167,12 +2223,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     return this.wrapMany(chainId, [
       s.createClientAtaIx,
-      s.createVaultAtaIx,
       {
         programAddress: ix.programAddress,
         accounts: [
           ...ix.accounts,
-          ...(await buildSubFundAccounts(sctx, s.job.data.jobId)),
+          ...(await buildSubFundAccounts(sctx, s.jobPda)),
         ],
         data: ix.data as Uint8Array,
       },
@@ -2210,15 +2265,18 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const acpState = await fetchAcpState(rpc, acpStatePda, {
         commitment: ACP_COMMITMENT,
       });
-      const mintAddress =
-        job.data.budgetMint.__option === "Some"
-          ? job.data.budgetMint.value
-          : acpState.data.paymentToken;
       const vaultAuthorityPda = await this.deriveVaultAuthorityPda(
         chainId,
         s.jobPda
       );
-      const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+      const vaultPda = await this.deriveVaultPda(chainId, s.jobPda);
+      const mintAddress = await this.fetchVaultMint(chainId, vaultPda);
+      if (!mintAddress) {
+        throw new Error(
+          `submit: vault ${vaultPda} not found for a funded job (budget > 0); ` +
+            `fund() should have created it.`
+        );
+      }
       const providerAta = await this.deriveAta(s.signer.address, mintAddress);
       const treasuryAta = await this.deriveAta(
         acpState.data.platformTreasury,
@@ -2239,11 +2297,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         )
       );
       vaultAccounts = {
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
       };
     }
 
@@ -2255,7 +2313,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const terms = await fetchProposedTerms(
         rpc,
         sctx.subHook,
-        job.data.jobId,
+        s.jobPda,
         ACP_COMMITMENT
       );
       // No-evaluator submit auto-completes: sub_expiry activation fires inside
@@ -2281,7 +2339,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
             {
               signer: s.signer,
               jobPda: s.jobPda,
-              jobId: job.data.jobId,
               clientAddress: job.data.client,
               providerAddress: job.data.provider,
               fundRequestIntent: false,
@@ -2293,7 +2350,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         }
       }
       const completeSlice = await buildSubCompleteAccounts(sctx, {
-        jobId: job.data.jobId,
         jobPda: s.jobPda,
         provider: s.signer.address,
         clientAddress: job.data.client,
@@ -2349,16 +2405,21 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       vault: Address | undefined;
       vaultAuthority: Address | undefined;
       clientTokenAccount: Address | undefined;
-      platformTreasury: Address;
+      sponsor: Address;
     }
   ): Promise<PreparedSolanaTx> {
     const sctx = subscriptionContext(chainId);
     const extraAccounts = await buildSubRejectAccounts(sctx, {
-      jobId: s.job.data.jobId,
-      provider: s.job.data.provider,
+      jobPda: s.jobPda,
+      sponsor: s.sponsor,
     });
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async — see the plain reject() path:
+    // Async auto-derives a real (non-existent) vault PDA when omitted instead
+    // of the program's None-account sentinel, breaking reject() on a job that
+    // was never funded.
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: s.signer,
         job: s.jobPda,
@@ -2368,7 +2429,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ...(s.clientTokenAccount
           ? { clientTokenAccount: s.clientTokenAccount }
           : {}),
-        platformTreasury: s.platformTreasury,
+        sponsor: s.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         hookProgram: sctx.subHook,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, sctx.subHook),
         reason: s.reasonBytes,
@@ -2391,13 +2453,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   /**
    * Standalone subscription complete: same activation semantics as the
    * router path but no fan-out header, no lookup table (the account set fits
-   * a legacy transaction). Always sponsored: with terms, the provider's
-   * co-signature rides the sponsored multi-signer path; with no terms the
-   * send is a plain sponsored single-signer tx.
+   * a legacy transaction). Always sponsored, single-signer — post-F-118 no
+   * co-signature is required (see completeSubscriptionJob).
    */
   private async completeSubscriptionStandalone(
     chainId: number,
-    params: CompleteParams & { providerSigner: SolanaSigner },
+    params: CompleteParams & { providerSigner?: SolanaSigner },
     s: {
       signer: SolanaSigner;
       jobPda: Address;
@@ -2412,15 +2473,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpState = await fetchAcpState(rpc, acpStatePda, {
       commitment: ACP_COMMITMENT,
     });
-    const mintAddress =
-      job.data.budgetMint.__option === "Some"
-        ? job.data.budgetMint.value
-        : acpState.data.paymentToken;
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(
       chainId,
       s.jobPda
     );
-    const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+    const vaultPda = await this.deriveVaultPda(chainId, s.jobPda);
+    const mintAddress =
+      (await this.fetchVaultMint(chainId, vaultPda)) ?? acpState.data.paymentToken;
     const providerAta = await this.deriveAta(job.data.provider, mintAddress);
     const treasuryAta = await this.deriveAta(
       acpState.data.platformTreasury,
@@ -2447,11 +2506,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const terms = await fetchProposedTerms(
       rpc,
       sctx.subHook,
-      job.data.jobId,
+      s.jobPda,
       ACP_COMMITMENT
     );
     const completeAccounts = await buildSubCompleteAccounts(sctx, {
-      jobId: job.data.jobId,
       jobPda: s.jobPda,
       provider: job.data.provider,
       clientAddress: job.data.client,
@@ -2463,12 +2521,12 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         evaluator: s.signer,
         job: s.jobPda,
         acpState: acpStatePda,
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
         ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
         hookProgram: sctx.subHook,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, sctx.subHook),
         reason: encodeReasonBytes(params.reason),
@@ -2498,16 +2556,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       chainId,
       standaloneIxs,
       {
-        extraSigners: completeAccounts.requiredExtraSigner
-          ? [params.providerSigner]
-          : [],
+        // requiredExtraSigner is always null post-F-118 (see
+        // buildSubCompleteAccounts); this stays defensive rather than
+        // hardcoded to [] so a future signer requirement needs no call-site
+        // shape change.
+        extraSigners:
+          completeAccounts.requiredExtraSigner && params.providerSigner
+            ? [params.providerSigner]
+            : [],
         retryGuard: standaloneGuard,
-        // With terms, the provider co-signature would force self-pay by
-        // default — and on FIRST activation this tx creates the sub_expiry
-        // PDA, so the wallet would really pay that rent, not just a fee.
-        // Sponsor via the multi-signer path instead (no lookup table needed;
-        // Alchemy sponsors two-signer txs), so prefundRent covers the
-        // sub_expiry rent and the wallet stays flat.
         ...(completeAccounts.requiredExtraSigner
           ? { sponsorLookupTables: true }
           : {}),
@@ -2524,7 +2581,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     s: {
       signer: SolanaSigner;
       jobPda: Address;
-      jobId: bigint;
       clientAddress: Address;
       providerAddress: Address;
       mintAddress: Address;
@@ -2548,7 +2604,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         signer: s.signer,
         jobPda: s.jobPda,
-        jobId: s.jobId,
         clientAddress: s.clientAddress,
         providerAddress: s.providerAddress,
         fundRequestIntent: s.fundRequestParams.length > 0,
@@ -2559,7 +2614,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     );
 
     const fanOut = await buildSetBudgetFanOut(ctx, {
-      jobId: s.jobId,
       jobPda: s.jobPda,
       seller: s.signer.address,
       clientAddress: s.clientAddress,
@@ -2577,7 +2631,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       {
         caller: s.signer,
         job: s.jobPda,
-        budgetMint: s.mintAddress,
         acpState: await this.deriveAcpStatePda(chainId),
         amount: params.amount,
         hookProgram: ctx.router,
@@ -2609,11 +2662,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       jobPda: Address;
       job: Awaited<ReturnType<typeof fetchJob>>;
       mintAddress: Address;
-      vaultAta: Address;
+      vaultPda: Address;
       clientAta: Address;
       vaultAuthorityPda: Address;
       createClientAtaIx: SolanaInstructionLike;
-      createVaultAtaIx: SolanaInstructionLike;
     }
   ): Promise<PreparedSolanaTx> {
     const ctx = routerContext(chainId);
@@ -2623,7 +2675,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const terms = await fetchProposedTerms(
       rpc,
       ctx.subHook,
-      job.data.jobId,
+      s.jobPda,
       ACP_COMMITMENT
     );
 
@@ -2634,20 +2686,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     // ~1068 bytes and sponsors cleanly; the ATA-only tx sponsors on its own
     // (ATA program is sponsorable). Net: router fund is fully sponsored, buyer
     // pays no SOL.
-    const ataCreateIxs: SolanaInstructionLike[] = [
-      s.createClientAtaIx,
-      s.createVaultAtaIx,
-    ];
+    const ataCreateIxs: SolanaInstructionLike[] = [s.createClientAtaIx];
     const hookPreIxs: SolanaInstructionLike[] = [];
     const hookPostIxs: SolanaInstructionLike[] = [];
     let passHookDelegate = true;
-    // A fund request the core's delegate approval does not cover — a
-    // foreign mint (upfront token ≠ payment mint) OR a same-mint request ABOVE
-    // the budget (R-H6's Y=2.5X) — adds an Approve/Revoke bracket, pushing
-    // the sponsored fund tx over 1232 bytes. Compress its static accounts
-    // against the persistent complete ALT at the return (same treatment as the
-    // bracketed submit).
-    let bracketed = false;
     let fundIntent: {
       token: Address;
       amount: bigint;
@@ -2658,7 +2700,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const fundRequestIntentIdPda = await this.deriveFundRequestIntentIdPda(
       ctx.fundHook,
-      job.data.jobId
+      s.jobPda
     );
     const maybeFriid = await fetchMaybeFundRequestIntentId(
       rpc,
@@ -2668,7 +2710,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (maybeFriid.exists && maybeFriid.data.intentId !== 0n) {
       const intentPda = await this.deriveIntentPda(
         ctx.fundHook,
-        job.data.jobId,
+        s.jobPda,
         INTENT_KIND_FUND_REQUEST
       );
       const intent = await fetchIntent(rpc, intentPda, {
@@ -2706,11 +2748,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           )
         );
         hookPostIxs.push(this.buildRevokeIx(fromAta, s.signer.address));
-        // The bracket + router fan-out overflow the sponsored fund past 1232 —
-        // regardless of mint — so it must ride the ALT compression at the return
-        // (R-H6 was the same-mint over-budget case that got the bracket but not
-        // the compression, and failed alchemy_requestFeePayer at ~1224 bytes).
-        bracketed = true;
         if (intent.data.token === s.mintAddress) {
           passHookDelegate = false;
         }
@@ -2726,7 +2763,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     const fanOut = await buildFundFanOut(ctx, {
-      jobId: job.data.jobId,
       jobPda: s.jobPda,
       proposedTerms: terms
         ? { duration: terms.duration, packageId: terms.packageId }
@@ -2740,7 +2776,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         acpState: await this.deriveAcpStatePda(chainId),
         job: s.jobPda,
         clientTokenAccount: s.clientAta,
-        vault: s.vaultAta,
+        vault: s.vaultPda,
         vaultAuthority: s.vaultAuthorityPda,
         mint: s.mintAddress,
         hookProgram: ctx.router,
@@ -2791,10 +2827,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     prepared.sendOptions = { ...prepared.sendOptions, hookRentPreCreated: true };
 
     const persistentAlt = MULTI_HOOK_COMPLETE_ALT_ADDRESSES[chainId];
-    if (bracketed && persistentAlt) {
-      // Sponsored ALT compression: the ATA creates are already split out
-      // (above), so compressing the static accounts fits the bracketed fund
-      // (foreign mint or same-mint over-budget) under 1232.
+    if (persistentAlt) {
+      // Sponsored ALT compression applies to EVERY router fund, not just a
+      // bracketed one: the ATA creates are already split out (above), and an
+      // uncompressed router fund still measures close enough to 1232 bytes
+      // that Alchemy's own rent-prefund augmentation can push it over, which
+      // fails the tx with no on-chain trace (never broadcast) and leaves the
+      // acting wallet's ATA-create tx unsponsored. Compressing the static
+      // accounts reclaims headroom regardless of whether a bracket is present.
       prepared.sendOptions = {
         ...prepared.sendOptions,
         lookupTables: {
@@ -2839,15 +2879,16 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpState = await fetchAcpState(rpc, acpStatePda, {
       commitment: ACP_COMMITMENT,
     });
-    const mintAddress =
-      job.data.budgetMint.__option === "Some"
-        ? job.data.budgetMint.value
-        : acpState.data.paymentToken;
     const vaultAuthorityPda = await this.deriveVaultAuthorityPda(
       chainId,
       s.jobPda
     );
-    const vaultAta = await this.deriveAta(vaultAuthorityPda, mintAddress);
+    const vaultPda = await this.deriveVaultPda(chainId, s.jobPda);
+    // A zero-budget router job (see above) never had a vault created —
+    // fetchVaultMint then returns null and acp_state.payment_token stands in,
+    // matching the old budgetMint.None fallback.
+    const mintAddress =
+      (await this.fetchVaultMint(chainId, vaultPda)) ?? acpState.data.paymentToken;
     const providerAta = await this.deriveAta(s.signer.address, mintAddress);
     const treasuryAta = await this.deriveAta(
       acpState.data.platformTreasury,
@@ -2914,7 +2955,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       const escrowToken = escrowProposal.token as Address;
       const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
         ctx.fundHook,
-        job.data.jobId
+        s.jobPda
       );
       const escrowVault = await this.deriveAta(escrowAuthorityPda, escrowToken);
       const providerEscrowAta = await this.deriveAta(
@@ -2981,7 +3022,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (escrow !== null) {
       const escrowIntentPda = await this.deriveIntentPda(
         ctx.fundHook,
-        job.data.jobId,
+        s.jobPda,
         1
       );
       const existing = await this.provider
@@ -2997,7 +3038,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           {
             signer: s.signer,
             jobPda: s.jobPda,
-            jobId: job.data.jobId,
             clientAddress: job.data.client,
             providerAddress: job.data.provider,
             fundRequestIntent: false,
@@ -3010,7 +3050,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     const fanOut = await buildSubmitFanOut(ctx, {
-      jobId: job.data.jobId,
       jobPda: s.jobPda,
       seller: s.signer.address,
       escrow,
@@ -3021,11 +3060,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         provider: s.signer,
         job: s.jobPda,
         acpState: acpStatePda,
-        vault: vaultAta,
+        vault: vaultPda,
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
-        platformTreasury: acpState.data.platformTreasury,
+        sponsor: acpState.data.sponsor,
         deliverable: s.deliverableBytes,
         hookProgram: ctx.router,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, ctx.router),
@@ -3073,13 +3112,16 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       ...postIxs,
     ]);
 
-    if (splitAtas) {
-      // Sponsored ALT compression: with the ATA-create prefund gone, the
-      // remaining Alchemy augmentation (CPI rent for the intent PDAs) is small
-      // enough that compressing the static accounts fits under 1232.
+    if (persistentAlt) {
+      // Sponsored ALT compression applies to EVERY router submit, not just a
+      // bracketed one: an uncompressed router submit measures close enough to
+      // 1232 bytes that Alchemy's own rent-prefund augmentation can push it
+      // over, which fails the tx with no on-chain trace (never broadcast) and
+      // leaves the inline ATA creates unsponsored. Compressing the static
+      // accounts reclaims headroom regardless of whether a bracket is present.
       prepared.sendOptions = {
         lookupTables: {
-          [persistentAlt as string]: await this.completeStaticAltAccounts(chainId),
+          [persistentAlt]: await this.completeStaticAltAccounts(chainId),
         },
         sponsorLookupTables: true,
       };
@@ -3101,7 +3143,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       vault: Address | undefined;
       vaultAuthority: Address | undefined;
       clientTokenAccount: Address | undefined;
-      platformTreasury: Address;
+      sponsor: Address;
     }
   ): Promise<PreparedSolanaTx> {
     const ctx = routerContext(chainId);
@@ -3115,7 +3157,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     } | null = null;
     const provEscrowIntentIdPda = await this.deriveProviderEscrowIntentIdPda(
       ctx.fundHook,
-      job.data.jobId
+      s.jobPda
     );
     const maybePeii = await fetchMaybeProviderEscrowIntentId(
       rpc,
@@ -3127,7 +3169,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
       const escrowIntentPda = await this.deriveIntentPda(
         ctx.fundHook,
-        job.data.jobId,
+        s.jobPda,
         INTENT_KIND_ESCROW
       );
       const intent = await fetchIntent(rpc, escrowIntentPda, {
@@ -3135,7 +3177,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       });
       const escrowAuthorityPda = await this.deriveEscrowAuthorityPda(
         ctx.fundHook,
-        job.data.jobId
+        s.jobPda
       );
       escrow = {
         providerAta: await this.deriveAta(intent.data.from, intent.data.token),
@@ -3145,13 +3187,17 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     }
 
     const fanOut = await buildRejectFanOut(ctx, {
-      jobId: job.data.jobId,
       jobPda: s.jobPda,
-      provider: job.data.provider,
+      sponsor: s.sponsor,
       escrow,
     });
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async — see the plain reject() path:
+    // Async auto-derives a real (non-existent) vault PDA when omitted instead
+    // of the program's None-account sentinel, breaking reject() on a job that
+    // was never funded.
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: s.signer,
         job: s.jobPda,
@@ -3161,7 +3207,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ...(s.clientTokenAccount
           ? { clientTokenAccount: s.clientTokenAccount }
           : {}),
-        platformTreasury: s.platformTreasury,
+        sponsor: s.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         hookProgram: ctx.router,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, ctx.router),
         reason: s.reasonBytes,
@@ -3226,7 +3273,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     args: {
       signer: SolanaSigner;
       jobPda: Address;
-      jobId: bigint;
       clientAddress: Address;
       providerAddress: Address;
       fundRequestIntent: boolean;
@@ -3274,11 +3320,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           throw new Error("fundHook address is required to pre-create intent PDAs");
         }
         if (fundRequestIntent) {
-          const already = await exists(await intentPda(programs.fundHook, args.jobId, INTENT_KIND_FUND_REQUEST));
+          const already = await exists(await intentPda(programs.fundHook, args.jobPda, INTENT_KIND_FUND_REQUEST));
           if (already) { fundRequestIntent = false; anyPreexisting = true; }
         }
         if (escrowIntent) {
-          const already = await exists(await intentPda(programs.fundHook, args.jobId, INTENT_KIND_ESCROW));
+          const already = await exists(await intentPda(programs.fundHook, args.jobPda, INTENT_KIND_ESCROW));
           if (already) { escrowIntent = false; anyPreexisting = true; }
         }
       }
@@ -3313,7 +3359,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         if (subscriptionAlreadyActive) {
           proposedTerms = false;
         } else {
-          const already = await exists(await proposedTermsPda(programs.subHook, args.jobId));
+          const already = await exists(await proposedTermsPda(programs.subHook, args.jobPda));
           if (already) { proposedTerms = false; anyPreexisting = true; }
         }
       }
@@ -3322,7 +3368,6 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ...programs,
         payer: args.signer,
         jobPda: args.jobPda,
-        jobId: args.jobId,
         clientAddress: args.clientAddress,
         providerAddress: args.providerAddress,
         fundRequestIntent,
@@ -3365,14 +3410,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   private async deriveJobPda(
     chainId: number,
     client: Address,
-    jobCounter: bigint
+    seed: bigint
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: this.programAddress(chainId),
       seeds: [
         getUtf8Encoder().encode("job"),
         getAddressEncoder().encode(client),
-        getU64Encoder().encode(jobCounter),
+        getU64Encoder().encode(seed),
       ],
     });
     return pda;
@@ -3409,21 +3454,22 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
   }
 
   /**
-   * Intent PDAs are job-scoped — ["intent", job_id, kind] with kind
-   * 0 = fund-request, 1 = escrow. Derived from the job id alone, so prepare
-   * never predicts the hook's global intent counter (predicting it raced
-   * whenever two intent-creating transactions were in flight).
+   * Intent PDAs are job-scoped — ["intent", job_key, kind] with kind
+   * 0 = fund-request, 1 = escrow, where job_key is the job account's own
+   * address. Derived from the job's address alone, so prepare never predicts
+   * the hook's global intent counter (predicting it raced whenever two
+   * intent-creating transactions were in flight).
    */
   private async deriveIntentPda(
     hookProgram: Address,
-    jobId: bigint,
+    job: Address,
     kind: typeof INTENT_KIND_FUND_REQUEST | typeof INTENT_KIND_ESCROW
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: hookProgram,
       seeds: [
         getUtf8Encoder().encode("intent"),
-        getU64Encoder().encode(jobId),
+        getAddressEncoder().encode(job),
         new Uint8Array([kind]),
       ],
     });
@@ -3432,13 +3478,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
   private async deriveFundRequestIntentIdPda(
     hookProgram: Address,
-    jobId: bigint
+    job: Address
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: hookProgram,
       seeds: [
         getUtf8Encoder().encode("fund_request_intent_id"),
-        getU64Encoder().encode(jobId),
+        getAddressEncoder().encode(job),
       ],
     });
     return pda;
@@ -3446,13 +3492,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
   private async deriveProviderEscrowIntentIdPda(
     hookProgram: Address,
-    jobId: bigint
+    job: Address
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: hookProgram,
       seeds: [
         getUtf8Encoder().encode("provider_escrow_intent_id"),
-        getU64Encoder().encode(jobId),
+        getAddressEncoder().encode(job),
       ],
     });
     return pda;
@@ -3460,13 +3506,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
   private async deriveEscrowAuthorityPda(
     hookProgram: Address,
-    jobId: bigint
+    job: Address
   ): Promise<Address> {
     const [pda] = await getProgramDerivedAddress({
       programAddress: hookProgram,
       seeds: [
         getUtf8Encoder().encode("escrow_authority"),
-        getU64Encoder().encode(jobId),
+        getAddressEncoder().encode(job),
       ],
     });
     return pda;
@@ -3486,6 +3532,53 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
+  /**
+   * The per-job escrow token account, program-derived so its ADDRESS is
+   * unique to the job. `vault.mint` is authoritative — there is exactly one
+   * vault per job and a token account's mint is immutable once initialized —
+   * which is what makes reading the mint back from the fetched vault safe on
+   * every exit path (submit/complete/reject/claimRefund), instead of trusting
+   * a caller-supplied or separately-stored mint.
+   */
+  private async deriveVaultPda(chainId: number, jobPda: Address): Promise<Address> {
+    const [pda] = await getProgramDerivedAddress({
+      programAddress: this.programAddress(chainId),
+      seeds: [
+        getUtf8Encoder().encode("vault"),
+        getAddressEncoder().encode(jobPda),
+      ],
+    });
+    return pda;
+  }
+
+  /**
+   * Reads the mint straight off the vault's own bytes rather than decoding the
+   * full SPL token account: no generated fetcher exists for it here (this SDK
+   * has no @solana-program/token dependency), and the mint is the first 32
+   * bytes of the standard Token Program account layout — the same raw-decode
+   * convention getTokenDecimals already uses for a mint account.
+   *
+   * Returns null when the vault does not exist (a zero-budget or not-yet-
+   * funded job), which every caller must treat as "no vault, no mint" rather
+   * than an error.
+   */
+  private async fetchVaultMint(
+    chainId: number,
+    vaultPda: Address
+  ): Promise<Address | null> {
+    const rpc = this.provider.getRpc(chainId);
+    const accountInfo = await rpc
+      .getAccountInfo(vaultPda, { encoding: "base64", commitment: ACP_COMMITMENT })
+      .send();
+    if (!accountInfo.value) return null;
+
+    const data = Uint8Array.from(
+      atob(accountInfo.value.data[0] as string),
+      (c) => c.charCodeAt(0)
+    );
+    return getAddressDecoder().decode(data.subarray(0, 32));
+  }
+
   private async deriveAta(owner: Address, mint: Address): Promise<Address> {
     const TOKEN_PROGRAM_ID =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -3503,17 +3596,38 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return pda;
   }
 
-  private async resolveJobPda(
+  /**
+   * Cache key for a job PDA. Includes the client: `jobId` (the seed passed at
+   * creation) is a caller-chosen u64 that need only be unique PER CLIENT, not
+   * globally — unlike the old acp_state.job_counter-derived id, two different
+   * clients may legitimately pick the same value. A key without the client
+   * would let one client's cache entry silently answer another client's
+   * lookup.
+   */
+  private jobPdaCacheKey(chainId: number, client: Address, jobId: bigint): string {
+    return `${chainId}:${client}:${jobId}`;
+  }
+
+  /**
+   * Resolves the chain-agnostic bigint jobId (the seed passed to createJob)
+   * to the job's actual Solana address. Public because the job's identity IS
+   * that address — anything doing address-level work on a Solana job (PDA
+   * derivation for a hook/router account, a raw account read) needs this, not
+   * just internal lifecycle methods. `clientAddress` defaults to the current
+   * signer, matching every other jobId-keyed method on this class: without an
+   * explicit client, a job is assumed to belong to the caller's own wallet.
+   */
+  async resolveJobPda(
     chainId: number,
     jobId: bigint,
     clientAddress?: string
   ): Promise<Address> {
-    const cacheKey = `${chainId}:${jobId}`;
+    const client = (clientAddress ??
+      this.provider.getSigner().address) as Address;
+    const cacheKey = this.jobPdaCacheKey(chainId, client, jobId);
     const cached = this.jobPdaCache.get(cacheKey);
     if (cached) return cached;
 
-    const client = (clientAddress ??
-      this.provider.getSigner().address) as Address;
     const pda = await this.deriveJobPda(chainId, client, jobId);
     this.jobPdaCache.set(cacheKey, pda);
     return pda;

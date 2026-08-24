@@ -30,9 +30,13 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas/index.js";
+import { findAcpStatePda, findVaultPda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared/index.js";
 
 export const CLAIM_REFUND_DISCRIMINATOR = new Uint8Array([
   15, 16, 30, 161, 255, 228, 97, 60,
@@ -52,7 +56,7 @@ export type ClaimRefundInstruction<
   TAccountVault extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
   TAccountClientTokenAccount extends string | AccountMeta<string> = string,
-  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
+  TAccountSponsor extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -77,9 +81,9 @@ export type ClaimRefundInstruction<
       TAccountClientTokenAccount extends string
         ? WritableAccount<TAccountClientTokenAccount>
         : TAccountClientTokenAccount,
-      TAccountPlatformTreasury extends string
-        ? WritableAccount<TAccountPlatformTreasury>
-        : TAccountPlatformTreasury,
+      TAccountSponsor extends string
+        ? WritableAccount<TAccountSponsor>
+        : TAccountSponsor,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -121,7 +125,7 @@ export type ClaimRefundAsyncInput<
   TAccountVault extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountClientTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   /** Anyone can call — tokens always go to job.client */
@@ -133,7 +137,8 @@ export type ClaimRefundAsyncInput<
   vaultAuthority?: Address<TAccountVaultAuthority>;
   /** Optional: required when the job was Funded/Submitted with budget > 0 */
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -144,7 +149,7 @@ export async function getClaimRefundInstructionAsync<
   TAccountVault extends string,
   TAccountVaultAuthority extends string,
   TAccountClientTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -155,7 +160,7 @@ export async function getClaimRefundInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -168,7 +173,7 @@ export async function getClaimRefundInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram
   >
 > {
@@ -187,10 +192,7 @@ export async function getClaimRefundInstructionAsync<
       value: input.clientTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -201,6 +203,11 @@ export async function getClaimRefundInstructionAsync<
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
+  }
+  if (!accounts.vault.value) {
+    accounts.vault.value = await findVaultPda({
+      job: expectAddress(accounts.job.value),
+    });
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -216,7 +223,7 @@ export async function getClaimRefundInstructionAsync<
       getAccountMeta(accounts.vault),
       getAccountMeta(accounts.vaultAuthority),
       getAccountMeta(accounts.clientTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimRefundInstructionDataEncoder().encode({}),
@@ -229,7 +236,7 @@ export async function getClaimRefundInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram
   >);
 }
@@ -241,7 +248,7 @@ export type ClaimRefundInput<
   TAccountVault extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountClientTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   /** Anyone can call — tokens always go to job.client */
@@ -253,7 +260,8 @@ export type ClaimRefundInput<
   vaultAuthority?: Address<TAccountVaultAuthority>;
   /** Optional: required when the job was Funded/Submitted with budget > 0 */
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -264,7 +272,7 @@ export function getClaimRefundInstruction<
   TAccountVault extends string,
   TAccountVaultAuthority extends string,
   TAccountClientTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
@@ -275,7 +283,7 @@ export function getClaimRefundInstruction<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -287,7 +295,7 @@ export function getClaimRefundInstruction<
   TAccountVault,
   TAccountVaultAuthority,
   TAccountClientTokenAccount,
-  TAccountPlatformTreasury,
+  TAccountSponsor,
   TAccountTokenProgram
 > {
   // Program address.
@@ -305,10 +313,7 @@ export function getClaimRefundInstruction<
       value: input.clientTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -331,7 +336,7 @@ export function getClaimRefundInstruction<
       getAccountMeta(accounts.vault),
       getAccountMeta(accounts.vaultAuthority),
       getAccountMeta(accounts.clientTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
     ],
     data: getClaimRefundInstructionDataEncoder().encode({}),
@@ -344,7 +349,7 @@ export function getClaimRefundInstruction<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram
   >);
 }
@@ -364,7 +369,8 @@ export type ParsedClaimRefundInstruction<
     vaultAuthority?: TAccountMetas[4] | undefined;
     /** Optional: required when the job was Funded/Submitted with budget > 0 */
     clientTokenAccount?: TAccountMetas[5] | undefined;
-    platformTreasury?: TAccountMetas[6] | undefined;
+    /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+    sponsor?: TAccountMetas[6] | undefined;
     tokenProgram?: TAccountMetas[7] | undefined;
   };
   data: ClaimRefundInstructionData;
@@ -403,7 +409,7 @@ export function parseClaimRefundInstruction<
       vault: getNextOptionalAccount(),
       vaultAuthority: getNextOptionalAccount(),
       clientTokenAccount: getNextOptionalAccount(),
-      platformTreasury: getNextOptionalAccount(),
+      sponsor: getNextOptionalAccount(),
       tokenProgram: getNextOptionalAccount(),
     },
     data: getClaimRefundInstructionDataDecoder().decode(instruction.data),

@@ -7,29 +7,31 @@
  */
 
 import {
+  getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
-  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
 export type HookRouterSeeds = {
-  jobId: number | bigint;
+  jobKey: Address;
 };
 
 export async function findHookRouterPda(
   seeds: HookRouterSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
-  const { programAddress = "" as Address<""> } = config;
+  const {
+    programAddress = "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5" as Address<"EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5">,
+  } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
       getBytesEncoder().encode(
         new Uint8Array([104, 111, 111, 107, 95, 114, 111, 117, 116, 101, 114]),
       ),
-      getU64Encoder().encode(seeds.jobId),
+      getAddressEncoder().encode(seeds.jobKey),
     ],
   });
 }

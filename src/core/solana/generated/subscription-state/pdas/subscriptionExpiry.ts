@@ -25,7 +25,9 @@ export async function findSubscriptionExpiryPda(
   seeds: SubscriptionExpirySeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
-  const { programAddress = "" as Address<""> } = config;
+  const {
+    programAddress = "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1" as Address<"5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1">,
+  } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [

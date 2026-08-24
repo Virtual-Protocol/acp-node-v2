@@ -35,7 +35,6 @@ import {
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
-  type WritableSignerAccount,
 } from "@solana/kit";
 import { findSubscriptionExpiryPda } from "../pdas/index.js";
 import { SUBSCRIPTION_STATE_PROGRAM_ADDRESS } from "../programs/index.js";
@@ -69,8 +68,7 @@ export type ActivateSubscriptionInstruction<
   InstructionWithAccounts<
     [
       TAccountPayer extends string
-        ? WritableSignerAccount<TAccountPayer> &
-            AccountSignerMeta<TAccountPayer>
+        ? WritableAccount<TAccountPayer>
         : TAccountPayer,
       TAccountWriterRegistry extends string
         ? ReadonlyAccount<TAccountWriterRegistry>
@@ -147,7 +145,28 @@ export type ActivateSubscriptionAsyncInput<
   TAccountSubscriptionExpiry extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
+  /**
+   * The job's provider. Named, never debited: this handler does not allocate
+   * (see below), so nothing is spent here. It stays in the account list
+   * because the calling hook credits it the `proposed_terms` rent refund
+   * immediately after this CPI returns.
+   *
+   * Deliberately NOT `Signer`. `sub_expiry` is allocated ahead of time by
+   * `pre_create_sub_expiry`, so by the time activation runs there is nothing
+   * to fund and therefore nothing for a signature to authorize. Requiring one
+   * anyway forced the provider to co-sign the evaluator's `complete` — the
+   * only place in the protocol where two independent parties had to sign a
+   * single transaction.
+   *
+   * Authorization does not rest on this account: the caller binds it to the
+   * job's provider (subscription-hook `after_action.rs` requires
+   * `payer_info.key() == terms.provider`), and the provider's consent to
+   * these terms was already recorded — and signed for — when it funded
+   * `proposed_terms` at `set_budget`.
+   *
+   * refund the hook credits after this CPI returns.
+   */
+  payer: Address<TAccountPayer>;
   /**
    * The calling program must be a registered writer.
    * PDA seeded by the writer's program ID. Writer identity validated in handler.
@@ -159,8 +178,13 @@ export type ActivateSubscriptionAsyncInput<
    */
   writerSigner: TransactionSigner<TAccountWriterSigner>;
   /**
-   * init_if_needed is safe: the monotonic expiry check prevents backward
-   * reinitialization and no close path exists for this PDA.
+   * Must already exist — allocated by `pre_create_sub_expiry`. Untyped here
+   * only so its absence surfaces as `SubExpiryNotPreCreated` rather than an
+   * opaque Anchor deserialization failure; the handler does the typed read.
+   * The monotonic expiry check prevents backward reinitialization and no
+   * close path exists for this PDA.
+   *
+   * deserialize in the handler before any field is trusted.
    */
   subscriptionExpiry?: Address<TAccountSubscriptionExpiry>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -262,7 +286,28 @@ export type ActivateSubscriptionInput<
   TAccountSubscriptionExpiry extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
+  /**
+   * The job's provider. Named, never debited: this handler does not allocate
+   * (see below), so nothing is spent here. It stays in the account list
+   * because the calling hook credits it the `proposed_terms` rent refund
+   * immediately after this CPI returns.
+   *
+   * Deliberately NOT `Signer`. `sub_expiry` is allocated ahead of time by
+   * `pre_create_sub_expiry`, so by the time activation runs there is nothing
+   * to fund and therefore nothing for a signature to authorize. Requiring one
+   * anyway forced the provider to co-sign the evaluator's `complete` — the
+   * only place in the protocol where two independent parties had to sign a
+   * single transaction.
+   *
+   * Authorization does not rest on this account: the caller binds it to the
+   * job's provider (subscription-hook `after_action.rs` requires
+   * `payer_info.key() == terms.provider`), and the provider's consent to
+   * these terms was already recorded — and signed for — when it funded
+   * `proposed_terms` at `set_budget`.
+   *
+   * refund the hook credits after this CPI returns.
+   */
+  payer: Address<TAccountPayer>;
   /**
    * The calling program must be a registered writer.
    * PDA seeded by the writer's program ID. Writer identity validated in handler.
@@ -274,8 +319,13 @@ export type ActivateSubscriptionInput<
    */
   writerSigner: TransactionSigner<TAccountWriterSigner>;
   /**
-   * init_if_needed is safe: the monotonic expiry check prevents backward
-   * reinitialization and no close path exists for this PDA.
+   * Must already exist — allocated by `pre_create_sub_expiry`. Untyped here
+   * only so its absence surfaces as `SubExpiryNotPreCreated` rather than an
+   * opaque Anchor deserialization failure; the handler does the typed read.
+   * The monotonic expiry check prevents backward reinitialization and no
+   * close path exists for this PDA.
+   *
+   * deserialize in the handler before any field is trusted.
    */
   subscriptionExpiry: Address<TAccountSubscriptionExpiry>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -367,6 +417,27 @@ export type ParsedActivateSubscriptionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * The job's provider. Named, never debited: this handler does not allocate
+     * (see below), so nothing is spent here. It stays in the account list
+     * because the calling hook credits it the `proposed_terms` rent refund
+     * immediately after this CPI returns.
+     *
+     * Deliberately NOT `Signer`. `sub_expiry` is allocated ahead of time by
+     * `pre_create_sub_expiry`, so by the time activation runs there is nothing
+     * to fund and therefore nothing for a signature to authorize. Requiring one
+     * anyway forced the provider to co-sign the evaluator's `complete` — the
+     * only place in the protocol where two independent parties had to sign a
+     * single transaction.
+     *
+     * Authorization does not rest on this account: the caller binds it to the
+     * job's provider (subscription-hook `after_action.rs` requires
+     * `payer_info.key() == terms.provider`), and the provider's consent to
+     * these terms was already recorded — and signed for — when it funded
+     * `proposed_terms` at `set_budget`.
+     *
+     * refund the hook credits after this CPI returns.
+     */
     payer: TAccountMetas[0];
     /**
      * The calling program must be a registered writer.
@@ -379,8 +450,13 @@ export type ParsedActivateSubscriptionInstruction<
      */
     writerSigner: TAccountMetas[2];
     /**
-     * init_if_needed is safe: the monotonic expiry check prevents backward
-     * reinitialization and no close path exists for this PDA.
+     * Must already exist — allocated by `pre_create_sub_expiry`. Untyped here
+     * only so its absence surfaces as `SubExpiryNotPreCreated` rather than an
+     * opaque Anchor deserialization failure; the handler does the typed read.
+     * The monotonic expiry check prevents backward reinitialization and no
+     * close path exists for this PDA.
+     *
+     * deserialize in the handler before any field is trusted.
      */
     subscriptionExpiry: TAccountMetas[3];
     systemProgram: TAccountMetas[4];

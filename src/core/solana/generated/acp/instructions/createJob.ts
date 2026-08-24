@@ -24,6 +24,8 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
+  getU64Decoder,
+  getU64Encoder,
   getUtf8Decoder,
   getUtf8Encoder,
   transformEncoder,
@@ -44,9 +46,14 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas/index.js";
+import { findAcpStatePda, findJobPda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
+import {
+  expectAddress,
+  expectSome,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared/index.js";
 
 export const CREATE_JOB_DISCRIMINATOR = new Uint8Array([
   178, 130, 217, 110, 100, 27, 82, 119,
@@ -74,7 +81,7 @@ export type CreateJobInstruction<
             AccountSignerMeta<TAccountClient>
         : TAccountClient,
       TAccountAcpState extends string
-        ? WritableAccount<TAccountAcpState>
+        ? ReadonlyAccount<TAccountAcpState>
         : TAccountAcpState,
       TAccountJob extends string ? WritableAccount<TAccountJob> : TAccountJob,
       TAccountHookWhitelist extends string
@@ -89,6 +96,7 @@ export type CreateJobInstruction<
 
 export type CreateJobInstructionData = {
   discriminator: ReadonlyUint8Array;
+  seed: bigint;
   provider: Address;
   evaluator: Address;
   description: string;
@@ -97,6 +105,7 @@ export type CreateJobInstructionData = {
 };
 
 export type CreateJobInstructionDataArgs = {
+  seed: number | bigint;
   provider: Address;
   evaluator: Address;
   description: string;
@@ -108,6 +117,7 @@ export function getCreateJobInstructionDataEncoder(): Encoder<CreateJobInstructi
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["seed", getU64Encoder()],
       ["provider", getAddressEncoder()],
       ["evaluator", getAddressEncoder()],
       ["description", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
@@ -121,6 +131,7 @@ export function getCreateJobInstructionDataEncoder(): Encoder<CreateJobInstructi
 export function getCreateJobInstructionDataDecoder(): Decoder<CreateJobInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["seed", getU64Decoder()],
     ["provider", getAddressDecoder()],
     ["evaluator", getAddressDecoder()],
     ["description", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
@@ -148,10 +159,11 @@ export type CreateJobAsyncInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   acpState?: Address<TAccountAcpState>;
-  job: Address<TAccountJob>;
+  job?: Address<TAccountJob>;
   /** Optional: must be provided if hook_address is Some */
   hookWhitelist?: Address<TAccountHookWhitelist>;
   systemProgram?: Address<TAccountSystemProgram>;
+  seed: CreateJobInstructionDataArgs["seed"];
   provider: CreateJobInstructionDataArgs["provider"];
   evaluator: CreateJobInstructionDataArgs["evaluator"];
   description: CreateJobInstructionDataArgs["description"];
@@ -192,7 +204,7 @@ export async function getCreateJobInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     client: { value: input.client ?? null, isWritable: true },
-    acpState: { value: input.acpState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -208,6 +220,12 @@ export async function getCreateJobInstructionAsync<
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
+  }
+  if (!accounts.job.value) {
+    accounts.job.value = await findJobPda({
+      client: expectAddress(accounts.client.value),
+      seed: expectSome(args.seed),
+    });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -250,6 +268,7 @@ export type CreateJobInput<
   /** Optional: must be provided if hook_address is Some */
   hookWhitelist?: Address<TAccountHookWhitelist>;
   systemProgram?: Address<TAccountSystemProgram>;
+  seed: CreateJobInstructionDataArgs["seed"];
   provider: CreateJobInstructionDataArgs["provider"];
   evaluator: CreateJobInstructionDataArgs["evaluator"];
   description: CreateJobInstructionDataArgs["description"];
@@ -288,7 +307,7 @@ export function getCreateJobInstruction<
   // Original accounts.
   const originalAccounts = {
     client: { value: input.client ?? null, isWritable: true },
-    acpState: { value: input.acpState ?? null, isWritable: true },
+    acpState: { value: input.acpState ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },

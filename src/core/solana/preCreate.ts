@@ -61,7 +61,6 @@ export type PreCreateHookPdaArgs = {
   /** Rent payer — must be the job's provider (programs enforce this). */
   payer: SolanaSigner;
   jobPda: Address;
-  jobId: bigint;
   clientAddress: Address;
   providerAddress: Address;
   /** Pre-create the fund-request intent (kind 0) + its map. */
@@ -106,11 +105,11 @@ export async function buildPreCreateHookPdaIxs(
     intentKinds.length > 0 ? await hookStatePda(args.fundHook!) : null;
   for (const kind of intentKinds) {
     const fundHook = args.fundHook!;
-    const intent = await intentPda(fundHook, args.jobId, kind);
+    const intent = await intentPda(fundHook, args.jobPda, kind);
     const intentMap =
       kind === INTENT_KIND_FUND_REQUEST
-        ? await fundRequestIntentIdPda(fundHook, args.jobId)
-        : await providerEscrowIntentIdPda(fundHook, args.jobId);
+        ? await fundRequestIntentIdPda(fundHook, args.jobPda)
+        : await providerEscrowIntentIdPda(fundHook, args.jobPda);
     ixs.push(
       toLike(
         getPreCreateIntentInstruction(
@@ -120,7 +119,7 @@ export async function buildPreCreateHookPdaIxs(
             job: args.jobPda,
             intent,
             intentMap,
-            jobId: args.jobId,
+            jobKey: args.jobPda,
             kind,
           },
           { programAddress: fundHook },
@@ -137,8 +136,8 @@ export async function buildPreCreateHookPdaIxs(
             payer: args.payer,
             hookState: await hookStatePda(args.subHook),
             job: args.jobPda,
-            proposedTerms: await proposedTermsPda(args.subHook, args.jobId),
-            jobId: args.jobId,
+            proposedTerms: await proposedTermsPda(args.subHook, args.jobPda),
+            jobKey: args.jobPda,
           },
           { programAddress: args.subHook },
         ),

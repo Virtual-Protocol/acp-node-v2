@@ -10,6 +10,7 @@ export * from "./cachedHookMetadata.js";
 export * from "./dewhitelistedHookSkipped.js";
 export * from "./hookAdded.js";
 export * from "./hookRemoved.js";
+export * from "./hookRouterClosed.js";
 export * from "./hooksConfigured.js";
 export * from "./hooksReordered.js";
 export * from "./maxHooksPerJobUpdated.js";

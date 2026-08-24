@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -80,13 +78,13 @@ export type RemoveHookInstruction<
 
 export type RemoveHookInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
 };
 
 export type RemoveHookInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
 };
@@ -95,7 +93,7 @@ export function getRemoveHookInstructionDataEncoder(): FixedSizeEncoder<RemoveHo
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["hook", getAddressEncoder()],
     ]),
@@ -106,7 +104,7 @@ export function getRemoveHookInstructionDataEncoder(): FixedSizeEncoder<RemoveHo
 export function getRemoveHookInstructionDataDecoder(): FixedSizeDecoder<RemoveHookInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hook", getAddressDecoder()],
   ]);
@@ -132,7 +130,7 @@ export type RemoveHookAsyncInput<
   job: Address<TAccountJob>;
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
-  jobId: RemoveHookInstructionDataArgs["jobId"];
+  jobKey: RemoveHookInstructionDataArgs["jobKey"];
   action: RemoveHookInstructionDataArgs["action"];
   hook: RemoveHookInstructionDataArgs["hook"];
 };
@@ -182,7 +180,7 @@ export async function getRemoveHookInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
@@ -220,7 +218,7 @@ export type RemoveHookInput<
   job: Address<TAccountJob>;
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
-  jobId: RemoveHookInstructionDataArgs["jobId"];
+  jobKey: RemoveHookInstructionDataArgs["jobKey"];
   action: RemoveHookInstructionDataArgs["action"];
   hook: RemoveHookInstructionDataArgs["hook"];
 };

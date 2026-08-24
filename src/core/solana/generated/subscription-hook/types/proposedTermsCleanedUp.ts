@@ -21,30 +21,44 @@ import {
 } from "@solana/kit";
 
 export type ProposedTermsCleanedUp = {
-  jobId: bigint;
+  jobKey: Address;
+  /**
+   * Provider recorded on the terms. Informational only — it is no longer the
+   * rent destination; see `rent_destination`.
+   */
   provider: Address;
   lamportsRefunded: bigint;
+  /** Where the reclaimed rent actually went (the platform treasury). */
+  rentDestination: Address;
 };
 
 export type ProposedTermsCleanedUpArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
+  /**
+   * Provider recorded on the terms. Informational only — it is no longer the
+   * rent destination; see `rent_destination`.
+   */
   provider: Address;
   lamportsRefunded: number | bigint;
+  /** Where the reclaimed rent actually went (the platform treasury). */
+  rentDestination: Address;
 };
 
 export function getProposedTermsCleanedUpEncoder(): FixedSizeEncoder<ProposedTermsCleanedUpArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["provider", getAddressEncoder()],
     ["lamportsRefunded", getU64Encoder()],
+    ["rentDestination", getAddressEncoder()],
   ]);
 }
 
 export function getProposedTermsCleanedUpDecoder(): FixedSizeDecoder<ProposedTermsCleanedUp> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["lamportsRefunded", getU64Decoder()],
+    ["rentDestination", getAddressDecoder()],
   ]);
 }
 

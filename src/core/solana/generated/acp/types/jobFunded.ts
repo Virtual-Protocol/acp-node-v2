@@ -20,17 +20,17 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type JobFunded = { jobId: bigint; client: Address; amount: bigint };
+export type JobFunded = { job: Address; client: Address; amount: bigint };
 
 export type JobFundedArgs = {
-  jobId: number | bigint;
+  job: Address;
   client: Address;
   amount: number | bigint;
 };
 
 export function getJobFundedEncoder(): FixedSizeEncoder<JobFundedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["client", getAddressEncoder()],
     ["amount", getU64Encoder()],
   ]);
@@ -38,7 +38,7 @@ export function getJobFundedEncoder(): FixedSizeEncoder<JobFundedArgs> {
 
 export function getJobFundedDecoder(): FixedSizeDecoder<JobFunded> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["client", getAddressDecoder()],
     ["amount", getU64Decoder()],
   ]);

@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
@@ -26,20 +24,16 @@ import {
 } from "@solana/kit";
 
 export type JobCompleted = {
-  jobId: bigint;
+  job: Address;
   evaluator: Address;
   reason: ReadonlyUint8Array;
 };
 
-export type JobCompletedArgs = {
-  jobId: number | bigint;
-  evaluator: Address;
-  reason: ReadonlyUint8Array;
-};
+export type JobCompletedArgs = JobCompleted;
 
 export function getJobCompletedEncoder(): FixedSizeEncoder<JobCompletedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["evaluator", getAddressEncoder()],
     ["reason", fixEncoderSize(getBytesEncoder(), 32)],
   ]);
@@ -47,7 +41,7 @@ export function getJobCompletedEncoder(): FixedSizeEncoder<JobCompletedArgs> {
 
 export function getJobCompletedDecoder(): FixedSizeDecoder<JobCompleted> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["evaluator", getAddressDecoder()],
     ["reason", fixDecoderSize(getBytesDecoder(), 32)],
   ]);

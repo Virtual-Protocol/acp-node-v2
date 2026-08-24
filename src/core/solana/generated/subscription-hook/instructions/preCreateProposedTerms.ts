@@ -10,12 +10,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -79,18 +79,16 @@ export type PreCreateProposedTermsInstruction<
 
 export type PreCreateProposedTermsInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
 };
 
-export type PreCreateProposedTermsInstructionDataArgs = {
-  jobId: number | bigint;
-};
+export type PreCreateProposedTermsInstructionDataArgs = { jobKey: Address };
 
 export function getPreCreateProposedTermsInstructionDataEncoder(): FixedSizeEncoder<PreCreateProposedTermsInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
     ]),
     (value) => ({
       ...value,
@@ -102,7 +100,7 @@ export function getPreCreateProposedTermsInstructionDataEncoder(): FixedSizeEnco
 export function getPreCreateProposedTermsInstructionDataDecoder(): FixedSizeDecoder<PreCreateProposedTermsInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
   ]);
 }
 
@@ -134,7 +132,7 @@ export type PreCreateProposedTermsAsyncInput<
   /** in handler. */
   proposedTerms: Address<TAccountProposedTerms>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: PreCreateProposedTermsInstructionDataArgs["jobId"];
+  jobKey: PreCreateProposedTermsInstructionDataArgs["jobKey"];
 };
 
 export async function getPreCreateProposedTermsInstructionAsync<
@@ -233,7 +231,7 @@ export type PreCreateProposedTermsInput<
   /** in handler. */
   proposedTerms: Address<TAccountProposedTerms>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: PreCreateProposedTermsInstructionDataArgs["jobId"];
+  jobKey: PreCreateProposedTermsInstructionDataArgs["jobKey"];
 };
 
 export function getPreCreateProposedTermsInstruction<

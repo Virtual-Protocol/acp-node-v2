@@ -1,133 +1,16 @@
 {
-  "accounts": [
-    {
-      "discriminator": [
-        119,
-        227,
-        48,
-        236,
-        101,
-        194,
-        218,
-        85
-      ],
-      "name": "HookMetadata"
-    },
-    {
-      "discriminator": [
-        10,
-        13,
-        71,
-        116,
-        92,
-        105,
-        237,
-        231
-      ],
-      "name": "HookState"
-    }
-  ],
-  "events": [
-    {
-      "discriminator": [
-        81,
-        50,
-        178,
-        8,
-        93,
-        221,
-        142,
-        71
-      ],
-      "name": "ProposedTermsCleanedUp"
-    },
-    {
-      "discriminator": [
-        66,
-        23,
-        25,
-        128,
-        66,
-        95,
-        220,
-        100
-      ],
-      "name": "SubscriptionActivated"
-    },
-    {
-      "discriminator": [
-        168,
-        155,
-        140,
-        139,
-        180,
-        239,
-        130,
-        153
-      ],
-      "name": "SubscriptionTermsProposed"
-    },
-    {
-      "discriminator": [
-        224,
-        53,
-        137,
-        103,
-        246,
-        117,
-        250,
-        1
-      ],
-      "name": "SubscriptionTermsSkipped"
-    }
-  ],
+  "metadata": {
+    "name": "subscription_hook",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Subscription Hook - subscription management for ACP"
+  },
   "instructions": [
     {
-      "accounts": [
-        {
-          "name": "hook_state",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  111,
-                  107,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  101
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "job_id",
-          "type": "u64"
-        },
-        {
-          "name": "action",
-          "type": "u8"
-        },
-        {
-          "name": "opt_params",
-          "type": "bytes"
-        },
-        {
-          "name": "caller",
-          "type": "pubkey"
-        },
-        {
-          "name": "variant",
-          "type": "bytes"
-        }
+      "name": "after_action",
+      "docs": [
+        "Post-action hook callback; validates terms on Fund, activates the",
+        "subscription on Complete, and cleans up proposed terms on Reject."
       ],
       "discriminator": [
         100,
@@ -139,13 +22,6 @@
         250,
         73
       ],
-      "docs": [
-        "Post-action hook callback; validates terms on Fund, activates the",
-        "subscription on Complete, and cleans up proposed terms on Reject."
-      ],
-      "name": "after_action"
-    },
-    {
       "accounts": [
         {
           "name": "hook_state",
@@ -172,8 +48,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -191,6 +67,12 @@
           "name": "variant",
           "type": "bytes"
         }
+      ]
+    },
+    {
+      "name": "before_action",
+      "docs": [
+        "Pre-action hook callback; proposes subscription terms on SetBudget."
       ],
       "discriminator": [
         5,
@@ -202,18 +84,75 @@
         160,
         137
       ],
-      "docs": [
-        "Pre-action hook callback; proposes subscription terms on SetBudget."
-      ],
-      "name": "before_action"
-    },
-    {
       "accounts": [
         {
+          "name": "hook_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "job_key",
+          "type": "pubkey"
+        },
+        {
+          "name": "action",
+          "type": "u8"
+        },
+        {
+          "name": "opt_params",
+          "type": "bytes"
+        },
+        {
+          "name": "caller",
+          "type": "pubkey"
+        },
+        {
+          "name": "variant",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "cleanup_proposed_terms",
+      "docs": [
+        "Permissionless cleanup of the `ProposedTerms` PDA for expired jobs;",
+        "rent always refunds to the original provider."
+      ],
+      "discriminator": [
+        188,
+        204,
+        138,
+        242,
+        152,
+        146,
+        239,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "caller",
           "docs": [
             "Permissionless trigger; the only authorization is that the job has expired."
           ],
-          "name": "caller",
           "signer": true
         },
         {
@@ -239,54 +178,60 @@
           }
         },
         {
+          "name": "job_account",
           "docs": [
-            "(Expired) and identity (job_id) validated in handler."
-          ],
-          "name": "job_account"
+            "(Expired) and identity (job_key) validated in handler."
+          ]
         },
         {
+          "name": "proposed_terms",
           "docs": [
             "Manually closed after the provider check."
           ],
-          "name": "proposed_terms",
           "writable": true
         },
         {
-          "name": "provider",
+          "name": "acp_state",
+          "docs": [
+            "against `hook_state.acp_program`. Read only to source the treasury."
+          ]
+        },
+        {
+          "name": "sponsor",
           "writable": true
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        188,
-        204,
-        138,
-        242,
-        152,
-        146,
-        239,
-        238
-      ],
-      "docs": [
-        "Permissionless cleanup of the `ProposedTerms` PDA for expired jobs;",
-        "rent always refunds to the original provider."
-      ],
-      "name": "cleanup_proposed_terms"
+      ]
     },
     {
+      "name": "initialize",
+      "docs": [
+        "Initializes the subscription-hook state. Caller must be the program's upgrade authority."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
       "accounts": [
         {
           "name": "authority",
-          "signer": true,
-          "writable": true
+          "writable": true,
+          "signer": true
         },
         {
           "name": "hook_state",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -305,14 +250,14 @@
                 ]
               }
             ]
-          },
-          "writable": true
+          }
         },
         {
+          "name": "hook_metadata",
           "docs": [
             "Self-declared metadata read by multi-hook-router for completeness checks."
           ],
-          "name": "hook_metadata",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -334,12 +279,50 @@
                 ]
               }
             ]
-          },
-          "writable": true
+          }
         },
         {
           "name": "program_data",
           "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  82,
+                  35,
+                  22,
+                  92,
+                  78,
+                  34,
+                  36,
+                  77,
+                  223,
+                  4,
+                  88,
+                  68,
+                  137,
+                  148,
+                  42,
+                  102,
+                  63,
+                  194,
+                  165,
+                  181,
+                  196,
+                  243,
+                  93,
+                  127,
+                  58,
+                  161,
+                  228,
+                  131,
+                  1,
+                  90,
+                  114,
+                  14
+                ]
+              }
+            ],
             "program": {
               "kind": "const",
               "value": [
@@ -376,51 +359,12 @@
                 0,
                 0
               ]
-            },
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  20,
-                  0,
-                  166,
-                  80,
-                  93,
-                  113,
-                  128,
-                  167,
-                  240,
-                  179,
-                  33,
-                  165,
-                  80,
-                  28,
-                  221,
-                  130,
-                  51,
-                  63,
-                  58,
-                  69,
-                  102,
-                  183,
-                  31,
-                  211,
-                  194,
-                  2,
-                  150,
-                  90,
-                  229,
-                  86,
-                  114,
-                  131
-                ]
-              }
-            ]
+            }
           }
         },
         {
-          "address": "11111111111111111111111111111111",
-          "name": "system_program"
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -432,32 +376,34 @@
           "name": "subscription_state_program",
           "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "docs": [
-        "Initializes the subscription-hook state. Caller must be the program's upgrade authority."
-      ],
-      "name": "initialize"
+      ]
     },
     {
+      "name": "pre_create_proposed_terms",
+      "docs": [
+        "Pre-creates the proposed_terms PDA for a job, zeroed, rent paid by the",
+        "job's provider at a CPI depth the paymaster can prefund. Idempotent:",
+        "no-op when the account already exists."
+      ],
+      "discriminator": [
+        30,
+        108,
+        232,
+        212,
+        189,
+        31,
+        122,
+        234
+      ],
       "accounts": [
         {
+          "name": "payer",
           "docs": [
             "Rent payer; must be the job's provider (the wallet before_action",
             "debits, and the refund recipient stored in the live proposal later)."
           ],
-          "name": "payer",
-          "signer": true,
-          "writable": true
+          "writable": true,
+          "signer": true
         },
         {
           "name": "hook_state",
@@ -482,61 +428,122 @@
           }
         },
         {
+          "name": "job",
           "docs": [
             "via `deserialize_job` against `hook_state.acp_program`."
-          ],
-          "name": "job"
+          ]
         },
         {
+          "name": "proposed_terms",
           "docs": [
             "in handler."
           ],
-          "name": "proposed_terms",
           "writable": true
         },
         {
-          "address": "11111111111111111111111111111111",
-          "name": "system_program"
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         }
-      ],
-      "discriminator": [
-        30,
-        108,
-        232,
-        212,
-        189,
-        31,
-        122,
-        234
-      ],
-      "docs": [
-        "Pre-creates the proposed_terms PDA for a job, zeroed, rent paid by the",
-        "job's provider at a CPI depth the paymaster can prefund. Idempotent:",
-        "no-op when the account already exists."
-      ],
-      "name": "pre_create_proposed_terms"
+      ]
     }
   ],
-  "metadata": {
-    "description": "Subscription Hook - subscription management for ACP",
-    "name": "subscription_hook",
-    "spec": "0.1.0",
-    "version": "0.1.0"
-  },
+  "accounts": [
+    {
+      "name": "HookMetadata",
+      "discriminator": [
+        119,
+        227,
+        48,
+        236,
+        101,
+        194,
+        218,
+        85
+      ]
+    },
+    {
+      "name": "HookState",
+      "discriminator": [
+        10,
+        13,
+        71,
+        116,
+        92,
+        105,
+        237,
+        231
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ProposedTermsCleanedUp",
+      "discriminator": [
+        81,
+        50,
+        178,
+        8,
+        93,
+        221,
+        142,
+        71
+      ]
+    },
+    {
+      "name": "SubscriptionActivated",
+      "discriminator": [
+        66,
+        23,
+        25,
+        128,
+        66,
+        95,
+        220,
+        100
+      ]
+    },
+    {
+      "name": "SubscriptionTermsProposed",
+      "discriminator": [
+        168,
+        155,
+        140,
+        139,
+        180,
+        239,
+        130,
+        153
+      ]
+    },
+    {
+      "name": "SubscriptionTermsSkipped",
+      "discriminator": [
+        224,
+        53,
+        137,
+        103,
+        246,
+        117,
+        250,
+        1
+      ]
+    }
+  ],
   "types": [
     {
+      "name": "HookMetadata",
       "docs": [
         "Self-declared selectors this hook implements; read by the multi-hook router.",
         "Bitmask: bit 0 = SetBudget, 1 = Fund, 2 = Submit, 3 = Complete, 4 = Reject."
       ],
-      "name": "HookMetadata",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "required_selectors",
@@ -546,16 +553,16 @@
             "name": "bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "HookState",
       "docs": [
         "Global hook state — stores config for the subscription hook."
       ],
-      "name": "HookState",
       "type": {
+        "kind": "struct",
         "fields": [
           {
             "name": "acp_program",
@@ -569,43 +576,54 @@
             "name": "bump",
             "type": "u8"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "ProposedTermsCleanedUp",
       "docs": [
         "`ProposedTerms` PDA closed via `cleanup_proposed_terms` after job expiry."
       ],
-      "name": "ProposedTermsCleanedUp",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "provider",
+            "docs": [
+              "Provider recorded on the terms. Informational only — it is no longer the",
+              "rent destination; see `rent_destination`."
+            ],
             "type": "pubkey"
           },
           {
             "name": "lamports_refunded",
             "type": "u64"
+          },
+          {
+            "name": "rent_destination",
+            "docs": [
+              "Where the reclaimed rent actually went (the platform treasury)."
+            ],
+            "type": "pubkey"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "SubscriptionActivated",
       "docs": [
         "Subscription activated after `complete`."
       ],
-      "name": "SubscriptionActivated",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "package_id",
@@ -623,20 +641,20 @@
             "name": "duration",
             "type": "i64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "SubscriptionTermsProposed",
       "docs": [
         "Provider proposed subscription terms during `set_budget`."
       ],
-      "name": "SubscriptionTermsProposed",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "package_id",
@@ -646,21 +664,21 @@
             "name": "duration",
             "type": "i64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     },
     {
+      "name": "SubscriptionTermsSkipped",
       "docs": [
         "Terms proposal skipped; client already has an active subscription for",
         "this (provider, package_id)."
       ],
-      "name": "SubscriptionTermsSkipped",
       "type": {
+        "kind": "struct",
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "package_id",
@@ -670,8 +688,7 @@
             "name": "current_expiry",
             "type": "i64"
           }
-        ],
-        "kind": "struct"
+        ]
       }
     }
   ]

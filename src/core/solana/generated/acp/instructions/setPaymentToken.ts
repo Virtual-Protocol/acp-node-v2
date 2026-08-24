@@ -10,8 +10,6 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressDecoder,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -27,114 +25,111 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
-  type WritableSignerAccount,
 } from "@solana/kit";
 import { findAcpStatePda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
 import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
 
-export const MIGRATE_STATE_DISCRIMINATOR = new Uint8Array([
-  34, 189, 226, 222, 218, 156, 19, 213,
+export const SET_PAYMENT_TOKEN_DISCRIMINATOR = new Uint8Array([
+  155, 213, 140, 249, 53, 59, 20, 5,
 ]);
 
-export function getMigrateStateDiscriminatorBytes() {
+export function getSetPaymentTokenDiscriminatorBytes() {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    MIGRATE_STATE_DISCRIMINATOR,
+    SET_PAYMENT_TOKEN_DISCRIMINATOR,
   );
 }
 
-export type MigrateStateInstruction<
+export type SetPaymentTokenInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
+  TAccountPaymentToken extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
       TAccountAuthority extends string
-        ? WritableSignerAccount<TAccountAuthority> &
+        ? ReadonlySignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
       TAccountAcpState extends string
         ? WritableAccount<TAccountAcpState>
         : TAccountAcpState,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
+      TAccountPaymentToken extends string
+        ? ReadonlyAccount<TAccountPaymentToken>
+        : TAccountPaymentToken,
       ...TRemainingAccounts,
     ]
   >;
 
-export type MigrateStateInstructionData = {
+export type SetPaymentTokenInstructionData = {
   discriminator: ReadonlyUint8Array;
-  sponsor: Address;
 };
 
-export type MigrateStateInstructionDataArgs = { sponsor: Address };
+export type SetPaymentTokenInstructionDataArgs = {};
 
-export function getMigrateStateInstructionDataEncoder(): FixedSizeEncoder<MigrateStateInstructionDataArgs> {
+export function getSetPaymentTokenInstructionDataEncoder(): FixedSizeEncoder<SetPaymentTokenInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["sponsor", getAddressEncoder()],
-    ]),
-    (value) => ({ ...value, discriminator: MIGRATE_STATE_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: SET_PAYMENT_TOKEN_DISCRIMINATOR }),
   );
 }
 
-export function getMigrateStateInstructionDataDecoder(): FixedSizeDecoder<MigrateStateInstructionData> {
+export function getSetPaymentTokenInstructionDataDecoder(): FixedSizeDecoder<SetPaymentTokenInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["sponsor", getAddressDecoder()],
   ]);
 }
 
-export function getMigrateStateInstructionDataCodec(): FixedSizeCodec<
-  MigrateStateInstructionDataArgs,
-  MigrateStateInstructionData
+export function getSetPaymentTokenInstructionDataCodec(): FixedSizeCodec<
+  SetPaymentTokenInstructionDataArgs,
+  SetPaymentTokenInstructionData
 > {
   return combineCodec(
-    getMigrateStateInstructionDataEncoder(),
-    getMigrateStateInstructionDataDecoder(),
+    getSetPaymentTokenInstructionDataEncoder(),
+    getSetPaymentTokenInstructionDataDecoder(),
   );
 }
 
-export type MigrateStateAsyncInput<
+export type SetPaymentTokenAsyncInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPaymentToken extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  /** field (offset [8..40]) against the signer in the handler. */
   acpState?: Address<TAccountAcpState>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  sponsor: MigrateStateInstructionDataArgs["sponsor"];
+  /**
+   * Typed as `Mint` so the new value must be a real SPL mint that exists,
+   * the same guarantee `initialize` gives. This also makes a zero-address
+   * value unrepresentable, so no explicit check is needed.
+   */
+  paymentToken: Address<TAccountPaymentToken>;
 };
 
-export async function getMigrateStateInstructionAsync<
+export async function getSetPaymentTokenInstructionAsync<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountSystemProgram extends string,
+  TAccountPaymentToken extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: MigrateStateAsyncInput<
+  input: SetPaymentTokenAsyncInput<
     TAccountAuthority,
     TAccountAcpState,
-    TAccountSystemProgram
+    TAccountPaymentToken
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  MigrateStateInstruction<
+  SetPaymentTokenInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountSystemProgram
+    TAccountPaymentToken
   >
 > {
   // Program address.
@@ -143,25 +138,18 @@ export async function getMigrateStateInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    paymentToken: { value: input.paymentToken ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
@@ -169,49 +157,50 @@ export async function getMigrateStateInstructionAsync<
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.paymentToken),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode(
-      args as MigrateStateInstructionDataArgs,
-    ),
+    data: getSetPaymentTokenInstructionDataEncoder().encode({}),
     programAddress,
-  } as MigrateStateInstruction<
+  } as SetPaymentTokenInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountSystemProgram
+    TAccountPaymentToken
   >);
 }
 
-export type MigrateStateInput<
+export type SetPaymentTokenInput<
   TAccountAuthority extends string = string,
   TAccountAcpState extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPaymentToken extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  /** field (offset [8..40]) against the signer in the handler. */
   acpState: Address<TAccountAcpState>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  sponsor: MigrateStateInstructionDataArgs["sponsor"];
+  /**
+   * Typed as `Mint` so the new value must be a real SPL mint that exists,
+   * the same guarantee `initialize` gives. This also makes a zero-address
+   * value unrepresentable, so no explicit check is needed.
+   */
+  paymentToken: Address<TAccountPaymentToken>;
 };
 
-export function getMigrateStateInstruction<
+export function getSetPaymentTokenInstruction<
   TAccountAuthority extends string,
   TAccountAcpState extends string,
-  TAccountSystemProgram extends string,
+  TAccountPaymentToken extends string,
   TProgramAddress extends Address = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
 >(
-  input: MigrateStateInput<
+  input: SetPaymentTokenInput<
     TAccountAuthority,
     TAccountAcpState,
-    TAccountSystemProgram
+    TAccountPaymentToken
   >,
   config?: { programAddress?: TProgramAddress },
-): MigrateStateInstruction<
+): SetPaymentTokenInstruction<
   TProgramAddress,
   TAccountAuthority,
   TAccountAcpState,
-  TAccountSystemProgram
+  TAccountPaymentToken
 > {
   // Program address.
   const programAddress =
@@ -219,65 +208,58 @@ export function getMigrateStateInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    paymentToken: { value: input.paymentToken ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
-  // Resolve default values.
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
-
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta(accounts.authority),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.systemProgram),
+      getAccountMeta(accounts.paymentToken),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode(
-      args as MigrateStateInstructionDataArgs,
-    ),
+    data: getSetPaymentTokenInstructionDataEncoder().encode({}),
     programAddress,
-  } as MigrateStateInstruction<
+  } as SetPaymentTokenInstruction<
     TProgramAddress,
     TAccountAuthority,
     TAccountAcpState,
-    TAccountSystemProgram
+    TAccountPaymentToken
   >);
 }
 
-export type ParsedMigrateStateInstruction<
+export type ParsedSetPaymentTokenInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    /** field (offset [8..40]) against the signer in the handler. */
     acpState: TAccountMetas[1];
-    systemProgram: TAccountMetas[2];
+    /**
+     * Typed as `Mint` so the new value must be a real SPL mint that exists,
+     * the same guarantee `initialize` gives. This also makes a zero-address
+     * value unrepresentable, so no explicit check is needed.
+     */
+    paymentToken: TAccountMetas[2];
   };
-  data: MigrateStateInstructionData;
+  data: SetPaymentTokenInstructionData;
 };
 
-export function parseMigrateStateInstruction<
+export function parseSetPaymentTokenInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedMigrateStateInstruction<TProgram, TAccountMetas> {
+): ParsedSetPaymentTokenInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 3) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
@@ -293,8 +275,8 @@ export function parseMigrateStateInstruction<
     accounts: {
       authority: getNextAccount(),
       acpState: getNextAccount(),
-      systemProgram: getNextAccount(),
+      paymentToken: getNextAccount(),
     },
-    data: getMigrateStateInstructionDataDecoder().decode(instruction.data),
+    data: getSetPaymentTokenInstructionDataDecoder().decode(instruction.data),
   };
 }

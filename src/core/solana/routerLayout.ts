@@ -691,24 +691,31 @@ export async function buildSubCompleteAccounts(
 
 /**
  * reject: post_reject closes proposed_terms — remaining [sysvar,
- * proposed_terms(w), rent_recipient(w)]. The recipient must equal the
- * proposing provider but does NOT sign, so reject stays a prepared builder.
+ * proposed_terms(w), acp_state(ro), sponsor(w)]. The recipient must equal
+ * acp_state.sponsor, matching close_proposed_terms/close_job_hook_accounts:
+ * under gas sponsorship the provider's wallet holds only prefunded sponsor
+ * lamports, so refunding it (the older "pays the proposing provider" design)
+ * would let the provider farm the sponsor by proposing and rejecting in a
+ * loop. The recipient does NOT sign, so reject stays a prepared builder. A
+ * missing proposed_terms PDA still no-ops safely with this same account set
+ * (post_reject returns before checking length once it sees the PDA unset).
  */
 export async function buildSubRejectAccounts(
   ctx: SubscriptionContext,
-  p: { jobPda: Address; provider: Address }
+  p: { jobPda: Address; sponsor: Address }
 ): Promise<AccountMetaLike[]> {
   return [
     w(await mh.hookStatePda(ctx.subHook)),
     ro(SYSVAR_INSTRUCTIONS_ID),
     w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
-    w(p.provider),
+    ro(await mh.acpStatePda(ctx.acp)),
+    w(p.sponsor),
   ];
 }
 
 /**
  * reject fan-out. The subscription hook closes the proposed_terms PDA and
- * refunds its rent to the provider — post_reject requires the recipient
+ * refunds its rent to acp_state.sponsor — post_reject requires the recipient
  * writable but NOT as a signer, so reject stays a single-signer prepared
  * builder. The fund hook returns the escrow bond to the provider.
  */
@@ -716,8 +723,8 @@ export async function buildRejectFanOut(
   ctx: RouterContext,
   p: {
     jobPda: Address;
-    /** Rent refund recipient; must equal the proposed_terms provider. */
-    provider: Address;
+    /** proposed_terms rent refund recipient; must equal acp_state.sponsor. */
+    sponsor: Address;
     escrow: {
       /** Escrow return destination (the provider's ATA in the escrow mint). */
       providerAta: Address;
@@ -729,14 +736,18 @@ export async function buildRejectFanOut(
   const subHookState = await mh.hookStatePda(ctx.subHook);
   const fundHookState = await mh.hookStatePda(ctx.fundHook);
 
-  // post_reject remaining: [sysvar, proposed_terms(w), rent_recipient(w)];
-  // hook_state precedes as the named account. Safe when no terms exist —
-  // the hook no-ops on a missing proposed_terms PDA.
+  // post_reject remaining: [sysvar, proposed_terms(w), acp_state(ro),
+  // sponsor(w)]; hook_state precedes as the named account. Safe when no
+  // terms exist — the hook no-ops on a missing proposed_terms PDA once it
+  // sees the PDA unset, before checking this account count. See
+  // buildSubRejectAccounts (the standalone equivalent) for why the recipient
+  // is the sponsor, not the proposing provider.
   const subSlice: AccountMetaLike[] = [
     w(subHookState),
     ro(SYSVAR_INSTRUCTIONS_ID),
     w(await mh.proposedTermsPda(ctx.subHook, p.jobPda)),
-    w(p.provider),
+    ro(await mh.acpStatePda(ctx.acp)),
+    w(p.sponsor),
   ];
 
   let fundSlice: AccountMetaLike[];

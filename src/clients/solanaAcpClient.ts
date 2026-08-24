@@ -104,7 +104,7 @@ import { getSetBudgetInstruction } from "../core/solana/generated/acp/instructio
 import { getFundInstruction } from "../core/solana/generated/acp/instructions/fund.js";
 import { getSubmitInstructionAsync } from "../core/solana/generated/acp/instructions/submit.js";
 import { getCompleteInstructionAsync } from "../core/solana/generated/acp/instructions/complete.js";
-import { getRejectInstructionAsync } from "../core/solana/generated/acp/instructions/reject.js";
+import { getRejectInstruction } from "../core/solana/generated/acp/instructions/reject.js";
 import { getBatchConfigureHooksInstructionAsync } from "../core/solana/generated/multi-hook-router/instructions/batchConfigureHooks.js";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated.js";
 import { fetchMaybeProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
@@ -1461,7 +1461,14 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       }
     }
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async: the Async variant auto-derives a
+    // real vault PDA whenever this is omitted (findVaultPda), regardless of
+    // whether the job was ever funded — on a never-funded job that reverts
+    // AccountNotInitialized instead of taking the program's None-account
+    // convention (its own program id, read-only, as the sentinel — which is
+    // what an omitted account correctly resolves to here).
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: signer,
         job: jobPda,
@@ -1470,6 +1477,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ...(vaultAuthority ? { vaultAuthority } : {}),
         ...(clientTokenAccount ? { clientTokenAccount } : {}),
         sponsor: acpState.data.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         ...(hookAddress ? { hookProgram: hookAddress } : {}),
         ...(hookAddress
           ? { hookWhitelist: await this.deriveHookWhitelistPda(chainId, hookAddress) }
@@ -2403,10 +2411,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const sctx = subscriptionContext(chainId);
     const extraAccounts = await buildSubRejectAccounts(sctx, {
       jobPda: s.jobPda,
-      provider: s.job.data.provider,
+      sponsor: s.sponsor,
     });
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async — see the plain reject() path:
+    // Async auto-derives a real (non-existent) vault PDA when omitted instead
+    // of the program's None-account sentinel, breaking reject() on a job that
+    // was never funded.
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: s.signer,
         job: s.jobPda,
@@ -2417,6 +2430,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           ? { clientTokenAccount: s.clientTokenAccount }
           : {}),
         sponsor: s.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         hookProgram: sctx.subHook,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, sctx.subHook),
         reason: s.reasonBytes,
@@ -3174,11 +3188,16 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
 
     const fanOut = await buildRejectFanOut(ctx, {
       jobPda: s.jobPda,
-      provider: job.data.provider,
+      sponsor: s.sponsor,
       escrow,
     });
 
-    const ix = await getRejectInstructionAsync(
+    // Sync builder, deliberately not Async — see the plain reject() path:
+    // Async auto-derives a real (non-existent) vault PDA when omitted instead
+    // of the program's None-account sentinel, breaking reject() on a job that
+    // was never funded.
+    const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+    const ix = getRejectInstruction(
       {
         caller: s.signer,
         job: s.jobPda,
@@ -3189,6 +3208,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           ? { clientTokenAccount: s.clientTokenAccount }
           : {}),
         sponsor: s.sponsor,
+        tokenProgram: TOKEN_PROGRAM_ID,
         hookProgram: ctx.router,
         hookWhitelist: await this.deriveHookWhitelistPda(chainId, ctx.router),
         reason: s.reasonBytes,

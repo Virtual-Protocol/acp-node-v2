@@ -45,6 +45,32 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "lookup table not found",
   "lookup table index out of bounds",
   "lookup table owner should be",
+  // Kora paths. The broadcast-lag patterns above are provider-agnostic and
+  // already cover Kora's broadcast retries; any Kora-specific transient strings
+  // (fee-payer node lag / simulation) are added here once captured on devnet.
+  // Do NOT add speculative strings — a wrong match would retry a genuinely
+  // failed transaction. Kora's insufficient-payment / policy rejections are
+  // terminal and must stay OUT of this list.
+  //
+  // Captured on devnet: Kora reads the agent's balance and runs its simulation
+  // as two separate calls, and refuses to sponsor when the node advanced a slot
+  // between them ("...at the same slot (1 apart); refusing to sponsor"). That is
+  // the node racing itself under load, not a defect in the transaction — the
+  // same class as every lag pattern above, and it resolves on a resend. Matched
+  // on the stable prefix; the "(N apart)" parenthetical varies by slot delta.
+  "could not read the agent balance and the simulation at the same slot",
+];
+
+// A transaction that ran out of compute units, in every shape the failure
+// surfaces: the runtime log line ("exceeded CUs meter at BPF instruction"),
+// the InstructionError variant ("ComputationalBudgetExceeded"), and the
+// transaction-level error name ("ComputeBudgetExceeded"). Matched on the
+// flattened error chain, so preflight log walls, broadcast rejections, and
+// confirmed on-chain failures all register.
+const COMPUTE_BUDGET_EXCEEDED_PATTERNS = [
+  "computebudgetexceeded",
+  "computationalbudgetexceeded",
+  "exceeded cus meter",
 ];
 
 // Deterministic failures that must fail FAST even when they appear in a
@@ -55,7 +81,24 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
 // the numeric code alone can never make an error retryable.
 const NON_RETRYABLE_FEE_PAYER_PATTERNS = [
   "incompletehookaccountset",
+  // Compute exhaustion is deterministic for a given instruction set and
+  // limit: resending the same transaction consumes the same units. On the
+  // Kora-sponsored path the recovery is a NEW prepare with forceMaxCuLimit
+  // (see sendKoraSponsoredTransaction's backstop), not a resend.
+  ...COMPUTE_BUDGET_EXCEEDED_PATTERNS,
 ];
+
+/**
+ * True when the error is a compute-budget exhaustion, whichever phase raised
+ * it (preflight, broadcast, or on-chain confirmation). Used by the
+ * Kora-sponsored path to decide its one forceMaxCuLimit re-prepare.
+ */
+export function isComputeBudgetExceededError(err: unknown): boolean {
+  const text = collectErrorText(err);
+  return COMPUTE_BUDGET_EXCEEDED_PATTERNS.some((pattern) =>
+    text.includes(pattern),
+  );
+}
 
 /**
  * Flattens an error and its `cause` chain into a single lowercased string.

@@ -143,6 +143,72 @@ export class KoraClient {
     };
   }
 
+  /**
+   * Server-side prefund sizing: submits an UNFUNDED transaction (ACP
+   * instructions only, no System transfers) and receives it back with the
+   * rent prefund sized and inserted by the ACP server.
+   *
+   * This method is handled by the authenticated proxy itself and never
+   * reaches the Kora node — the server is the only author of prefund
+   * transfers, so the SDK carries no probe constant, no sizing simulation,
+   * and no System instruction builder. `neededLamports` of 0 means the bytes
+   * came back untouched.
+   *
+   * The server is also the sole author of the compute-unit limit: it strips
+   * any ComputeBudget content the submitted transaction carries and inserts
+   * its own right-sized SetComputeUnitLimit. `forceMaxCuLimit` asks it to
+   * insert the maximum limit (1_400_000) instead of the sized one — the
+   * retry backstop for a transaction whose sized limit proved too small.
+   */
+  async prepareSponsoredTransaction(
+    transactionBase64: string,
+    options?: { forceMaxCuLimit?: boolean },
+  ): Promise<{
+    transaction: string;
+    neededLamports: bigint;
+  }> {
+    const r = await this.call<{
+      transaction?: string;
+      needed_lamports?: number | string;
+      neededLamports?: number | string;
+    }>("prepareSponsoredTransaction", {
+      transaction: transactionBase64,
+      ...(options?.forceMaxCuLimit ? { forceMaxCuLimit: true } : {}),
+    });
+    if (!r.transaction) {
+      throw new Error(
+        "Kora prepareSponsoredTransaction returned no transaction",
+      );
+    }
+    return {
+      transaction: r.transaction,
+      neededLamports: BigInt(r.needed_lamports ?? r.neededLamports ?? 0),
+    };
+  }
+
+  /**
+   * The node's effective configuration.
+   *
+   * Read for two settings that decide whether the SDK may sign in PARALLEL
+   * with Kora rather than after it (Kora only ever writes its own signature
+   * slot, so the two signatures are independent — but only if the node leaves
+   * the message alone):
+   *
+   * - `kora.force_sig_verify` — when true the node verifies signatures during
+   *   simulation, so a not-yet-user-signed transaction is rejected. The
+   *   per-request `sig_verify` defaults to false, so this flag is the only
+   *   thing that turns it on.
+   * - `kora.lighthouse` — when enabled the node APPENDS a fee-payer assertion
+   *   instruction, which changes the message bytes after the user has signed
+   *   them and invalidates a parallel signature.
+   *
+   * Returned untyped: the shape is the node's whole config and only these two
+   * paths matter here, so a typed mirror would rot without buying anything.
+   */
+  async getConfig(): Promise<Record<string, unknown>> {
+    return this.call<Record<string, unknown>>("getConfig", {});
+  }
+
   /** Co-sign as fee payer; returns the fully-signed base64 transaction. */
   async signTransaction(transactionBase64: string): Promise<string> {
     const r = await this.call<{

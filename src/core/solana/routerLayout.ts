@@ -75,7 +75,13 @@ export type RouterContext = {
   subState: Address;
 };
 
-/** Every job fan-out leg sets an explicit CU limit; two hook CPIs exceed the 200k default. */
+/**
+ * Every job fan-out leg sets an explicit CU limit; two hook CPIs exceed the
+ * 200k default. On the Kora-sponsored path this instruction is STRIPPED
+ * before prepare — the server authors a right-sized SetComputeUnitLimit
+ * there — so the blanket limit only ever reaches the flows with no prepare
+ * step (Alchemy-sponsored, SPL-paid, self-pay).
+ */
 export const ROUTER_CU_LIMIT = 1_400_000;
 
 export function cuLimitIx(units: number = ROUTER_CU_LIMIT): SolanaInstructionLike {

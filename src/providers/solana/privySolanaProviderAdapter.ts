@@ -1,5 +1,4 @@
 import {
-  AccountRole,
   compressTransactionMessageUsingAddressLookupTables,
   createSolanaRpc,
   createSolanaRpcFromTransport,
@@ -52,7 +51,10 @@ import {
   ApprovalRequiredError,
   awaitApproval,
 } from "../../core/approvalGate.js";
-import { withFeePayerRetry } from "./feePayerRetry.js";
+import {
+  withFeePayerRetry,
+  isComputeBudgetExceededError,
+} from "./feePayerRetry.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
 import {
@@ -62,7 +64,6 @@ import {
 } from "./koraClient.js";
 import {
   buildSplTransferInstructions,
-  getSolBalance,
   getSplTokenBalance,
 } from "../../core/solana/wallet.js";
 
@@ -84,70 +85,15 @@ import {
 const ATA_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
 
-/**
- * Solana's hard transaction size: the 1280-byte IPv6 MTU minus 48 bytes of
- * headers. Not a paymaster limit — every transaction is bound by it, which is
- * why address lookup tables exist.
- */
-const MAX_SOLANA_TX_BYTES = 1232;
+const COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111";
 
-/**
- * Prefund used only to MEASURE, never sent.
- *
- * Sizing works by simulating a funded transaction and seeing what it consumes,
- * so the probe has to be comfortably above any real requirement — the worst
- * measured ACP step is BatchConfigureHooks at 12,486,240 lamports. It is not
- * bound by the node's max_allowed_lamports, because a probe transaction is
- * never submitted; it only has to be within the sponsor's actual balance.
- */
-const PREFUND_PROBE_LAMPORTS = 50_000_000n;
-
-/** System program, and its u32-LE Transfer discriminant. */
-const SYSTEM_PROGRAM_ADDRESS =
-  "11111111111111111111111111111111" as Address;
-const SYSTEM_TRANSFER_DISCRIMINANT = 2;
-
-type SimulateWithAccounts = {
-  value?: {
-    err?: unknown;
-    accounts?: ({ lamports?: number } | null)[];
-    /**
-     * Program logs. Load-bearing for diagnosis, not decoration: an
-     * InstructionError carries a bare code, and an Anchor CPI reports the INNER
-     * program's code against the OUTER instruction index — so `Custom: 6000`
-     * alone could be the router's OnlyACPContract, the ACP program's
-     * Unauthorized, or a hook's InvalidJob. Only the logs name the program at
-     * each invoke depth.
-     */
-    logs?: string[] | null;
-  };
-};
-
-/**
- * The rent prefund: SOL from the sponsor to the acting wallet.
- *
- * Hand-encoded because @solana-program/system is not a dependency and this is
- * the only System instruction the SDK builds. Layout is u32 LE discriminant
- * followed by u64 LE lamports.
- */
-function buildSponsorPrefundInstruction(params: {
-  from: Address;
-  to: Address;
-  lamports: bigint;
-}): SolanaInstructionLike {
-  const data = new Uint8Array(12);
-  const view = new DataView(data.buffer);
-  view.setUint32(0, SYSTEM_TRANSFER_DISCRIMINANT, true);
-  view.setBigUint64(4, params.lamports, true);
-  return {
-    programAddress: SYSTEM_PROGRAM_ADDRESS,
-    accounts: [
-      { address: params.from, role: AccountRole.WRITABLE_SIGNER },
-      { address: params.to, role: AccountRole.WRITABLE },
-    ],
-    data,
-  } as unknown as SolanaInstructionLike;
-}
+// There is deliberately NO prefund logic in this file. The rent prefund — a
+// System transfer from the sponsor into the acting wallet — is sized and
+// INSERTED by the ACP server (`prepareSponsoredTransaction` on the sponsor
+// proxy): the SDK submits a transaction carrying only ACP instructions and
+// Privy-signs whatever comes back. Probe constants, sizing simulation, and
+// System instruction encoding all live server-side, where the caller is
+// authenticated and the checks cannot be skipped.
 
 
 /**
@@ -1556,6 +1502,44 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
+    // The server is the sole author of the compute-unit limit, the same way
+    // it is the sole author of the rent prefund: prepareSponsoredTransaction
+    // strips any ComputeBudget content and inserts a right-sized
+    // SetComputeUnitLimit, and its sign path refuses SetComputeUnitPrice.
+    // The blanket cuLimitIx the clients attach (shared with the Alchemy /
+    // SPL-paid / self-pay flows, which have no prepare step to re-insert a
+    // limit) is dropped here so the submitted transaction carries none.
+    const bareInstructions = instructions.filter(
+      (ix) => (ix.programAddress as string) !== COMPUTE_BUDGET_PROGRAM_ID,
+    );
+    try {
+      return await this.sendKoraSponsoredAttempt(
+        chainId,
+        bareInstructions,
+        options,
+        false,
+      );
+    } catch (err) {
+      // Backstop for a sized limit that proved too small: exactly one re-run
+      // of the whole flow from prepare, asking the server for the maximum
+      // limit. Non-compute failures (blockhash expiry, insufficient funds,
+      // policy rejections) rethrow — they already had their retry path.
+      if (!isComputeBudgetExceededError(err)) throw err;
+      return this.sendKoraSponsoredAttempt(
+        chainId,
+        bareInstructions,
+        options,
+        true,
+      );
+    }
+  }
+
+  private async sendKoraSponsoredAttempt(
+    chainId: number,
+    instructions: SolanaInstructionLike[],
+    options: SendInstructionsOptions | undefined,
+    forceMaxCuLimit: boolean,
+  ): Promise<string> {
     const client = this._koraSponsorClients.get(chainId);
     if (!client) {
       throw new Error(`No Kora sponsor client configured for chain ${chainId}`);
@@ -1571,55 +1555,38 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           .send();
         lastSeenSlot = context.slot;
 
-        const compose = (ixs: SolanaInstructionLike[]) =>
-          applySendOptions(
-            pipe(
-              createTransactionMessage({ version: 0 }),
-              (m) => setTransactionMessageFeePayer(payer.signerAddress, m),
-              (m) =>
-                setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-              (m) => appendTransactionMessageInstructions(ixs, m),
+        const unfundedBase64 = Buffer.from(
+          getTransactionEncoder().encode(
+            compileTransaction(
+              applySendOptions(
+                pipe(
+                  createTransactionMessage({ version: 0 }),
+                  (m) => setTransactionMessageFeePayer(payer.signerAddress, m),
+                  (m) =>
+                    setTransactionMessageLifetimeUsingBlockhash(
+                      latestBlockhash,
+                      m,
+                    ),
+                  (m) => appendTransactionMessageInstructions(instructions, m),
+                ),
+                options,
+              ),
             ),
-            options,
+          ),
+        ).toString("base64");
+
+        // The server sizes AND inserts the rent prefund — the SDK never
+        // authors a transfer out of the sponsor. It also enforces the
+        // 1232-byte wire limit and refuses a transaction that fails
+        // simulation even when funded, so those errors surface here verbatim.
+        // The prepared bytes are signed EXACTLY as returned: no blockhash
+        // refresh, no instruction changes — any retry goes back through
+        // prepare instead of rebuilding locally.
+        const { transaction: finalBase64 } =
+          await client.prepareSponsoredTransaction(
+            unfundedBase64,
+            forceMaxCuLimit ? { forceMaxCuLimit: true } : undefined,
           );
-        const encode = (msg: ReturnType<typeof compose>) =>
-          Buffer.from(
-            getTransactionEncoder().encode(compileTransaction(msg)),
-          ).toString("base64");
-
-        const needed = await this.measureRentRequirement(
-          chainId,
-          (ixs) => encode(compose(ixs)),
-          instructions,
-          payer.signerAddress,
-        );
-
-        const finalIxs =
-          needed > 0n
-            ? [
-                buildSponsorPrefundInstruction({
-                  from: payer.signerAddress,
-                  to: this._signer.address,
-                  lamports: needed,
-                }),
-                ...instructions,
-              ]
-            : instructions;
-
-        const finalBase64 = encode(compose(finalIxs));
-
-        // A Solana transaction cannot exceed 1232 bytes — the 1280-byte IPv6
-        // MTU minus headers. The prefund instruction pushes an already-large
-        // ACP batch closer to that ceiling, and the failure it causes on the
-        // way out is opaque, so fail here where the cause is obvious.
-        const wireBytes = Buffer.from(finalBase64, "base64").length;
-        if (wireBytes > MAX_SOLANA_TX_BYTES) {
-          throw new Error(
-            `Sponsored transaction is ${wireBytes} bytes, over the ${MAX_SOLANA_TX_BYTES}-byte limit ` +
-              `(the rent prefund adds ~${wireBytes - Buffer.from(encode(compose(instructions)), "base64").length}). ` +
-              `Compress the account list with an address lookup table.`,
-          );
-        }
 
         const userSigned = await this.signTransactionViaPrivy(finalBase64);
         const fullySigned = await client.signTransaction(userSigned);
@@ -1664,98 +1631,6 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     const payer = await client.getPayerSigner();
     this._koraSponsorPayer.set(chainId, payer);
     return payer;
-  }
-
-  /**
-   * How many lamports the acting wallet needs, measured by simulating a FUNDED
-   * transaction and seeing what it actually consumes.
-   *
-   * Why funded, not bare: the wallet holds 0 SOL by design, so an un-prefunded
-   * ACP action simply fails simulation at the first account creation. There is
-   * no shortfall to read off a transaction that never got far enough to spend
-   * anything. Handing it a generous probe lets every account actually be
-   * created, and the lamports that leave the wallet ARE the requirement.
-   *
-   * Measuring consumption is depth-independent: it asks "what did this cost?"
-   * rather than "where is an account created?", so it covers rent created any
-   * number of CPIs deep, including by programs whose instructions cannot be
-   * statically parsed.
-   *
-   * Fails closed rather than guessing when the simulation cannot be sized.
-   */
-  private async measureRentRequirement(
-    chainId: number,
-    compose: (ixs: SolanaInstructionLike[]) => string,
-    instructions: SolanaInstructionLike[],
-    sponsor: Address,
-  ): Promise<bigint> {
-    const rpc = this.getRpc(chainId);
-    const owner = this._signer.address;
-    const before = BigInt(await getSolBalance(rpc as never, owner));
-
-    const probeBase64 = compose([
-      buildSponsorPrefundInstruction({
-        from: sponsor,
-        to: owner,
-        lamports: PREFUND_PROBE_LAMPORTS,
-      }),
-      ...instructions,
-    ]);
-
-    const sim = await (
-      rpc as unknown as {
-        simulateTransaction: (
-          tx: string,
-          cfg: Record<string, unknown>,
-        ) => { send: () => Promise<SimulateWithAccounts> };
-      }
-    )
-      .simulateTransaction(probeBase64, {
-        encoding: "base64",
-        sigVerify: false,
-        replaceRecentBlockhash: true,
-        accounts: { encoding: "base64", addresses: [owner] },
-      })
-      .send();
-
-    if (sim?.value?.err) {
-      // stringifyBigIntSafe, not JSON.stringify: @solana/kit parses RPC numbers
-      // as BigInt, so a simulation error such as
-      // {InstructionError:[1,{Custom:6000n}]} makes plain stringify THROW
-      // ("cannot serialize BigInt"), replacing the real reason with a
-      // serialization error — on the one line whose job is to report the reason.
-      const logs = sim.value.logs ?? [];
-      throw new Error(
-        `Refusing to sponsor: the transaction fails simulation even with ${PREFUND_PROBE_LAMPORTS} ` +
-          `lamports of rent available, so the failure is not a funding problem: ${stringifyBigIntSafe(sim.value.err)}` +
-          // The logs are appended, not summarised: the error code alone does not
-          // identify the rejecting program, and this throw is the only place the
-          // caller ever sees why a sponsored send was refused. Without them a
-          // guard that fired correctly is indistinguishable from a broken one.
-          (logs.length ? `\nProgram logs:\n${logs.join("\n")}` : ""),
-      );
-    }
-
-    const after = sim?.value?.accounts?.[0]?.lamports;
-    if (after === undefined || after === null) {
-      throw new Error(
-        "Refusing to sponsor: simulation did not report the wallet balance, so the prefund cannot be sized",
-      );
-    }
-
-    // The probe went in; whatever did not come back out is the requirement.
-    const leftover = BigInt(after) - before;
-    const needed = PREFUND_PROBE_LAMPORTS - leftover;
-
-    if (needed < 0n) {
-      // The wallet ended richer than the probe made it, which should be
-      // impossible. Something else is moving SOL in, and sizing a prefund off
-      // it would be guesswork.
-      throw new Error(
-        `Refusing to sponsor: the wallet gained ${-needed} lamports beyond the probe; cannot size a prefund`,
-      );
-    }
-    return needed;
   }
 
   private async sendSponsoredTransaction(

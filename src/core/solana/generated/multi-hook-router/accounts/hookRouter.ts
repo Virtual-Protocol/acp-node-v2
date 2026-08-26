@@ -23,8 +23,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -57,7 +55,7 @@ export function getHookRouterDiscriminatorBytes() {
 
 export type HookRouter = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   setBudgetHooks: Array<Address>;
   fundHooks: Array<Address>;
   submitHooks: Array<Address>;
@@ -69,7 +67,7 @@ export type HookRouter = {
 };
 
 export type HookRouterArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   setBudgetHooks: Array<Address>;
   fundHooks: Array<Address>;
   submitHooks: Array<Address>;
@@ -85,7 +83,7 @@ export function getHookRouterEncoder(): Encoder<HookRouterArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["setBudgetHooks", getArrayEncoder(getAddressEncoder())],
       ["fundHooks", getArrayEncoder(getAddressEncoder())],
       ["submitHooks", getArrayEncoder(getAddressEncoder())],
@@ -102,7 +100,7 @@ export function getHookRouterEncoder(): Encoder<HookRouterArgs> {
 export function getHookRouterDecoder(): Decoder<HookRouter> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["setBudgetHooks", getArrayDecoder(getAddressDecoder())],
     ["fundHooks", getArrayDecoder(getAddressDecoder())],
     ["submitHooks", getArrayDecoder(getAddressDecoder())],

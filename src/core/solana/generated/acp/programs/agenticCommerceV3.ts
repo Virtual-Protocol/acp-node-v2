@@ -32,8 +32,10 @@ import {
   parseSetBudgetInstruction,
   parseSetEvaluatorFeeInstruction,
   parseSetPauseInstruction,
+  parseSetPaymentTokenInstruction,
   parseSetPlatformFeeInstruction,
   parseSetProviderInstruction,
+  parseSetSponsorInstruction,
   parseSubmitInstruction,
   type ParsedAcceptAuthorityInstruction,
   type ParsedAddHookWhitelistInstruction,
@@ -50,8 +52,10 @@ import {
   type ParsedSetBudgetInstruction,
   type ParsedSetEvaluatorFeeInstruction,
   type ParsedSetPauseInstruction,
+  type ParsedSetPaymentTokenInstruction,
   type ParsedSetPlatformFeeInstruction,
   type ParsedSetProviderInstruction,
+  type ParsedSetSponsorInstruction,
   type ParsedSubmitInstruction,
 } from "../instructions/index.js";
 
@@ -122,8 +126,10 @@ export enum AgenticCommerceV3Instruction {
   SetBudget,
   SetEvaluatorFee,
   SetPause,
+  SetPaymentToken,
   SetPlatformFee,
   SetProvider,
+  SetSponsor,
   Submit,
 }
 
@@ -300,6 +306,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([155, 213, 140, 249, 53, 59, 20, 5]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetPaymentToken;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([19, 70, 111, 182, 156, 58, 208, 203]),
       ),
       0,
@@ -317,6 +334,17 @@ export function identifyAgenticCommerceV3Instruction(
     )
   ) {
     return AgenticCommerceV3Instruction.SetProvider;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([217, 184, 101, 32, 234, 70, 199, 138]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetSponsor;
   }
   if (
     containsBytes(
@@ -383,11 +411,17 @@ export type ParsedAgenticCommerceV3Instruction<
       instructionType: AgenticCommerceV3Instruction.SetPause;
     } & ParsedSetPauseInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.SetPaymentToken;
+    } & ParsedSetPaymentTokenInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.SetPlatformFee;
     } & ParsedSetPlatformFeeInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.SetProvider;
     } & ParsedSetProviderInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SetSponsor;
+    } & ParsedSetSponsorInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.Submit;
     } & ParsedSubmitInstruction<TProgram>);
@@ -502,6 +536,13 @@ export function parseAgenticCommerceV3Instruction<TProgram extends string>(
         ...parseSetPauseInstruction(instruction),
       };
     }
+    case AgenticCommerceV3Instruction.SetPaymentToken: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AgenticCommerceV3Instruction.SetPaymentToken,
+        ...parseSetPaymentTokenInstruction(instruction),
+      };
+    }
     case AgenticCommerceV3Instruction.SetPlatformFee: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -514,6 +555,13 @@ export function parseAgenticCommerceV3Instruction<TProgram extends string>(
       return {
         instructionType: AgenticCommerceV3Instruction.SetProvider,
         ...parseSetProviderInstruction(instruction),
+      };
+    }
+    case AgenticCommerceV3Instruction.SetSponsor: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AgenticCommerceV3Instruction.SetSponsor,
+        ...parseSetSponsorInstruction(instruction),
       };
     }
     case AgenticCommerceV3Instruction.Submit: {

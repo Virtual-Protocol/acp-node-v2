@@ -15,6 +15,7 @@ import {
   addSignersToTransactionMessage,
   signTransactionMessageWithSigners,
   getBase64EncodedWireTransaction,
+  getTransactionDecoder,
   type Address,
   type Rpc,
   type Signature,
@@ -44,7 +45,6 @@ import {
   MULTI_HOOK_ROUTER_ADDRESSES,
   SUBSCRIPTION_HOOK_ADDRESSES,
   SUBSCRIPTION_STATE_ADDRESSES,
-  ALT_PROGRAM_ID,
   defaultSplFeeTokens,
 } from "../../core/constants.js";
 import { ProviderAuthClient } from "../providerAuthClient.js";
@@ -66,16 +66,22 @@ import {
   getSplTokenBalance,
 } from "../../core/solana/wallet.js";
 
-// Sponsorship covers ACP-protocol actions: batches touching the cluster's ACP
-// program, fund-transfer hook, multi-hook router, subscription hook/state, or
-// the Address Lookup Table program (ALT setup for multi-hook jobs). Everything
-// these actions create has rent welded to the acting wallet, so it must stay on
-// the Alchemy sponsored path (prefundRent) rather than the Kora SPL path, which
-// creates only ATAs. Derived per chainId so devnet and mainnet each recognize
-// their own deployments. The chain-keyed maps hold "" for chains where a
-// program isn't deployed (e.g. router/subscription on Solana mainnet), so the
-// filter drops every falsy value, not just undefined. ALT is a fixed native
-// program, identical on every cluster.
+// Sponsorship covers ACP actions: batches touching the cluster's ACP program,
+// fund-transfer hook, or multi-hook router (batchConfigureHooks targets the
+// router program directly). The Associated Token Account program is included
+// so a STANDALONE ATA-creation tx is sponsored too — router fund splits ATA
+// creation into its own tx to keep the fund tx small (see fundViaRouter), and
+// Alchemy's gas policy sponsors ATA-only txs (confirmed via devnet spike).
+// Derived per chainId so devnet and mainnet each recognize their own
+// deployments; the ATA program id is the same on every cluster.
+//
+// The Address Lookup Table program is deliberately NOT sponsorable: sponsoring
+// an ALT create/extend covers only the tx fee, not the ALT account RENT
+// (~0.0084 SOL), which Alchemy's prefundRent doesn't reimburse — so it saves
+// nothing and adds a create→extend sponsor-lag. Router completes avoid the
+// issue entirely by compressing against the persistent complete ALT, created
+// once by the upgrade authority.
+const ATA_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
 
 /**
@@ -178,8 +184,8 @@ function sponsorableProgramIds(chainId: number): ReadonlySet<string> {
         MULTI_HOOK_ROUTER_ADDRESSES[chainId],
         SUBSCRIPTION_HOOK_ADDRESSES[chainId],
         SUBSCRIPTION_STATE_ADDRESSES[chainId],
-        ALT_PROGRAM_ID,
-      ].filter((a): a is string => !!a),
+        ATA_PROGRAM_ID,
+      ].filter((a): a is string => a !== undefined && a !== ""),
     );
     sponsorableCache.set(chainId, set);
   }
@@ -944,7 +950,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private async requestFeePayer(
     chainId: number,
     serializedTransaction: string,
-  ): Promise<string> {
+  ): Promise<{
+    serializedTransaction: string;
+    prefundLamports: bigint | null;
+  }> {
     const rpcProxyUrl = this._rpcProxyUrls.get(chainId);
     if (!rpcProxyUrl || !this._getAuthToken) {
       throw new Error("Gas sponsorship requires a proxied RPC connection");
@@ -976,7 +985,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`,
       );
     }
-    return json.result.serializedTransaction as string;
+    // prefundLamports is returned when prefundRent is true — the amount
+    // Alchemy's rent-prefunding estimator decided to front (absent when no
+    // simulation ran).
+    const rawPrefund = json.result.prefundLamports;
+    return {
+      serializedTransaction: json.result.serializedTransaction,
+      prefundLamports: rawPrefund != null ? BigInt(rawPrefund) : null,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -1019,6 +1035,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
+    // Lookup-table and multi-signer sends self-pay by default, UNLESS the
+    // caller opts into Option B (sponsorLookupTables): then the sponsored path
+    // compresses against the table (Alchemy resolves it — v0 support) AND
+    // carries extra required signers (each partial-signs after Alchemy + Privy;
+    // Alchemy sponsors two-signer txs — confirmed via devnet spike). See
+    // SendInstructionsOptions.
+    const hasExtraSigners = (options?.extraSigners?.length ?? 0) > 0;
+    const hasLookupTables =
+      Object.keys(options?.lookupTables ?? {}).length > 0;
+    const needsSelfPay =
+      !options?.sponsorLookupTables && (hasExtraSigners || hasLookupTables);
+
     // Sponsorship applies only to ACP actions (batches touching this chain's
     // ACP program or hook). Everything else — generic transfers, unrelated
     // instructions — is self-paid.
@@ -1027,6 +1055,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       sponsorable.has(ix.programAddress as string),
     );
     const useSponsorship =
+      !needsSelfPay &&
       this._sponsored &&
       this._rpcProxyUrls.has(chainId) &&
       !!this._getAuthToken &&
@@ -1093,7 +1122,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * Standard flow: user pays own fees.
+   * Standard flow: user pays own fees. Carries any extra required signers
+   * (each partial-signs; signTransactionMessageWithSigners merges) and
+   * compresses against the supplied lookup tables before signing.
    */
   private async sendSelfPayTransaction(
     chainId: number,
@@ -1101,22 +1132,24 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     latestBlockhash: any,
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // Same option handling as the sponsored paths. Self-pay is where an ACP
-    // action lands when sponsorship is unavailable (sponsored: false, no proxy
-    // URL, no auth token), so dropping the caller's lookup tables here would
-    // push a router `complete` back over the 1232-byte limit, and dropping
-    // extraSigners would ship a transaction missing a required signature.
-    const message = applySendOptions(
-      pipe(
-        createTransactionMessage({ version: 0 }),
-        (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
-        (msg) =>
-          setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-        (msg) => appendTransactionMessageInstructions(instructions, msg),
-        (msg) => addSignersToTransactionMessage([this._signer], msg),
-      ),
-      options,
+    let message: any = pipe(
+      createTransactionMessage({ version: 0 }),
+      (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
+      (msg) =>
+        setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+      (msg) => appendTransactionMessageInstructions(instructions, msg),
+      (msg) =>
+        addSignersToTransactionMessage(
+          [this._signer, ...(options?.extraSigners ?? [])],
+          msg,
+        ),
     );
+    if (options?.lookupTables && Object.keys(options.lookupTables).length > 0) {
+      message = compressTransactionMessageUsingAddressLookupTables(
+        message,
+        options.lookupTables as never,
+      );
+    }
 
     const signedTx = await signTransactionMessageWithSigners(message);
     const encodedTx = getBase64EncodedWireTransaction(signedTx);
@@ -1744,30 +1777,63 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           .send();
         lastSeenSlot = context.slot;
 
-        const message = applySendOptions(
-          pipe(
-            createTransactionMessage({ version: 0 }),
-            (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
-            (msg) =>
-              setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-            (msg) => appendTransactionMessageInstructions(instructions, msg),
-          ),
-          options,
+        let message: any = pipe(
+          createTransactionMessage({ version: 0 }),
+          (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
+          (msg) =>
+            setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+          (msg) => appendTransactionMessageInstructions(instructions, msg),
         );
+
+        // Option B: compress against the caller's lookup table before the
+        // fee-payer request. Alchemy simulates versioned txs and resolves the
+        // ALT; its propagation lag is absorbed by the fee-payer retry.
+        if (
+          options?.sponsorLookupTables &&
+          options.lookupTables &&
+          Object.keys(options.lookupTables).length > 0
+        ) {
+          message = compressTransactionMessageUsingAddressLookupTables(
+            message,
+            options.lookupTables as never,
+          );
+        }
 
         const compiled = compileTransaction(message);
         const wireBytes = getTransactionEncoder().encode(compiled);
         const unsignedBase64 = Buffer.from(wireBytes).toString("base64");
 
         // 2. Request gas sponsorship.
-        const sponsoredBase64 = await this.requestFeePayer(
+        const {
+          serializedTransaction: sponsoredBase64,
+          prefundLamports,
+        } = await this.requestFeePayer(chainId, unsignedBase64);
+        const prefundWarning = routerPrefundWarning(
           chainId,
-          unsignedBase64,
+          instructions,
+          prefundLamports,
+          options?.hookRentPreCreated ?? false,
         );
+        if (prefundWarning) console.warn(prefundWarning);
 
         // 3. Sign with Privy (user's signature).
-        const signedBase64 =
-          await this.signTransactionViaPrivy(sponsoredBase64);
+        let signedBase64 = await this.signTransactionViaPrivy(sponsoredBase64);
+
+        // 3b. Option B multi-signer: each extra required signer (e.g. the
+        //     provider co-signing a subscription complete) partial-signs the
+        //     already-signed tx. Signatures are independent — Alchemy's
+        //     fee-payer sig and Privy's user sig are preserved; each signer
+        //     fills only its own slot. Decode → sign → merge → re-encode.
+        if ((options?.extraSigners?.length ?? 0) > 0) {
+          let tx: any = getTransactionDecoder().decode(
+            new Uint8Array(Buffer.from(signedBase64, "base64")),
+          );
+          for (const signer of options!.extraSigners!) {
+            const [sigDict] = await signer.signTransactions([tx]);
+            tx = { ...tx, signatures: { ...tx.signatures, ...sigDict } };
+          }
+          signedBase64 = getBase64EncodedWireTransaction(tx);
+        }
 
         // 4. Broadcast + confirm.
         return this.broadcastAndConfirm(
@@ -1874,10 +1940,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         confirmUntilHeight ??= latest.lastValidBlockHeight;
 
         // 1. Sponsor: Alchemy replaces the placeholder fee payer + signs.
-        const sponsoredBase64 = await this.requestFeePayer(
-          chainId,
-          serializedTransaction,
-        );
+        const { serializedTransaction: sponsoredBase64 } =
+          await this.requestFeePayer(chainId, serializedTransaction);
 
         // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
         //    the user's sig (two required signers, distinct slots).
@@ -1949,17 +2013,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         })
         .send();
     } catch (err: unknown) {
-      const errObj = err as Record<string, unknown>;
-      const context = errObj?.context as Record<string, unknown> | undefined;
-      const cause = errObj?.cause as Record<string, unknown> | undefined;
-      const logs =
-        (context?.logs as string[]) ??
-        (cause?.logs as string[]) ??
-        (errObj?.logs as string[]);
-      if (logs?.length) {
-        throw new Error(`Transaction simulation failed:\n${logs.join("\n")}`);
-      }
-      throw err;
+      throw formatPreflightFailure(err) ?? err;
     }
 
     const { slot } = await confirmTransaction(

@@ -12,8 +12,6 @@ import {
   getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   type Address,
@@ -23,20 +21,16 @@ import {
 } from "@solana/kit";
 
 export type DewhitelistedHookSkipped = {
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
 };
 
-export type DewhitelistedHookSkippedArgs = {
-  jobId: number | bigint;
-  action: number;
-  hook: Address;
-};
+export type DewhitelistedHookSkippedArgs = DewhitelistedHookSkipped;
 
 export function getDewhitelistedHookSkippedEncoder(): FixedSizeEncoder<DewhitelistedHookSkippedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["action", getU8Encoder()],
     ["hook", getAddressEncoder()],
   ]);
@@ -44,7 +38,7 @@ export function getDewhitelistedHookSkippedEncoder(): FixedSizeEncoder<Dewhiteli
 
 export function getDewhitelistedHookSkippedDecoder(): FixedSizeDecoder<DewhitelistedHookSkipped> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hook", getAddressDecoder()],
   ]);

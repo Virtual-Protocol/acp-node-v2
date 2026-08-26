@@ -74,20 +74,30 @@ export type SendInstructionsOptions = {
   preflightCommitment?: Commitment;
   /**
    * Additional required signers beyond the adapter's own signer (e.g. the
-   * provider co-signing a multi-hook complete). Applied on EVERY send path —
-   * sponsored, self-pay and Kora SPL-paid alike. Sponsorship is chosen by
-   * whether the batch touches an ACP program, never by these options.
+   * provider co-signing a multi-hook complete). Presence forces the SELF-PAY
+   * path: the sponsored flow adds only this wallet's signature and cannot
+   * carry a second required signer, so the adapter's signer pays the fee.
    */
   extraSigners?: SolanaSigner[];
   /**
    * Address lookup tables to compress the transaction against, keyed by
    * table address with the table's ON-CHAIN address ordering as the value
    * (see core/solana/lookupTable.ts — never compress against a local list).
-   * Compression is applied on every send path, and always before any size
-   * check: a router `complete` fits only once compressed. The caller is
-   * responsible for having created and warmed the table on-chain first.
+   * By default, presence forces the SELF-PAY path (see extraSigners); pass
+   * `sponsorLookupTables` to instead compress inside the sponsored flow.
    */
   lookupTables?: Record<string, SolanaAddress[]>;
+  /**
+   * Option B — sponsor a lookup-table-compressed and/or multi-signer
+   * transaction instead of self-paying it. When true, the sponsored path
+   * compresses against `lookupTables` before requesting the fee payer (Alchemy
+   * supports versioned v0 txs, so the ALT resolves during its simulation; the
+   * propagation lag is absorbed by the fee-payer retry), and each
+   * `extraSigners` entry partial-signs after Alchemy + Privy (Alchemy sponsors
+   * two-signer txs). Caller is responsible for having created and warmed any
+   * table on-chain first.
+   */
+  sponsorLookupTables?: boolean;
   /**
    * Hook-PDA rents for this action were pre-created in a direct sponsored
    * transaction at CPI height 2 (see core/solana/preCreate.ts). A zero rent
@@ -107,15 +117,6 @@ export interface ISolanaProviderAdapter extends IProviderAdapter {
   getRpc(chainId: number): Rpc<SolanaRpcApi>;
   getSigner(): SolanaSigner;
   signMessage(message: string): Promise<string>;
-  /**
-   * Address that should fund rent for accounts a transaction creates (notably
-   * ATAs). Defaults to the wallet's own signer, so a self-paying wallet funds
-   * its own rent in SOL. Adapters that route non-ACP transactions through an
-   * SPL paymaster (e.g. Kora) return the paymaster's fee-payer here, so the
-   * paymaster fronts the rent in SOL and bills the user in SPL. Pass the result
-   * as the `payer` argument to the wallet.ts instruction builders.
-   */
-  getRentPayer(chainId: number): Promise<string>;
   sendInstructions(
     chainId: number,
     instructions: SolanaInstructionLike[],

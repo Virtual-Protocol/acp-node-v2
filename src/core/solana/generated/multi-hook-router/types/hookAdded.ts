@@ -12,8 +12,6 @@ import {
   getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   type Address,
@@ -23,22 +21,17 @@ import {
 } from "@solana/kit";
 
 export type HookAdded = {
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
   position: number;
 };
 
-export type HookAddedArgs = {
-  jobId: number | bigint;
-  action: number;
-  hook: Address;
-  position: number;
-};
+export type HookAddedArgs = HookAdded;
 
 export function getHookAddedEncoder(): FixedSizeEncoder<HookAddedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["action", getU8Encoder()],
     ["hook", getAddressEncoder()],
     ["position", getU8Encoder()],
@@ -47,7 +40,7 @@ export function getHookAddedEncoder(): FixedSizeEncoder<HookAddedArgs> {
 
 export function getHookAddedDecoder(): FixedSizeDecoder<HookAdded> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hook", getAddressDecoder()],
     ["position", getU8Decoder()],

@@ -14,8 +14,6 @@ import {
   getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type Codec,
   type Decoder,
@@ -25,27 +23,27 @@ import {
 } from "@solana/kit";
 
 export type HookDetached = {
-  jobId: bigint;
+  job: Address;
   /** The hook address that was detached, captured before it is cleared to None. */
   hookAddress: Option<Address>;
 };
 
 export type HookDetachedArgs = {
-  jobId: number | bigint;
+  job: Address;
   /** The hook address that was detached, captured before it is cleared to None. */
   hookAddress: OptionOrNullable<Address>;
 };
 
 export function getHookDetachedEncoder(): Encoder<HookDetachedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["hookAddress", getOptionEncoder(getAddressEncoder())],
   ]);
 }
 
 export function getHookDetachedDecoder(): Decoder<HookDetached> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["hookAddress", getOptionDecoder(getAddressDecoder())],
   ]);
 }

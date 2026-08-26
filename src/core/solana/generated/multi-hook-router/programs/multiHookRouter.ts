@@ -21,6 +21,7 @@ import {
   parseAfterActionInstruction,
   parseBatchConfigureHooksInstruction,
   parseBeforeActionInstruction,
+  parseCloseHookRouterInstruction,
   parseConfigureHooksInstruction,
   parseInitializeInstruction,
   parseRemoveHookInstruction,
@@ -30,6 +31,7 @@ import {
   type ParsedAfterActionInstruction,
   type ParsedBatchConfigureHooksInstruction,
   type ParsedBeforeActionInstruction,
+  type ParsedCloseHookRouterInstruction,
   type ParsedConfigureHooksInstruction,
   type ParsedInitializeInstruction,
   type ParsedRemoveHookInstruction,
@@ -93,6 +95,7 @@ export enum MultiHookRouterInstruction {
   AfterAction,
   BatchConfigureHooks,
   BeforeAction,
+  CloseHookRouter,
   ConfigureHooks,
   Initialize,
   RemoveHook,
@@ -147,6 +150,17 @@ export function identifyMultiHookRouterInstruction(
     )
   ) {
     return MultiHookRouterInstruction.BeforeAction;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([204, 155, 217, 12, 192, 12, 49, 65]),
+      ),
+      0,
+    )
+  ) {
+    return MultiHookRouterInstruction.CloseHookRouter;
   }
   if (
     containsBytes(
@@ -224,6 +238,9 @@ export type ParsedMultiHookRouterInstruction<
       instructionType: MultiHookRouterInstruction.BeforeAction;
     } & ParsedBeforeActionInstruction<TProgram>)
   | ({
+      instructionType: MultiHookRouterInstruction.CloseHookRouter;
+    } & ParsedCloseHookRouterInstruction<TProgram>)
+  | ({
       instructionType: MultiHookRouterInstruction.ConfigureHooks;
     } & ParsedConfigureHooksInstruction<TProgram>)
   | ({
@@ -270,6 +287,13 @@ export function parseMultiHookRouterInstruction<TProgram extends string>(
       return {
         instructionType: MultiHookRouterInstruction.BeforeAction,
         ...parseBeforeActionInstruction(instruction),
+      };
+    }
+    case MultiHookRouterInstruction.CloseHookRouter: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: MultiHookRouterInstruction.CloseHookRouter,
+        ...parseCloseHookRouterInstruction(instruction),
       };
     }
     case MultiHookRouterInstruction.ConfigureHooks: {

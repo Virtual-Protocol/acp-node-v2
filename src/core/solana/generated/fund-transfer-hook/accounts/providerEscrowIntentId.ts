@@ -15,6 +15,8 @@ import {
   fetchEncodedAccounts,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -49,13 +51,13 @@ export function getProviderEscrowIntentIdDiscriminatorBytes() {
 
 export type ProviderEscrowIntentId = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   intentId: bigint;
   bump: number;
 };
 
 export type ProviderEscrowIntentIdArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   intentId: number | bigint;
   bump: number;
 };
@@ -65,7 +67,7 @@ export function getProviderEscrowIntentIdEncoder(): FixedSizeEncoder<ProviderEsc
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["intentId", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
@@ -80,7 +82,7 @@ export function getProviderEscrowIntentIdEncoder(): FixedSizeEncoder<ProviderEsc
 export function getProviderEscrowIntentIdDecoder(): FixedSizeDecoder<ProviderEscrowIntentId> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["intentId", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
@@ -167,5 +169,5 @@ export async function fetchAllMaybeProviderEscrowIntentId(
 }
 
 export function getProviderEscrowIntentIdSize(): number {
-  return 25;
+  return 49;
 }

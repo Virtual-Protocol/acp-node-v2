@@ -23,7 +23,7 @@ import {
 } from "@solana/kit";
 
 export type SubscriptionActivated = {
-  jobId: bigint;
+  jobKey: Address;
   packageId: bigint;
   client: Address;
   provider: Address;
@@ -31,7 +31,7 @@ export type SubscriptionActivated = {
 };
 
 export type SubscriptionActivatedArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   packageId: number | bigint;
   client: Address;
   provider: Address;
@@ -40,7 +40,7 @@ export type SubscriptionActivatedArgs = {
 
 export function getSubscriptionActivatedEncoder(): FixedSizeEncoder<SubscriptionActivatedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["packageId", getU64Encoder()],
     ["client", getAddressEncoder()],
     ["provider", getAddressEncoder()],
@@ -50,7 +50,7 @@ export function getSubscriptionActivatedEncoder(): FixedSizeEncoder<Subscription
 
 export function getSubscriptionActivatedDecoder(): FixedSizeDecoder<SubscriptionActivated> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["packageId", getU64Decoder()],
     ["client", getAddressDecoder()],
     ["provider", getAddressDecoder()],

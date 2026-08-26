@@ -61,17 +61,12 @@ export type AcpState = {
   pendingAuthority: Option<Address>;
   /** SPL mint accepted for job budgets. */
   paymentToken: Address;
-  /** Wallet that receives platform fees and reclaimed vault rent. */
+  /** Wallet that receives platform fees. Rent goes to `sponsor` instead. */
   platformTreasury: Address;
   /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: bigint;
-  /**
-   * Monotonically increasing counter storing the LAST issued job ID
-   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
-   */
-  jobCounter: bigint;
   /** PDA bump seed. */
   bump: number;
   /**
@@ -79,6 +74,16 @@ export type AcpState = {
    * Appended after `bump` so the existing on-chain layout only grows by one byte.
    */
   paused: boolean;
+  /**
+   * Receives reclaimed native rent from every account close. Separate from
+   * `platform_treasury`, which receives SPL fees: under gas sponsorship the
+   * rent was never the user's money nor protocol revenue, it is the sponsor's
+   * float coming back. Appended after `paused` so the layout only grows at
+   * the tail; `migrate_state` backfills it from an explicit argument when
+   * zero, since it must differ from `platform_treasury` and so cannot be
+   * inferred from existing state.
+   */
+  sponsor: Address;
 };
 
 export type AcpStateArgs = {
@@ -88,17 +93,12 @@ export type AcpStateArgs = {
   pendingAuthority: OptionOrNullable<Address>;
   /** SPL mint accepted for job budgets. */
   paymentToken: Address;
-  /** Wallet that receives platform fees and reclaimed vault rent. */
+  /** Wallet that receives platform fees. Rent goes to `sponsor` instead. */
   platformTreasury: Address;
   /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: number | bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: number | bigint;
-  /**
-   * Monotonically increasing counter storing the LAST issued job ID
-   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
-   */
-  jobCounter: number | bigint;
   /** PDA bump seed. */
   bump: number;
   /**
@@ -106,6 +106,16 @@ export type AcpStateArgs = {
    * Appended after `bump` so the existing on-chain layout only grows by one byte.
    */
   paused: boolean;
+  /**
+   * Receives reclaimed native rent from every account close. Separate from
+   * `platform_treasury`, which receives SPL fees: under gas sponsorship the
+   * rent was never the user's money nor protocol revenue, it is the sponsor's
+   * float coming back. Appended after `paused` so the layout only grows at
+   * the tail; `migrate_state` backfills it from an explicit argument when
+   * zero, since it must differ from `platform_treasury` and so cannot be
+   * inferred from existing state.
+   */
+  sponsor: Address;
 };
 
 /** Gets the encoder for {@link AcpStateArgs} account data. */
@@ -119,9 +129,9 @@ export function getAcpStateEncoder(): Encoder<AcpStateArgs> {
       ["platformTreasury", getAddressEncoder()],
       ["platformFeeBp", getU64Encoder()],
       ["evaluatorFeeBp", getU64Encoder()],
-      ["jobCounter", getU64Encoder()],
       ["bump", getU8Encoder()],
       ["paused", getBooleanEncoder()],
+      ["sponsor", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: ACP_STATE_DISCRIMINATOR }),
   );
@@ -137,9 +147,9 @@ export function getAcpStateDecoder(): Decoder<AcpState> {
     ["platformTreasury", getAddressDecoder()],
     ["platformFeeBp", getU64Decoder()],
     ["evaluatorFeeBp", getU64Decoder()],
-    ["jobCounter", getU64Decoder()],
     ["bump", getU8Decoder()],
     ["paused", getBooleanDecoder()],
+    ["sponsor", getAddressDecoder()],
   ]);
 }
 

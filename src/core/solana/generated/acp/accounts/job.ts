@@ -7,8 +7,6 @@
  */
 
 import {
-  addDecoderSizePrefix,
-  addEncoderSizePrefix,
   assertAccountExists,
   assertAccountsExist,
   combineCodec,
@@ -27,14 +25,10 @@ import {
   getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
   getU8Encoder,
-  getUtf8Decoder,
-  getUtf8Encoder,
   transformEncoder,
   type Account,
   type Address,
@@ -67,8 +61,18 @@ export function getJobDiscriminatorBytes() {
 
 export type Job = {
   discriminator: ReadonlyUint8Array;
-  /** Unique identifier: `AcpState.job_counter` after its increment at creation. */
-  jobId: bigint;
+  /**
+   * Client-supplied uniquifier, kept only so the PDA can be re-derived
+   * (`seeds = [b"job", client, seed]`). It is NOT the job's identity and
+   * carries no ordering: two clients may pick the same value, and `init`
+   * rejects a reuse by the same client because the address already exists.
+   *
+   * **The job's identity is its own address**, `job.key()`. That is what the
+   * hooks seed their per-job PDAs from and what the CPI payload carries.
+   * Deriving the address from a shared counter instead made every creation
+   * contend on one account, capping the protocol at one job per slot.
+   */
+  seed: bigint;
   /** The party that created and funds the job. */
   client: Address;
   /** The agent fulfilling the job. `Pubkey::default()` until set via `set_provider`. */
@@ -79,20 +83,10 @@ export type Job = {
   state: JobState;
   /** Token amount escrowed on fund. Zero for zero-budget jobs. */
   budgetAmount: bigint;
-  /** SPL mint for the budget. `None` until `set_budget` is called. */
-  budgetMint: Option<Address>;
-  /** Human-readable description (max 256 bytes). */
-  description: string;
   /** Unix timestamp after which the job may be claimed as expired. */
   expiredAt: bigint;
-  /** Unix timestamp of job creation. */
-  createdAt: bigint;
   /** Optional hook program invoked on before/after action callbacks. */
   hookAddress: Option<Address>;
-  /** 32-byte hash/identifier of the work product, set on submit. */
-  deliverable: ReadonlyUint8Array;
-  /** 32-byte completion or rejection reason, set on complete/reject. */
-  completionReason: ReadonlyUint8Array;
   /** PDA bump for the per-job vault authority. Set during fund. */
   vaultBump: number;
   /** PDA bump seed for this job account. */
@@ -100,8 +94,18 @@ export type Job = {
 };
 
 export type JobArgs = {
-  /** Unique identifier: `AcpState.job_counter` after its increment at creation. */
-  jobId: number | bigint;
+  /**
+   * Client-supplied uniquifier, kept only so the PDA can be re-derived
+   * (`seeds = [b"job", client, seed]`). It is NOT the job's identity and
+   * carries no ordering: two clients may pick the same value, and `init`
+   * rejects a reuse by the same client because the address already exists.
+   *
+   * **The job's identity is its own address**, `job.key()`. That is what the
+   * hooks seed their per-job PDAs from and what the CPI payload carries.
+   * Deriving the address from a shared counter instead made every creation
+   * contend on one account, capping the protocol at one job per slot.
+   */
+  seed: number | bigint;
   /** The party that created and funds the job. */
   client: Address;
   /** The agent fulfilling the job. `Pubkey::default()` until set via `set_provider`. */
@@ -112,20 +116,10 @@ export type JobArgs = {
   state: JobStateArgs;
   /** Token amount escrowed on fund. Zero for zero-budget jobs. */
   budgetAmount: number | bigint;
-  /** SPL mint for the budget. `None` until `set_budget` is called. */
-  budgetMint: OptionOrNullable<Address>;
-  /** Human-readable description (max 256 bytes). */
-  description: string;
   /** Unix timestamp after which the job may be claimed as expired. */
   expiredAt: number | bigint;
-  /** Unix timestamp of job creation. */
-  createdAt: number | bigint;
   /** Optional hook program invoked on before/after action callbacks. */
   hookAddress: OptionOrNullable<Address>;
-  /** 32-byte hash/identifier of the work product, set on submit. */
-  deliverable: ReadonlyUint8Array;
-  /** 32-byte completion or rejection reason, set on complete/reject. */
-  completionReason: ReadonlyUint8Array;
   /** PDA bump for the per-job vault authority. Set during fund. */
   vaultBump: number;
   /** PDA bump seed for this job account. */
@@ -137,19 +131,14 @@ export function getJobEncoder(): Encoder<JobArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["seed", getU64Encoder()],
       ["client", getAddressEncoder()],
       ["provider", getAddressEncoder()],
       ["evaluator", getAddressEncoder()],
       ["state", getJobStateEncoder()],
       ["budgetAmount", getU64Encoder()],
-      ["budgetMint", getOptionEncoder(getAddressEncoder())],
-      ["description", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
       ["expiredAt", getI64Encoder()],
-      ["createdAt", getI64Encoder()],
       ["hookAddress", getOptionEncoder(getAddressEncoder())],
-      ["deliverable", fixEncoderSize(getBytesEncoder(), 32)],
-      ["completionReason", fixEncoderSize(getBytesEncoder(), 32)],
       ["vaultBump", getU8Encoder()],
       ["bump", getU8Encoder()],
     ]),
@@ -161,19 +150,14 @@ export function getJobEncoder(): Encoder<JobArgs> {
 export function getJobDecoder(): Decoder<Job> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["seed", getU64Decoder()],
     ["client", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["evaluator", getAddressDecoder()],
     ["state", getJobStateDecoder()],
     ["budgetAmount", getU64Decoder()],
-    ["budgetMint", getOptionDecoder(getAddressDecoder())],
-    ["description", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
     ["expiredAt", getI64Decoder()],
-    ["createdAt", getI64Decoder()],
     ["hookAddress", getOptionDecoder(getAddressDecoder())],
-    ["deliverable", fixDecoderSize(getBytesDecoder(), 32)],
-    ["completionReason", fixDecoderSize(getBytesDecoder(), 32)],
     ["vaultBump", getU8Decoder()],
     ["bump", getU8Decoder()],
   ]);

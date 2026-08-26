@@ -34,9 +34,13 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas/index.js";
+import { findAcpStatePda, findVaultPda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared/index.js";
 
 export const REJECT_DISCRIMINATOR = new Uint8Array([
   135, 7, 63, 85, 131, 114, 111, 224,
@@ -54,7 +58,7 @@ export type RejectInstruction<
   TAccountVault extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
   TAccountClientTokenAccount extends string | AccountMeta<string> = string,
-  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
+  TAccountSponsor extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountHookProgram extends string | AccountMeta<string> = string,
@@ -81,9 +85,9 @@ export type RejectInstruction<
       TAccountClientTokenAccount extends string
         ? WritableAccount<TAccountClientTokenAccount>
         : TAccountClientTokenAccount,
-      TAccountPlatformTreasury extends string
-        ? WritableAccount<TAccountPlatformTreasury>
-        : TAccountPlatformTreasury,
+      TAccountSponsor extends string
+        ? WritableAccount<TAccountSponsor>
+        : TAccountSponsor,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -144,7 +148,7 @@ export type RejectAsyncInput<
   TAccountVault extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountClientTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
@@ -155,7 +159,8 @@ export type RejectAsyncInput<
   vault?: Address<TAccountVault>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -170,7 +175,7 @@ export async function getRejectInstructionAsync<
   TAccountVault extends string,
   TAccountVaultAuthority extends string,
   TAccountClientTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -183,7 +188,7 @@ export async function getRejectInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -198,7 +203,7 @@ export async function getRejectInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -219,10 +224,7 @@ export async function getRejectInstructionAsync<
       value: input.clientTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -239,6 +241,11 @@ export async function getRejectInstructionAsync<
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
   }
+  if (!accounts.vault.value) {
+    accounts.vault.value = await findVaultPda({
+      job: expectAddress(accounts.job.value),
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
@@ -253,7 +260,7 @@ export async function getRejectInstructionAsync<
       getAccountMeta(accounts.vault),
       getAccountMeta(accounts.vaultAuthority),
       getAccountMeta(accounts.clientTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -270,7 +277,7 @@ export async function getRejectInstructionAsync<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -284,7 +291,7 @@ export type RejectInput<
   TAccountVault extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountClientTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
@@ -295,7 +302,8 @@ export type RejectInput<
   vault?: Address<TAccountVault>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -310,7 +318,7 @@ export function getRejectInstruction<
   TAccountVault extends string,
   TAccountVaultAuthority extends string,
   TAccountClientTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -323,7 +331,7 @@ export function getRejectInstruction<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -337,7 +345,7 @@ export function getRejectInstruction<
   TAccountVault,
   TAccountVaultAuthority,
   TAccountClientTokenAccount,
-  TAccountPlatformTreasury,
+  TAccountSponsor,
   TAccountTokenProgram,
   TAccountHookProgram,
   TAccountHookWhitelist
@@ -357,10 +365,7 @@ export function getRejectInstruction<
       value: input.clientTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -388,7 +393,7 @@ export function getRejectInstruction<
       getAccountMeta(accounts.vault),
       getAccountMeta(accounts.vaultAuthority),
       getAccountMeta(accounts.clientTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -405,7 +410,7 @@ export function getRejectInstruction<
     TAccountVault,
     TAccountVaultAuthority,
     TAccountClientTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -424,7 +429,8 @@ export type ParsedRejectInstruction<
     vault?: TAccountMetas[3] | undefined;
     vaultAuthority?: TAccountMetas[4] | undefined;
     clientTokenAccount?: TAccountMetas[5] | undefined;
-    platformTreasury?: TAccountMetas[6] | undefined;
+    /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+    sponsor?: TAccountMetas[6] | undefined;
     tokenProgram?: TAccountMetas[7] | undefined;
     hookProgram?: TAccountMetas[8] | undefined;
     hookWhitelist?: TAccountMetas[9] | undefined;
@@ -465,7 +471,7 @@ export function parseRejectInstruction<
       vault: getNextOptionalAccount(),
       vaultAuthority: getNextOptionalAccount(),
       clientTokenAccount: getNextOptionalAccount(),
-      platformTreasury: getNextOptionalAccount(),
+      sponsor: getNextOptionalAccount(),
       tokenProgram: getNextOptionalAccount(),
       hookProgram: getNextOptionalAccount(),
       hookWhitelist: getNextOptionalAccount(),

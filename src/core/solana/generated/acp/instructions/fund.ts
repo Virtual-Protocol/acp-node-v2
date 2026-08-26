@@ -36,9 +36,13 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas/index.js";
+import { findAcpStatePda, findVaultPda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared/index.js";
 
 export const FUND_DISCRIMINATOR = new Uint8Array([
   218, 188, 111, 221, 152, 113, 174, 7,
@@ -172,7 +176,13 @@ export type FundAsyncInput<
   acpState?: Address<TAccountAcpState>;
   /** Optional: required when budget > 0 */
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  /** Optional: required when budget > 0 (init vault for escrow) */
+  /**
+   * Per-job escrow vault, program-derived so its ADDRESS is unique to the job.
+   * That, not a stored mint, is what makes `vault.mint` authoritative on every
+   * exit path: there is exactly one vault per job and a token account's mint is
+   * immutable once initialized, so no substitute can be passed in its place.
+   * Required when budget > 0.
+   */
   vault?: Address<TAccountVault>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   mint?: Address<TAccountMint>;
@@ -276,6 +286,11 @@ export async function getFundInstructionAsync<
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
   }
+  if (!accounts.vault.value) {
+    accounts.vault.value = await findVaultPda({
+      job: expectAddress(accounts.job.value),
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
@@ -344,7 +359,13 @@ export type FundInput<
   acpState: Address<TAccountAcpState>;
   /** Optional: required when budget > 0 */
   clientTokenAccount?: Address<TAccountClientTokenAccount>;
-  /** Optional: required when budget > 0 (init vault for escrow) */
+  /**
+   * Per-job escrow vault, program-derived so its ADDRESS is unique to the job.
+   * That, not a stored mint, is what makes `vault.mint` authoritative on every
+   * exit path: there is exactly one vault per job and a token account's mint is
+   * immutable once initialized, so no substitute can be passed in its place.
+   * Required when budget > 0.
+   */
   vault?: Address<TAccountVault>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   mint?: Address<TAccountMint>;
@@ -502,7 +523,13 @@ export type ParsedFundInstruction<
     acpState: TAccountMetas[2];
     /** Optional: required when budget > 0 */
     clientTokenAccount?: TAccountMetas[3] | undefined;
-    /** Optional: required when budget > 0 (init vault for escrow) */
+    /**
+     * Per-job escrow vault, program-derived so its ADDRESS is unique to the job.
+     * That, not a stored mint, is what makes `vault.mint` authoritative on every
+     * exit path: there is exactly one vault per job and a token account's mint is
+     * immutable once initialized, so no substitute can be passed in its place.
+     * Required when budget > 0.
+     */
     vault?: TAccountMetas[4] | undefined;
     vaultAuthority?: TAccountMetas[5] | undefined;
     mint?: TAccountMetas[6] | undefined;

@@ -8,32 +8,35 @@
 
 import {
   combineCodec,
+  getAddressDecoder,
+  getAddressEncoder,
   getI64Decoder,
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
   getU64Encoder,
+  type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
 export type SubscriptionTermsProposed = {
-  jobId: bigint;
+  jobKey: Address;
   packageId: bigint;
   duration: bigint;
 };
 
 export type SubscriptionTermsProposedArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   packageId: number | bigint;
   duration: number | bigint;
 };
 
 export function getSubscriptionTermsProposedEncoder(): FixedSizeEncoder<SubscriptionTermsProposedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["packageId", getU64Encoder()],
     ["duration", getI64Encoder()],
   ]);
@@ -41,7 +44,7 @@ export function getSubscriptionTermsProposedEncoder(): FixedSizeEncoder<Subscrip
 
 export function getSubscriptionTermsProposedDecoder(): FixedSizeDecoder<SubscriptionTermsProposed> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["packageId", getU64Decoder()],
     ["duration", getI64Decoder()],
   ]);

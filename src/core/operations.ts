@@ -26,7 +26,7 @@ export type PreparedSolanaTx = OperationResult<SolanaInstructionLike[]> & {
   /**
    * Optional send options the client attaches at prepare time and
    * `submitPrepared` forwards to the adapter — e.g. a persistent lookup table
-   * to compress against (router reject). The
+   * to compress against plus `sponsorLookupTables` (router reject). The
    * lookup table must already exist on-chain (no creation side-effect at
    * prepare time).
    */

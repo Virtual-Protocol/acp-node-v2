@@ -7,15 +7,15 @@
  */
 
 import {
+  getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
-  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
 export type ProviderEscrowIntentIdSeeds = {
-  jobId: number | bigint;
+  jobKey: Address;
 };
 
 export async function findProviderEscrowIntentIdPda(
@@ -34,7 +34,7 @@ export async function findProviderEscrowIntentIdPda(
           119, 95, 105, 110, 116, 101, 110, 116, 95, 105, 100,
         ]),
       ),
-      getU64Encoder().encode(seeds.jobId),
+      getAddressEncoder().encode(seeds.jobKey),
     ],
   });
 }

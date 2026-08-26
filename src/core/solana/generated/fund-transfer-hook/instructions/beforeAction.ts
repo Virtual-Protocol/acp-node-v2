@@ -20,8 +20,6 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -67,7 +65,7 @@ export type BeforeActionInstruction<
 
 export type BeforeActionInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -75,7 +73,7 @@ export type BeforeActionInstructionData = {
 };
 
 export type BeforeActionInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -86,7 +84,7 @@ export function getBeforeActionInstructionDataEncoder(): Encoder<BeforeActionIns
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
       ["caller", getAddressEncoder()],
@@ -99,7 +97,7 @@ export function getBeforeActionInstructionDataEncoder(): Encoder<BeforeActionIns
 export function getBeforeActionInstructionDataDecoder(): Decoder<BeforeActionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
     ["caller", getAddressDecoder()],
@@ -120,7 +118,7 @@ export function getBeforeActionInstructionDataCodec(): Codec<
 export type BeforeActionAsyncInput<TAccountHookState extends string = string> =
   {
     hookState?: Address<TAccountHookState>;
-    jobId: BeforeActionInstructionDataArgs["jobId"];
+    jobKey: BeforeActionInstructionDataArgs["jobKey"];
     action: BeforeActionInstructionDataArgs["action"];
     optParams: BeforeActionInstructionDataArgs["optParams"];
     caller: BeforeActionInstructionDataArgs["caller"];
@@ -167,7 +165,7 @@ export async function getBeforeActionInstructionAsync<
 
 export type BeforeActionInput<TAccountHookState extends string = string> = {
   hookState: Address<TAccountHookState>;
-  jobId: BeforeActionInstructionDataArgs["jobId"];
+  jobKey: BeforeActionInstructionDataArgs["jobKey"];
   action: BeforeActionInstructionDataArgs["action"];
   optParams: BeforeActionInstructionDataArgs["optParams"];
   caller: BeforeActionInstructionDataArgs["caller"];

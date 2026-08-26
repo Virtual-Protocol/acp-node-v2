@@ -52,7 +52,6 @@ export type SetBudgetInstruction<
   TProgram extends string = typeof AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountJob extends string | AccountMeta<string> = string,
-  TAccountBudgetMint extends string | AccountMeta<string> = string,
   TAccountAcpState extends string | AccountMeta<string> = string,
   TAccountHookProgram extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
@@ -66,9 +65,6 @@ export type SetBudgetInstruction<
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
       TAccountJob extends string ? WritableAccount<TAccountJob> : TAccountJob,
-      TAccountBudgetMint extends string
-        ? ReadonlyAccount<TAccountBudgetMint>
-        : TAccountBudgetMint,
       TAccountAcpState extends string
         ? ReadonlyAccount<TAccountAcpState>
         : TAccountAcpState,
@@ -125,14 +121,12 @@ export function getSetBudgetInstructionDataCodec(): Codec<
 export type SetBudgetAsyncInput<
   TAccountCaller extends string = string,
   TAccountJob extends string = string,
-  TAccountBudgetMint extends string = string,
   TAccountAcpState extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   job: Address<TAccountJob>;
-  budgetMint: Address<TAccountBudgetMint>;
   acpState?: Address<TAccountAcpState>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -143,7 +137,6 @@ export type SetBudgetAsyncInput<
 export async function getSetBudgetInstructionAsync<
   TAccountCaller extends string,
   TAccountJob extends string,
-  TAccountBudgetMint extends string,
   TAccountAcpState extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -152,7 +145,6 @@ export async function getSetBudgetInstructionAsync<
   input: SetBudgetAsyncInput<
     TAccountCaller,
     TAccountJob,
-    TAccountBudgetMint,
     TAccountAcpState,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -163,7 +155,6 @@ export async function getSetBudgetInstructionAsync<
     TProgramAddress,
     TAccountCaller,
     TAccountJob,
-    TAccountBudgetMint,
     TAccountAcpState,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -177,7 +168,6 @@ export async function getSetBudgetInstructionAsync<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
-    budgetMint: { value: input.budgetMint ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -200,7 +190,6 @@ export async function getSetBudgetInstructionAsync<
     accounts: [
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.job),
-      getAccountMeta(accounts.budgetMint),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -213,7 +202,6 @@ export async function getSetBudgetInstructionAsync<
     TProgramAddress,
     TAccountCaller,
     TAccountJob,
-    TAccountBudgetMint,
     TAccountAcpState,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -223,14 +211,12 @@ export async function getSetBudgetInstructionAsync<
 export type SetBudgetInput<
   TAccountCaller extends string = string,
   TAccountJob extends string = string,
-  TAccountBudgetMint extends string = string,
   TAccountAcpState extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   job: Address<TAccountJob>;
-  budgetMint: Address<TAccountBudgetMint>;
   acpState: Address<TAccountAcpState>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -241,7 +227,6 @@ export type SetBudgetInput<
 export function getSetBudgetInstruction<
   TAccountCaller extends string,
   TAccountJob extends string,
-  TAccountBudgetMint extends string,
   TAccountAcpState extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -250,7 +235,6 @@ export function getSetBudgetInstruction<
   input: SetBudgetInput<
     TAccountCaller,
     TAccountJob,
-    TAccountBudgetMint,
     TAccountAcpState,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -260,7 +244,6 @@ export function getSetBudgetInstruction<
   TProgramAddress,
   TAccountCaller,
   TAccountJob,
-  TAccountBudgetMint,
   TAccountAcpState,
   TAccountHookProgram,
   TAccountHookWhitelist
@@ -273,7 +256,6 @@ export function getSetBudgetInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: false },
     job: { value: input.job ?? null, isWritable: true },
-    budgetMint: { value: input.budgetMint ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -291,7 +273,6 @@ export function getSetBudgetInstruction<
     accounts: [
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.job),
-      getAccountMeta(accounts.budgetMint),
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -304,7 +285,6 @@ export function getSetBudgetInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountJob,
-    TAccountBudgetMint,
     TAccountAcpState,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -319,10 +299,9 @@ export type ParsedSetBudgetInstruction<
   accounts: {
     caller: TAccountMetas[0];
     job: TAccountMetas[1];
-    budgetMint: TAccountMetas[2];
-    acpState: TAccountMetas[3];
-    hookProgram?: TAccountMetas[4] | undefined;
-    hookWhitelist?: TAccountMetas[5] | undefined;
+    acpState: TAccountMetas[2];
+    hookProgram?: TAccountMetas[3] | undefined;
+    hookWhitelist?: TAccountMetas[4] | undefined;
   };
   data: SetBudgetInstructionData;
 };
@@ -335,7 +314,7 @@ export function parseSetBudgetInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSetBudgetInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 5) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -356,7 +335,6 @@ export function parseSetBudgetInstruction<
     accounts: {
       caller: getNextAccount(),
       job: getNextAccount(),
-      budgetMint: getNextAccount(),
       acpState: getNextAccount(),
       hookProgram: getNextOptionalAccount(),
       hookWhitelist: getNextOptionalAccount(),

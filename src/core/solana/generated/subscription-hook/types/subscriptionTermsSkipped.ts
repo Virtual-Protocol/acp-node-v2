@@ -8,32 +8,35 @@
 
 import {
   combineCodec,
+  getAddressDecoder,
+  getAddressEncoder,
   getI64Decoder,
   getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
   getU64Encoder,
+  type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
 export type SubscriptionTermsSkipped = {
-  jobId: bigint;
+  jobKey: Address;
   packageId: bigint;
   currentExpiry: bigint;
 };
 
 export type SubscriptionTermsSkippedArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   packageId: number | bigint;
   currentExpiry: number | bigint;
 };
 
 export function getSubscriptionTermsSkippedEncoder(): FixedSizeEncoder<SubscriptionTermsSkippedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["packageId", getU64Encoder()],
     ["currentExpiry", getI64Encoder()],
   ]);
@@ -41,7 +44,7 @@ export function getSubscriptionTermsSkippedEncoder(): FixedSizeEncoder<Subscript
 
 export function getSubscriptionTermsSkippedDecoder(): FixedSizeDecoder<SubscriptionTermsSkipped> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["packageId", getU64Decoder()],
     ["currentExpiry", getI64Decoder()],
   ]);

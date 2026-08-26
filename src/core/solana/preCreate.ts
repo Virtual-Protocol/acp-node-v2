@@ -1,14 +1,15 @@
 /**
  * Pre-creation of hook-rent PDAs at CPI stack height 2.
  *
- * A sponsor's rent prefund can miss account creations made deep in the CPI
- * stack. Router-mediated hook PDA creation (core -> router -> hook -> system)
- * sits at height 4, and sub_expiry activation (core -> [router ->] subHook ->
- * subState -> system) at height 4-5, so their rent would otherwise fall on the
- * provider wallet. The on-chain programs expose pre_create_* instructions that
- * allocate the same PDAs with a zero payload in a DIRECT transaction (height
- * 2), where the prefund sees them; the lifecycle handlers then accept the
- * pre-created accounts via their is_unset check and overwrite the full payload.
+ * Alchemy's `prefundRent` only detects inner `createAccount`s up to CPI stack
+ * height 3. Router-mediated hook PDA creation (core -> router -> hook ->
+ * system) sits at height 4, and sub_expiry activation (core -> [router ->]
+ * subHook -> subState -> system) at height 4-5 — both invisible to the
+ * paymaster, so their rent silently fell on the provider wallet. The on-chain
+ * programs expose pre_create_* instructions that allocate the same PDAs with a
+ * zero payload in a DIRECT transaction (height 2), where the prefund sees
+ * them; the lifecycle handlers then accept the pre-created accounts via their
+ * is_unset check and overwrite the full payload.
  *
  * All pre-creates are idempotent on-chain (no-op when the account already
  * holds data), payer MUST be the job's provider, and the job must already
@@ -60,7 +61,6 @@ export type PreCreateHookPdaArgs = {
   /** Rent payer — must be the job's provider (programs enforce this). */
   payer: SolanaSigner;
   jobPda: Address;
-  jobId: bigint;
   clientAddress: Address;
   providerAddress: Address;
   /** Pre-create the fund-request intent (kind 0) + its map. */
@@ -105,11 +105,11 @@ export async function buildPreCreateHookPdaIxs(
     intentKinds.length > 0 ? await hookStatePda(args.fundHook!) : null;
   for (const kind of intentKinds) {
     const fundHook = args.fundHook!;
-    const intent = await intentPda(fundHook, args.jobId, kind);
+    const intent = await intentPda(fundHook, args.jobPda, kind);
     const intentMap =
       kind === INTENT_KIND_FUND_REQUEST
-        ? await fundRequestIntentIdPda(fundHook, args.jobId)
-        : await providerEscrowIntentIdPda(fundHook, args.jobId);
+        ? await fundRequestIntentIdPda(fundHook, args.jobPda)
+        : await providerEscrowIntentIdPda(fundHook, args.jobPda);
     ixs.push(
       toLike(
         getPreCreateIntentInstruction(
@@ -119,7 +119,7 @@ export async function buildPreCreateHookPdaIxs(
             job: args.jobPda,
             intent,
             intentMap,
-            jobId: args.jobId,
+            jobKey: args.jobPda,
             kind,
           },
           { programAddress: fundHook },
@@ -136,8 +136,8 @@ export async function buildPreCreateHookPdaIxs(
             payer: args.payer,
             hookState: await hookStatePda(args.subHook),
             job: args.jobPda,
-            proposedTerms: await proposedTermsPda(args.subHook, args.jobId),
-            jobId: args.jobId,
+            proposedTerms: await proposedTermsPda(args.subHook, args.jobPda),
+            jobKey: args.jobPda,
           },
           { programAddress: args.subHook },
         ),

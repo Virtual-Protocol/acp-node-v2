@@ -22,6 +22,8 @@ export * from "./jobState.js";
 export * from "./jobSubmitted.js";
 export * from "./pauseSet.js";
 export * from "./paymentReleased.js";
+export * from "./paymentTokenUpdated.js";
 export * from "./platformFeeUpdated.js";
 export * from "./providerSet.js";
 export * from "./refunded.js";
+export * from "./sponsorUpdated.js";

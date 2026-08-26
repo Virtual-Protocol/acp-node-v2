@@ -14,8 +14,6 @@ import {
   getArrayEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   type Address,
@@ -25,20 +23,16 @@ import {
 } from "@solana/kit";
 
 export type HooksConfigured = {
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hooks: Array<Address>;
 };
 
-export type HooksConfiguredArgs = {
-  jobId: number | bigint;
-  action: number;
-  hooks: Array<Address>;
-};
+export type HooksConfiguredArgs = HooksConfigured;
 
 export function getHooksConfiguredEncoder(): Encoder<HooksConfiguredArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
     ["action", getU8Encoder()],
     ["hooks", getArrayEncoder(getAddressEncoder())],
   ]);
@@ -46,7 +40,7 @@ export function getHooksConfiguredEncoder(): Encoder<HooksConfiguredArgs> {
 
 export function getHooksConfiguredDecoder(): Decoder<HooksConfigured> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hooks", getArrayDecoder(getAddressDecoder())],
   ]);

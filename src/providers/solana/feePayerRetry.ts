@@ -1,7 +1,7 @@
 // Retry support for sponsored ACP transactions.
 //
-// The sponsor's fee-payer service simulates the transaction on its own node,
-// and the broadcast RPC node can likewise lag the SDK's read RPC by a few slots
+// Alchemy's fee-payer service simulates the transaction on its own node, and
+// the broadcast RPC node can likewise lag the SDK's read RPC by a few slots
 // (common on devnet). When a transaction references state we confirmed moments
 // earlier, the sponsor-side simulation or the broadcast fails transiently even
 // though our node already sees it:
@@ -10,11 +10,6 @@
 //   - fund -> submit:         vault PDA not yet visible  -> AccountNotInitialized (3012 / 0xbc4)
 //   - broadcast:              sponsor fee-payer credit not yet visible
 //                             -> "found no record of a prior credit"
-//   - broadcast:              node behind the tx's minContextSlot -> -32016
-//                             "Minimum context slot has not been reached".
-//                             We no longer PASS a minContextSlot (see the
-//                             confirmed-preflight refactor), but the node can
-//                             still raise it, so the pattern stays retryable.
 //   - either path:            our blockhash not yet known -> Blockhash not found
 // All are safe to retry within blockhash validity (~60s) with a fresh
 // blockhash per attempt.
@@ -45,17 +40,11 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "no record of a prior credit", // fee-payer credit not yet visible to broadcast node
   "could not find account",
   "account not found",
-  "minimum context slot", // broadcast node behind the tx's minContextSlot
+  "minimum context slot",
   "-32016", // JSON-RPC code for minimum-context-slot-not-reached
   "lookup table not found",
   "lookup table index out of bounds",
   "lookup table owner should be",
-  // Kora paths. The broadcast-lag patterns above are provider-agnostic and
-  // already cover Kora's broadcast retries; any Kora-specific transient strings
-  // (fee-payer node lag / simulation) are added here once captured on devnet.
-  // Do NOT add speculative strings — a wrong match would retry a genuinely
-  // failed transaction. Kora's insufficient-payment / policy rejections are
-  // terminal and must stay OUT of this list.
 ];
 
 // Deterministic failures that must fail FAST even when they appear in a
@@ -252,7 +241,10 @@ export async function withFeePayerRetry<T>(
       const message = err instanceof Error ? err.message : String(err);
       options.onRetry?.(attempt, maxAttempts, message, err);
       await new Promise((resolve) =>
-        setTimeout(resolve, computeRetryDelayMs(attempt, baseDelayMs, maxDelayMs)),
+        setTimeout(
+          resolve,
+          computeRetryDelayMs(attempt, baseDelayMs, maxDelayMs),
+        ),
       );
     }
   }

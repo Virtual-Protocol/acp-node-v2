@@ -21,6 +21,8 @@ export * from "./removeHookWhitelist.js";
 export * from "./setBudget.js";
 export * from "./setEvaluatorFee.js";
 export * from "./setPause.js";
+export * from "./setPaymentToken.js";
 export * from "./setPlatformFee.js";
 export * from "./setProvider.js";
+export * from "./setSponsor.js";
 export * from "./submit.js";

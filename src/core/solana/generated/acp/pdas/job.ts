@@ -10,31 +10,29 @@ import {
   getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
+  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
-export type EscrowAuthoritySeeds = {
-  jobKey: Address;
+export type JobSeeds = {
+  client: Address;
+  seed: number | bigint;
 };
 
-export async function findEscrowAuthorityPda(
-  seeds: EscrowAuthoritySeeds,
+export async function findJobPda(
+  seeds: JobSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q" as Address<"HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q">,
+    programAddress = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
     seeds: [
-      getBytesEncoder().encode(
-        new Uint8Array([
-          101, 115, 99, 114, 111, 119, 95, 97, 117, 116, 104, 111, 114, 105,
-          116, 121,
-        ]),
-      ),
-      getAddressEncoder().encode(seeds.jobKey),
+      getBytesEncoder().encode(new Uint8Array([106, 111, 98])),
+      getAddressEncoder().encode(seeds.client),
+      getU64Encoder().encode(seeds.seed),
     ],
   });
 }

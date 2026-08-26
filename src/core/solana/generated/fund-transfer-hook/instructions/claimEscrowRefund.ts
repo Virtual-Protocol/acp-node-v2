@@ -10,12 +10,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -67,7 +67,7 @@ export type ClaimEscrowRefundInstruction<
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountAcpState extends string | AccountMeta<string> = string,
-  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
+  TAccountSponsor extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -104,25 +104,25 @@ export type ClaimEscrowRefundInstruction<
       TAccountAcpState extends string
         ? ReadonlyAccount<TAccountAcpState>
         : TAccountAcpState,
-      TAccountPlatformTreasury extends string
-        ? WritableAccount<TAccountPlatformTreasury>
-        : TAccountPlatformTreasury,
+      TAccountSponsor extends string
+        ? WritableAccount<TAccountSponsor>
+        : TAccountSponsor,
       ...TRemainingAccounts,
     ]
   >;
 
 export type ClaimEscrowRefundInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
 };
 
-export type ClaimEscrowRefundInstructionDataArgs = { jobId: number | bigint };
+export type ClaimEscrowRefundInstructionDataArgs = { jobKey: Address };
 
 export function getClaimEscrowRefundInstructionDataEncoder(): FixedSizeEncoder<ClaimEscrowRefundInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CLAIM_ESCROW_REFUND_DISCRIMINATOR }),
   );
@@ -131,7 +131,7 @@ export function getClaimEscrowRefundInstructionDataEncoder(): FixedSizeEncoder<C
 export function getClaimEscrowRefundInstructionDataDecoder(): FixedSizeDecoder<ClaimEscrowRefundInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
   ]);
 }
 
@@ -156,7 +156,7 @@ export type ClaimEscrowRefundAsyncInput<
   TAccountEscrowAuthority extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountAcpState extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   hookState?: Address<TAccountHookState>;
@@ -175,9 +175,9 @@ export type ClaimEscrowRefundAsyncInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   /** against `hook_state.acp_program`. Read only to source the treasury. */
   acpState: Address<TAccountAcpState>;
-  /** equal `acp_state.platform_treasury`. */
-  platformTreasury: Address<TAccountPlatformTreasury>;
-  jobId: ClaimEscrowRefundInstructionDataArgs["jobId"];
+  /** equal `acp_state.sponsor`. */
+  sponsor: Address<TAccountSponsor>;
+  jobKey: ClaimEscrowRefundInstructionDataArgs["jobKey"];
 };
 
 export async function getClaimEscrowRefundInstructionAsync<
@@ -191,7 +191,7 @@ export async function getClaimEscrowRefundInstructionAsync<
   TAccountEscrowAuthority extends string,
   TAccountTokenProgram extends string,
   TAccountAcpState extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
   input: ClaimEscrowRefundAsyncInput<
@@ -205,7 +205,7 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountEscrowAuthority,
     TAccountTokenProgram,
     TAccountAcpState,
-    TAccountPlatformTreasury
+    TAccountSponsor
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -221,7 +221,7 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountEscrowAuthority,
     TAccountTokenProgram,
     TAccountAcpState,
-    TAccountPlatformTreasury
+    TAccountSponsor
   >
 > {
   // Program address.
@@ -249,10 +249,7 @@ export async function getClaimEscrowRefundInstructionAsync<
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -268,12 +265,12 @@ export async function getClaimEscrowRefundInstructionAsync<
   }
   if (!accounts.providerEscrowIntentId.value) {
     accounts.providerEscrowIntentId.value = await findProviderEscrowIntentIdPda(
-      { jobId: expectSome(args.jobId) },
+      { jobKey: expectSome(args.jobKey) },
     );
   }
   if (!accounts.escrowAuthority.value) {
     accounts.escrowAuthority.value = await findEscrowAuthorityPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -294,7 +291,7 @@ export async function getClaimEscrowRefundInstructionAsync<
       getAccountMeta(accounts.escrowAuthority),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
     ],
     data: getClaimEscrowRefundInstructionDataEncoder().encode(
       args as ClaimEscrowRefundInstructionDataArgs,
@@ -312,7 +309,7 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountEscrowAuthority,
     TAccountTokenProgram,
     TAccountAcpState,
-    TAccountPlatformTreasury
+    TAccountSponsor
   >);
 }
 
@@ -327,7 +324,7 @@ export type ClaimEscrowRefundInput<
   TAccountEscrowAuthority extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountAcpState extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   hookState: Address<TAccountHookState>;
@@ -346,9 +343,9 @@ export type ClaimEscrowRefundInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   /** against `hook_state.acp_program`. Read only to source the treasury. */
   acpState: Address<TAccountAcpState>;
-  /** equal `acp_state.platform_treasury`. */
-  platformTreasury: Address<TAccountPlatformTreasury>;
-  jobId: ClaimEscrowRefundInstructionDataArgs["jobId"];
+  /** equal `acp_state.sponsor`. */
+  sponsor: Address<TAccountSponsor>;
+  jobKey: ClaimEscrowRefundInstructionDataArgs["jobKey"];
 };
 
 export function getClaimEscrowRefundInstruction<
@@ -362,7 +359,7 @@ export function getClaimEscrowRefundInstruction<
   TAccountEscrowAuthority extends string,
   TAccountTokenProgram extends string,
   TAccountAcpState extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
   input: ClaimEscrowRefundInput<
@@ -376,7 +373,7 @@ export function getClaimEscrowRefundInstruction<
     TAccountEscrowAuthority,
     TAccountTokenProgram,
     TAccountAcpState,
-    TAccountPlatformTreasury
+    TAccountSponsor
   >,
   config?: { programAddress?: TProgramAddress },
 ): ClaimEscrowRefundInstruction<
@@ -391,7 +388,7 @@ export function getClaimEscrowRefundInstruction<
   TAccountEscrowAuthority,
   TAccountTokenProgram,
   TAccountAcpState,
-  TAccountPlatformTreasury
+  TAccountSponsor
 > {
   // Program address.
   const programAddress =
@@ -418,10 +415,7 @@ export function getClaimEscrowRefundInstruction<
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     acpState: { value: input.acpState ?? null, isWritable: false },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -450,7 +444,7 @@ export function getClaimEscrowRefundInstruction<
       getAccountMeta(accounts.escrowAuthority),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.acpState),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
     ],
     data: getClaimEscrowRefundInstructionDataEncoder().encode(
       args as ClaimEscrowRefundInstructionDataArgs,
@@ -468,7 +462,7 @@ export function getClaimEscrowRefundInstruction<
     TAccountEscrowAuthority,
     TAccountTokenProgram,
     TAccountAcpState,
-    TAccountPlatformTreasury
+    TAccountSponsor
   >);
 }
 
@@ -495,8 +489,8 @@ export type ParsedClaimEscrowRefundInstruction<
     tokenProgram: TAccountMetas[8];
     /** against `hook_state.acp_program`. Read only to source the treasury. */
     acpState: TAccountMetas[9];
-    /** equal `acp_state.platform_treasury`. */
-    platformTreasury: TAccountMetas[10];
+    /** equal `acp_state.sponsor`. */
+    sponsor: TAccountMetas[10];
   };
   data: ClaimEscrowRefundInstructionData;
 };
@@ -532,7 +526,7 @@ export function parseClaimEscrowRefundInstruction<
       escrowAuthority: getNextAccount(),
       tokenProgram: getNextAccount(),
       acpState: getNextAccount(),
-      platformTreasury: getNextAccount(),
+      sponsor: getNextAccount(),
     },
     data: getClaimEscrowRefundInstructionDataDecoder().decode(instruction.data),
   };

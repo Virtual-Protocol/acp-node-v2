@@ -20,13 +20,13 @@ import {
   parseAfterActionInstruction,
   parseBeforeActionInstruction,
   parseClaimEscrowRefundInstruction,
-  parseCloseIntentInstruction,
+  parseCloseJobHookAccountsInstruction,
   parseInitializeInstruction,
   parsePreCreateIntentInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedClaimEscrowRefundInstruction,
-  type ParsedCloseIntentInstruction,
+  type ParsedCloseJobHookAccountsInstruction,
   type ParsedInitializeInstruction,
   type ParsedPreCreateIntentInstruction,
 } from "../instructions/index.js";
@@ -35,7 +35,6 @@ export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
   "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q" as Address<"HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q">;
 
 export enum FundTransferHookAccount {
-  FundRequestIntentId,
   HookMetadata,
   HookState,
   Intent,
@@ -46,17 +45,6 @@ export function identifyFundTransferHookAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): FundTransferHookAccount {
   const data = "data" in account ? account.data : account;
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([115, 10, 133, 59, 77, 84, 106, 104]),
-      ),
-      0,
-    )
-  ) {
-    return FundTransferHookAccount.FundRequestIntentId;
-  }
   if (
     containsBytes(
       data,
@@ -110,7 +98,7 @@ export enum FundTransferHookInstruction {
   AfterAction,
   BeforeAction,
   ClaimEscrowRefund,
-  CloseIntent,
+  CloseJobHookAccounts,
   Initialize,
   PreCreateIntent,
 }
@@ -156,12 +144,12 @@ export function identifyFundTransferHookInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([112, 245, 154, 249, 57, 126, 54, 122]),
+        new Uint8Array([77, 224, 55, 159, 116, 59, 13, 125]),
       ),
       0,
     )
   ) {
-    return FundTransferHookInstruction.CloseIntent;
+    return FundTransferHookInstruction.CloseJobHookAccounts;
   }
   if (
     containsBytes(
@@ -203,8 +191,8 @@ export type ParsedFundTransferHookInstruction<
       instructionType: FundTransferHookInstruction.ClaimEscrowRefund;
     } & ParsedClaimEscrowRefundInstruction<TProgram>)
   | ({
-      instructionType: FundTransferHookInstruction.CloseIntent;
-    } & ParsedCloseIntentInstruction<TProgram>)
+      instructionType: FundTransferHookInstruction.CloseJobHookAccounts;
+    } & ParsedCloseJobHookAccountsInstruction<TProgram>)
   | ({
       instructionType: FundTransferHookInstruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
@@ -238,11 +226,11 @@ export function parseFundTransferHookInstruction<TProgram extends string>(
         ...parseClaimEscrowRefundInstruction(instruction),
       };
     }
-    case FundTransferHookInstruction.CloseIntent: {
+    case FundTransferHookInstruction.CloseJobHookAccounts: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: FundTransferHookInstruction.CloseIntent,
-        ...parseCloseIntentInstruction(instruction),
+        instructionType: FundTransferHookInstruction.CloseJobHookAccounts,
+        ...parseCloseJobHookAccountsInstruction(instruction),
       };
     }
     case FundTransferHookInstruction.Initialize: {

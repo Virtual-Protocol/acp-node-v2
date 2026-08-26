@@ -10,6 +10,7 @@ export * from "./addHook.js";
 export * from "./afterAction.js";
 export * from "./batchConfigureHooks.js";
 export * from "./beforeAction.js";
+export * from "./closeHookRouter.js";
 export * from "./configureHooks.js";
 export * from "./initialize.js";
 export * from "./removeHook.js";

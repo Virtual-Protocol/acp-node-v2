@@ -8,6 +8,7 @@
 
 export * from "./intentClosed.js";
 export * from "./intentSigned.js";
+export * from "./jobHookAccountsClosed.js";
 export * from "./newIntent.js";
 export * from "./payableFundsEscrowed.js";
 export * from "./payableFundsRefunded.js";

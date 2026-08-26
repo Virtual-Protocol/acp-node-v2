@@ -9,6 +9,6 @@
 export * from "./afterAction.js";
 export * from "./beforeAction.js";
 export * from "./claimEscrowRefund.js";
-export * from "./closeIntent.js";
+export * from "./closeJobHookAccounts.js";
 export * from "./initialize.js";
 export * from "./preCreateIntent.js";

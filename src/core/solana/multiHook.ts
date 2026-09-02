@@ -212,6 +212,40 @@ export async function fetchProposedTerms(
   };
 }
 
+/**
+ * `fetchProposedTerms`, retried while it reads as absent.
+ *
+ * Use this — not the bare reader — whenever the result decides a HOOK ACCOUNT
+ * SLICE. Only one wrong answer hurts: sending the skip slice with no terms
+ * on-chain is a harmless no-op, but sending it once the PDA exists throws
+ * IncompleteHookAccountSet (6019) — after_action requires remaining.len() >= 8
+ * from that point on. 6019 is deliberately non-retryable (feePayerRetry):
+ * resending identical bytes cannot add the missing accounts, so one lagging
+ * read kills the job.
+ *
+ * A false "absent" is reachable: proposed_terms is created at setBudget and
+ * read back at complete, often by a different party's node, and a node one
+ * slot behind misses an account the transaction itself will see.
+ */
+export async function fetchProposedTermsForSlice(
+  rpc: Parameters<typeof fetchProposedTerms>[0],
+  subHook: Address,
+  job: Address,
+  commitment: "confirmed" | "finalized" | "processed" = "confirmed",
+  attempts = 3,
+  delayMs = 250
+): Promise<ProposedTerms | null> {
+  let terms: ProposedTerms | null = null;
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    terms = await fetchProposedTerms(rpc, subHook, job, commitment);
+    if (terms !== null) return terms;
+    if (i < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return terms;
+}
+
 // ---------------------------------------------------------------------------
 // FundRequestIntentId raw reader
 // ---------------------------------------------------------------------------

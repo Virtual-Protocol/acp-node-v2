@@ -76,19 +76,111 @@ export type RouterContext = {
 };
 
 /**
- * Every job fan-out leg sets an explicit CU limit; two hook CPIs exceed the
- * 200k default. On the Kora-sponsored path this instruction is STRIPPED
- * before prepare — the server authors a right-sized SetComputeUnitLimit
- * there — so the blanket limit only ever reaches the flows with no prepare
- * step (Alchemy-sponsored, SPL-paid, self-pay).
+ * The per-transaction compute ceiling. Used as the RETRY TARGET only.
+ *
+ * Solana charges a transaction's REQUESTED limit — not the amount it goes on
+ * to consume — against the per-block compute budget of every writable account
+ * it touches. Declaring the ceiling up front therefore spends block capacity
+ * the transaction will never use, on every account it writes.
  */
 export const ROUTER_CU_LIMIT = 1_400_000;
 
-export function cuLimitIx(units: number = ROUTER_CU_LIMIT): SolanaInstructionLike {
+/**
+ * The FALLBACK limit, for a leg whose consumption could not be measured.
+ *
+ * Legs are normally sized from a simulation and never reach this value. It
+ * covers the case where that simulation errors, times out, or reports
+ * nothing: sizing must never cost a caller their send, so the sizer fails
+ * open onto this rather than onto the ceiling.
+ *
+ * Floor: the fan-out legs exceed the runtime's 200k-per-instruction default,
+ * because two hook CPIs run inside one instruction. Measured on devnet, the
+ * heaviest observed leg consumed 209,832 — so this carries roughly 2x over
+ * the worst case actually seen. Deliberately generous: an unmeasured leg has
+ * no evidence behind it, and the retry at the ceiling is all that is under it.
+ */
+export const ROUTER_CU_DEFAULT = 400_000;
+
+/**
+ * Headroom over measured consumption, and the floor a sized limit never goes
+ * under. The floor absorbs legs whose consumption varies with state the
+ * simulation did not see; the headroom absorbs run-to-run jitter.
+ *
+ * 1.1 is the margin the Solana sizing guides prescribe, and it is the same
+ * number the server-side sizers use, so a limit means the same thing
+ * wherever it was authored.
+ */
+const CU_LIMIT_HEADROOM = 1.1;
+const CU_LIMIT_FLOOR = 60_000;
+
+/**
+ * The headroom a compute-exhaustion RETRY sizes with.
+ *
+ * A bump means the standard margin already proved too small once: state
+ * drifted between the sizing simulation and execution by more than 10%. The
+ * retry is the last attempt — there is no third — so it re-measures against
+ * the drifted state and carries a margin wide enough that the same drift
+ * happening again still fits. The ceiling remains the fallback when the
+ * re-measurement itself fails.
+ */
+export const BUMP_CU_HEADROOM = 1.5;
+
+/**
+ * The sized limit for a measured consumption, clamped to the ceiling.
+ *
+ * Without the clamp, a leg that legitimately consumes close to the runtime
+ * ceiling would have headroom push it past ROUTER_CU_LIMIT, and cuLimitIx
+ * would then encode a limit the runtime rejects.
+ */
+export function sizedCuLimit(
+  unitsConsumed: number,
+  headroom: number = CU_LIMIT_HEADROOM,
+): number {
+  return Math.min(
+    Math.max(Math.ceil(unitsConsumed * headroom), CU_LIMIT_FLOOR),
+    ROUTER_CU_LIMIT,
+  );
+}
+
+export function cuLimitIx(units: number = ROUTER_CU_DEFAULT): SolanaInstructionLike {
   const data = new Uint8Array(5);
   data[0] = 2; // SetComputeUnitLimit
   new DataView(data.buffer).setUint32(1, units, true);
   return { programAddress: COMPUTE_BUDGET_PROGRAM_ID, accounts: [], data };
+}
+
+/** A SetComputeUnitLimit (tag 2), as opposed to any other ComputeBudget ix. */
+function isSetComputeUnitLimitIx(ix: SolanaInstructionLike): boolean {
+  return (
+    (ix.programAddress as string) === COMPUTE_BUDGET_PROGRAM_ID &&
+    ix.data.length === 5 &&
+    ix.data[0] === 2
+  );
+}
+
+/**
+ * The same instruction list carrying `units` as its compute limit.
+ *
+ * Only tag 2 is replaced — a price instruction, should one ever be added, is
+ * not this function's to touch. The limit is re-authored at the FRONT, which
+ * is where every call site already places it, so the message ordering is
+ * unchanged.
+ */
+export function withCuLimit(
+  instructions: SolanaInstructionLike[],
+  units: number,
+): SolanaInstructionLike[] {
+  return [
+    cuLimitIx(units),
+    ...instructions.filter((ix) => !isSetComputeUnitLimitIx(ix)),
+  ];
+}
+
+/** The same instruction list with its compute limit raised to the ceiling. */
+export function withMaxCuLimit(
+  instructions: SolanaInstructionLike[],
+): SolanaInstructionLike[] {
+  return withCuLimit(instructions, ROUTER_CU_LIMIT);
 }
 
 /** True when the job's hookAddress is the multi-hook router on this chain. */
@@ -464,13 +556,13 @@ export async function buildSubmitFanOut(
 
 /**
  * complete fan-out. The subscription hook activates the subscription via CPI
- * into subscription-state, payer = provider. Pre-F-118, ActivateSubscription
- * declared payer as Signer because it allocated sub_expiry there; since
- * sub_expiry is now pre-created at set_budget, activation allocates nothing
- * and the provider's signature is no longer required. The fund hook releases
- * the escrow bond to the client.
+ * into subscription-state, payer = provider. ActivateSubscription used to
+ * declare payer as Signer because it allocated sub_expiry there; sub_expiry is
+ * now pre-created at set_budget, so activation allocates nothing and the
+ * provider's signature is no longer required. The fund hook releases the
+ * escrow bond to the client.
  *
- * `requiredExtraSigner` is always null post-F-118 — kept as a return field so
+ * `requiredExtraSigner` is always null — kept as a return field so
  * a future signer requirement doesn't need a call-site shape change.
  */
 export async function buildCompleteFanOut(
@@ -481,6 +573,10 @@ export async function buildCompleteFanOut(
     clientAddress: Address;
     /** packageId from the on-chain proposed_terms, or null when none exist. */
     packageId: bigint | null;
+    /** proposed_terms / escrow-intent rent refund recipient; must equal
+     * acp_state.sponsor — both hooks re-read acp_state and reject anything
+     * else with InvalidRefundRecipient. */
+    sponsor: Address;
     escrow: {
       /** Escrow release destination (the client's ATA in the escrow mint). */
       clientAta: Address;
@@ -491,12 +587,25 @@ export async function buildCompleteFanOut(
 ): Promise<FanOut & { requiredExtraSigner: Address | null }> {
   const subHookState = await mh.hookStatePda(ctx.subHook);
   const fundHookState = await mh.hookStatePda(ctx.fundHook);
+  const acpState = await mh.acpStatePda(ctx.acp);
 
   let subSlice: AccountMetaLike[];
   if (p.packageId !== null) {
     // post_complete remaining: [sysvar, proposed_terms(w), payer(signer,w),
     // job, sub_state_program, writer_registry, subscription_expiry(w),
-    // system]; hook_state precedes as the named account.
+    // system, acp_state(ro), sponsor(w)]; hook_state precedes as the named
+    // account.
+    //
+    // The acp_state/sponsor tail is what post_complete refunds the closed
+    // proposed_terms rent to. It is NOT optional padding: the handler takes
+    // `remaining.len() >= 10` as its account-set completeness signal, so an
+    // 8-account set (this slice before the rent-reclaim redeploy) fails
+    // IncompleteHookAccountSet (6019) at the ROUTER, after the payment
+    // transfers have already executed in the same instruction. The refund
+    // recipient moved off the proposing provider deliberately: under gas
+    // sponsorship that wallet holds only prefunded sponsor lamports, so
+    // refunding it would let a provider farm the sponsor by proposing terms
+    // in a loop.
     subSlice = [
       w(subHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
@@ -514,6 +623,8 @@ export async function buildCompleteFanOut(
         )
       ),
       ro(SYSTEM_PROGRAM_ID),
+      ro(acpState),
+      w(p.sponsor),
     ];
   } else {
     // No terms to consume, but post_complete still requires the canonical
@@ -530,6 +641,11 @@ export async function buildCompleteFanOut(
 
   let fundSlice: AccountMetaLike[];
   if (p.escrow) {
+    // auto_sign_escrow remaining: [sysvar, escrow_map, intent(w), vault(w),
+    // dest(w), escrow_authority, token_program, acp_state(ro), sponsor(w)];
+    // hook_state precedes as the named account. Same acp_state/sponsor tail
+    // and same >= 9 completeness gate as post_complete — see the sub slice
+    // above; this is the escrow vault's rent, not the terms PDA's.
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
@@ -539,6 +655,8 @@ export async function buildCompleteFanOut(
       w(p.escrow.clientAta),
       ro(p.escrow.escrowAuthority),
       ro(TOKEN_PROGRAM_ID),
+      ro(acpState),
+      w(p.sponsor),
     ];
   } else {
     // No escrow to release, but auto_sign_escrow still requires the escrow-map
@@ -643,10 +761,10 @@ export async function buildSubSubmitAccounts(
 /**
  * complete: post_complete activates the subscription — remaining [sysvar,
  * proposed_terms(w), payer(w), job, sub_state_program, writer_registry,
- * subscription_expiry(w), system] after hook_state. Pre-F-118 the payer had
- * to SIGN (it allocated sub_expiry there); since sub_expiry is now
- * pre-created at set_budget, activation allocates nothing and no signature is
- * required. With no terms the minimal set no-ops.
+ * subscription_expiry(w), system] after hook_state. The payer used to have to
+ * SIGN (it allocated sub_expiry there); sub_expiry is now pre-created at
+ * set_budget, so activation allocates nothing and no signature is required.
+ * With no terms the minimal set no-ops.
  */
 export async function buildSubCompleteAccounts(
   ctx: SubscriptionContext,
@@ -656,6 +774,10 @@ export async function buildSubCompleteAccounts(
     clientAddress: Address;
     /** packageId from the on-chain proposed_terms, or null when none exist. */
     packageId: bigint | null;
+    /** proposed_terms rent refund recipient; must equal acp_state.sponsor.
+     * See buildSubRejectAccounts for why it is the sponsor and not the
+     * proposing provider. */
+    sponsor: Address;
   }
 ): Promise<{ accounts: AccountMetaLike[]; requiredExtraSigner: Address | null }> {
   const hookState = await mh.hookStatePda(ctx.subHook);
@@ -690,6 +812,11 @@ export async function buildSubCompleteAccounts(
         )
       ),
       ro(SYSTEM_PROGRAM_ID),
+      // Same acp_state/sponsor rent-refund tail the router path sends — this
+      // is the ACP core CPIing the hook directly, but post_complete is the
+      // same handler with the same `remaining.len() >= 10` gate.
+      ro(await mh.acpStatePda(ctx.acp)),
+      w(p.sponsor),
     ],
     requiredExtraSigner: null,
   };
@@ -758,6 +885,12 @@ export async function buildRejectFanOut(
 
   let fundSlice: AccountMetaLike[];
   if (p.escrow) {
+    // auto_sign_escrow remaining: [sysvar, escrow_map, intent(w), vault(w),
+    // dest(w), escrow_authority, token_program, acp_state(ro), sponsor(w)].
+    // Same handler as the complete path — reject and complete differ only in
+    // the destination (provider vs client), not in the account set — so the
+    // same `remaining.len() >= 9` gate applies and the same acp_state/sponsor
+    // tail closes the escrow vault.
     fundSlice = [
       w(fundHookState),
       ro(SYSVAR_INSTRUCTIONS_ID),
@@ -767,6 +900,8 @@ export async function buildRejectFanOut(
       w(p.escrow.providerAta),
       ro(p.escrow.escrowAuthority),
       ro(TOKEN_PROGRAM_ID),
+      ro(await mh.acpStatePda(ctx.acp)),
+      w(p.sponsor),
     ];
   } else {
     // No escrow to return, but auto_sign_escrow still requires the escrow-map

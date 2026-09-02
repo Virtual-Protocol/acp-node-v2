@@ -134,7 +134,7 @@ const ROUTER_STATE_GATES: StateGate[] = [
 
 // Subscription-hook instructions gated on the ACP job account. Cleanup of an
 // abandoned job's ProposedTerms PDA requires the job to have reached Expired
-// (cleanup_proposed_terms.rs:47 — state only, no clock check), which happens
+// (cleanup_proposed_terms — state only, no clock check), which happens
 // on claim_refund. Its job account is at index 2:
 // caller, hook_state, job_account, proposed_terms, acp_state, platform_treasury.
 // No expiry gate: Expired IS the terminal state the instruction wants, so

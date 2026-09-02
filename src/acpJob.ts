@@ -1,5 +1,7 @@
 import { zeroAddress, type Address } from "viem";
 import { AssetToken } from "./core/assetToken.js";
+import { getChainFamily } from "./core/constants.js";
+import { assertSolanaAddress } from "./core/solana/address.js";
 import type { AcpClient } from "./clientFactory.js";
 import type { OnChainJob } from "./core/operations.js";
 import {
@@ -59,7 +61,7 @@ export class AcpIntent {
 
 export class AcpJob {
   readonly chainId: number;
-  readonly id: bigint;
+  readonly id: bigint | string;
   readonly clientAddress: string;
   readonly providerAddress: string;
   readonly evaluatorAddress: string;
@@ -114,7 +116,10 @@ export class AcpJob {
     return new AcpJob(
       data.chainId,
       {
-        id: BigInt(data.onChainJobId),
+        id:
+          getChainFamily(data.chainId) === "solana"
+            ? assertSolanaAddress(data.onChainJobId, "onChainJobId")
+            : BigInt(data.onChainJobId),
         client: data.clientAddress,
         provider: data.providerAddress,
         evaluator: data.evaluatorAddress,

@@ -120,7 +120,7 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [bscTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
   [SOLANA_DEVNET_CHAIN_ID]: "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
-  [SOLANA_MAINNET_CHAIN_ID]: "2heRZzq7QY8EX2hLceTron7jkzQe8uqsRztQnseavCcx",
+  [SOLANA_MAINNET_CHAIN_ID]: "GFASZMVakVEBYo8vDJvhc7zfQ21T6mrPeWe4JNC7z9YP",
   [robinhoodTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [robinhood.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
 };
@@ -130,7 +130,7 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [SOLANA_DEVNET_CHAIN_ID]: "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q",
-  [SOLANA_MAINNET_CHAIN_ID]: "Bq83ckifu1yS5WrUiG46eFPmtfFMzpaSUTJQHot6f14",
+  [SOLANA_MAINNET_CHAIN_ID]: "EjuUUZuBHs47kPVjWzvD1DJzfAgTXVvKVKrDaRgVoju1",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
 };
@@ -142,7 +142,7 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [SOLANA_DEVNET_CHAIN_ID]: "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5",
-  [SOLANA_MAINNET_CHAIN_ID]: "6gP86dzKK28nuAxNueEUt2vdr5FADAjrFUZr2VBgbzxZ",
+  [SOLANA_MAINNET_CHAIN_ID]: "CSiGLgpBif1AuEU1XViYRsmV6X2X7SN8vNhc5mztKnB6",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
 };
@@ -151,7 +151,7 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [SOLANA_DEVNET_CHAIN_ID]: "6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP",
-  [SOLANA_MAINNET_CHAIN_ID]: "wiBJusTQ5ZzyvVT7nUwQsvyHTgb4wM617GgHXYZ2MXg",
+  [SOLANA_MAINNET_CHAIN_ID]: "79yCchFsY1tgnwAEVGhNcjDcpmdnJMjntx7s2bNimkgb",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
 };
@@ -160,14 +160,20 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [SOLANA_DEVNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-  [SOLANA_MAINNET_CHAIN_ID]: "5E9txkfq1RafMXXMWWij8kcJxuDcR6EaKUoxTJ3do9zc",
+  [SOLANA_MAINNET_CHAIN_ID]: "5jfRqQpHoeMLRDBa8fVuaGinXYAXrDvcdig5JskpjzDU",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
 };
 
 export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
   [SOLANA_DEVNET_CHAIN_ID]: "BXxVuLL76ue6ixDRanyYAmx2DLXdsaELj6eyPTZUMUwP",
-  [SOLANA_MAINNET_CHAIN_ID]: "HvtMFzNA3xwvuXT55rPxJL4qYhSP6s1hhFnfijgV4b9D",
+  // Rebuilt for the current mainnet program set. The superseded table
+  // (HvtMFzNA3xwvuXT55rPxJL4qYhSP6s1hhFnfijgV4b9D) still holds the OLD router,
+  // sub hook, fund hook and sub state at these same slots, so pointing at it
+  // would compress a router `complete` onto programs the job does not belong
+  // to — a failure that surfaces deep in the router as an opaque account
+  // mismatch rather than a clean version error.
+  [SOLANA_MAINNET_CHAIN_ID]: "DAR5cGx7wn6AFBvaeYGYzmKJTKgp11zEjP7v9fEpTg9n",
 };
 
 export const ACP_SELECTORS = {

@@ -14,8 +14,10 @@ import {
   FUND_TRANSFER_HOOK_ADDRESSES,
   MULTI_HOOK_ROUTER_ADDRESSES,
   SUBSCRIPTION_HOOK_ADDRESSES,
+  getChainFamily,
 } from "./core/constants.js";
 import { type Hex } from "viem";
+import type { JobId } from "./core/operations.js";
 import type { SolanaSigner } from "./providers/types.js";
 
 // ---------------------------------------------------------------------------
@@ -197,6 +199,12 @@ export class JobSession {
     return this._job;
   }
 
+  private get onChainId(): JobId {
+    return getChainFamily(this.chainId) === "solana"
+      ? this.jobId
+      : BigInt(this.jobId);
+  }
+
   async fetchJob(): Promise<AcpJob> {
     try {
       const data = await this.agent.getApi().getJob(this.chainId, this.jobId);
@@ -205,9 +213,10 @@ export class JobSession {
       }
       this._job = AcpJob.fromOffChain(data);
       return this._job;
-    } catch {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Failed to fetch job ${this.jobId} on chain ${this.chainId}`
+        `Failed to fetch job ${this.jobId} on chain ${this.chainId}: ${reason}`
       );
     }
   }
@@ -400,7 +409,7 @@ export class JobSession {
     }
 
     await this.agent.internalSetBudget(this.chainId, {
-      jobId: BigInt(this.jobId),
+      jobId: this.onChainId,
       amount,
       ...(this._job && { clientAddress: this._job.clientAddress }),
     });
@@ -430,12 +439,32 @@ export class JobSession {
     }
 
     await this.agent.internalSetBudgetWithFundRequest(this.chainId, {
-      jobId: BigInt(this.jobId),
+      jobId: this.onChainId,
       amount,
       transferAmount,
       destination,
       ...(this._job && { clientAddress: this._job.clientAddress }),
     });
+  }
+
+  private async assertKnownSolanaPackageId(packageId: bigint): Promise<void> {
+    if (getChainFamily(this.chainId) !== "solana") return;
+    if (!this._job) throw new Error("Job not loaded");
+
+    const provider = await this.agent
+      .getApi()
+      .getAgentByWalletAddress(this._job.providerAddress);
+    const known = provider?.subscriptions?.some(
+      (s) => s.packageId === Number(packageId)
+    );
+
+    if (!known) {
+      throw new Error(
+        `Package ID ${packageId} is not a registered subscription package ` +
+          `for provider ${this._job.providerAddress}. Check ` +
+          "AcpAgentDetail.subscriptions before calling setBudgetWithSubscription."
+      );
+    }
   }
 
   async setBudgetWithSubscription(
@@ -459,8 +488,10 @@ export class JobSession {
       );
     }
 
+    await this.assertKnownSolanaPackageId(packageId);
+
     await this.agent.internalSetBudgetWithSubscription(this.chainId, {
-      jobId: BigInt(this.jobId),
+      jobId: this.onChainId,
       amount,
       duration,
       packageId,
@@ -490,10 +521,12 @@ export class JobSession {
       );
     }
 
+    await this.assertKnownSolanaPackageId(packageId);
+
     await this.agent.internalSetBudgetWithSubscriptionAndFundRequest(
       this.chainId,
       {
-        jobId: BigInt(this.jobId),
+        jobId: this.onChainId,
         amount,
         duration,
         packageId,
@@ -506,7 +539,7 @@ export class JobSession {
   async fund(amount?: AssetToken): Promise<void> {
     if (!this._job) throw new Error("Job not loaded");
     const effectiveAmount = amount ?? this._job.budget;
-    const jobId = BigInt(this.jobId);
+    const jobId = this.onChainId;
 
     const hook = this._job.hookAddress.toLowerCase();
     const router = (
@@ -648,14 +681,14 @@ export class JobSession {
 
     if (transferAmount) {
       await this.agent.internalSubmitWithTransfer(this.chainId, {
-        jobId: BigInt(this.jobId),
+        jobId: this.onChainId,
         deliverable,
         transferAmount,
         clientAddress: this._job.clientAddress,
       });
     } else {
       await this.agent.internalSubmit(this.chainId, {
-        jobId: BigInt(this.jobId),
+        jobId: this.onChainId,
         deliverable,
         clientAddress: this._job.clientAddress,
       });
@@ -672,7 +705,7 @@ export class JobSession {
     // the client's instructive error pointing at completeSubscriptionJob.
     if (opts?.providerSigner) {
       await this.agent.completeSubscriptionJob(this.chainId, {
-        jobId: BigInt(this.jobId),
+        jobId: this.onChainId,
         reason,
         providerSigner: opts.providerSigner,
         ...(this._job && { clientAddress: this._job.clientAddress }),
@@ -680,7 +713,7 @@ export class JobSession {
       return;
     }
     await this.agent.internalComplete(this.chainId, {
-      jobId: BigInt(this.jobId),
+      jobId: this.onChainId,
       reason,
       ...(this._job && { clientAddress: this._job.clientAddress }),
     });
@@ -688,7 +721,7 @@ export class JobSession {
 
   async reject(reason: string): Promise<void> {
     await this.agent.internalReject(this.chainId, {
-      jobId: BigInt(this.jobId),
+      jobId: this.onChainId,
       reason,
       ...(this._job && { clientAddress: this._job.clientAddress }),
     });

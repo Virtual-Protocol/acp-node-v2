@@ -13,6 +13,7 @@ import { SolanaAcpClient } from "./clients/solanaAcpClient.js";
 import type {
   CompleteParams,
   CreateJobParams,
+  JobId,
   PreparedTx,
   RejectParams,
   SubmitParams,
@@ -86,7 +87,7 @@ export type CreateAgentInput = CreateAcpClientInput & {
 };
 
 export type SetBudgetParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   clientAddress?: string;
   optParams?: Hex;
@@ -98,13 +99,13 @@ export type SetBudgetParams = {
 };
 
 export type FundJobParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   clientAddress?: string;
 };
 
 export type SetBudgetWithFundRequestParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   transferAmount: AssetToken;
   destination: string;
@@ -112,7 +113,7 @@ export type SetBudgetWithFundRequestParams = {
 };
 
 export type FundWithTransferParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   transferAmount: AssetToken;
   destination: string;
@@ -121,7 +122,7 @@ export type FundWithTransferParams = {
 };
 
 export type SubmitWithTransferParams = {
-  jobId: bigint;
+  jobId: JobId;
   deliverable: string;
   transferAmount: AssetToken;
   clientAddress?: string;
@@ -129,21 +130,21 @@ export type SubmitWithTransferParams = {
 };
 
 export type SetBudgetWithSubscriptionParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   duration: bigint;
   packageId: bigint;
 };
 
 export type FundWithSubscriptionParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   duration: bigint;
   packageId: bigint;
 };
 
 export type SetBudgetWithSubscriptionAndFundRequestParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   duration: bigint;
   packageId: bigint;
@@ -152,7 +153,7 @@ export type SetBudgetWithSubscriptionAndFundRequestParams = {
 };
 
 export type FundViaRouterParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: AssetToken;
   hookConfigs: string[];
   subscriptionTerms?: { duration: bigint; packageId: bigint };
@@ -162,7 +163,7 @@ export type FundViaRouterParams = {
 };
 
 export type BatchConfigureHooksAgentParams = {
-  jobId: bigint;
+  jobId: JobId;
   selectors: Hex[];
   hooksPerSelector: string[][];
   routerAddress: string;
@@ -612,7 +613,7 @@ export class AcpAgent {
   // Job creation (on-chain, room is created by the observer)
   // -------------------------------------------------------------------------
 
-  async createJob(chainId: number, params: CreateJobParams): Promise<bigint> {
+  async createJob(chainId: number, params: CreateJobParams): Promise<JobId> {
     const client = this.getClient(chainId);
     // On Solana, createJob precomputes the job PDA from acp_state.job_counter
     // read at prepare time; a concurrent createJob can advance the counter
@@ -636,7 +637,7 @@ export class AcpAgent {
   async createFundTransferJob(
     chainId: number,
     params: CreateJobParams,
-  ): Promise<bigint> {
+  ): Promise<JobId> {
     const defaultHook = getAddressForChain(
       FUND_TRANSFER_HOOK_ADDRESSES,
       chainId,
@@ -651,7 +652,7 @@ export class AcpAgent {
   async createSubscriptionJob(
     chainId: number,
     params: CreateJobParams,
-  ): Promise<bigint> {
+  ): Promise<JobId> {
     const defaultHook = getAddressForChain(
       SUBSCRIPTION_HOOK_ADDRESSES,
       chainId,
@@ -667,7 +668,7 @@ export class AcpAgent {
     chainId: number,
     params: CreateJobParams,
     hookConfig?: MultiHookConfig,
-  ): Promise<bigint> {
+  ): Promise<JobId> {
     const routerAddress = getAddressForChain(
       MULTI_HOOK_ROUTER_ADDRESSES,
       chainId,
@@ -734,7 +735,7 @@ export class AcpAgent {
       hookAddress?: string;
       packageId?: number;
     },
-  ): Promise<bigint> {
+  ): Promise<JobId> {
     // Validate requirement data against JSON schema if requirements is an object.
     if (
       offering.requirements &&
@@ -764,7 +765,7 @@ export class AcpAgent {
     };
 
     let packageId: number | undefined;
-    let jobId: bigint;
+    let jobId: JobId;
 
     if (opts?.packageId) {
       const subscription = offering.subscriptions?.find(
@@ -832,7 +833,7 @@ export class AcpAgent {
       hookAddress?: string;
       packageId?: number;
     },
-  ): Promise<bigint> {
+  ): Promise<JobId> {
     const agent = await this.api.getAgentByWalletAddress(providerAddress);
     if (!agent) {
       throw new Error(`No agent found for wallet address: ${providerAddress}`);
@@ -957,7 +958,7 @@ export class AcpAgent {
 
   async getProposedSubscriptionTerms(
     chainId: number,
-    jobId: bigint,
+    jobId: JobId,
   ): Promise<{ duration: bigint; packageId: bigint }> {
     const acpClient = this.getClient(chainId);
     if (acpClient instanceof SolanaAcpClient) {
@@ -992,7 +993,7 @@ export class AcpAgent {
       address: hookAddress,
       abi: SUBSCRIPTION_HOOK_ABI as readonly unknown[],
       functionName: "getProposedTerms",
-      args: [jobId],
+      args: [BigInt(jobId)],
     })) as { duration: bigint; packageId: bigint };
     return { duration: result.duration, packageId: result.packageId };
   }
@@ -1122,7 +1123,7 @@ export class AcpAgent {
   async completeSubscriptionJob(
     chainId: number,
     params: {
-      jobId: bigint;
+      jobId: JobId;
       reason: string;
       providerSigner: SolanaSigner;
       clientAddress?: string;
@@ -1372,7 +1373,7 @@ export class AcpAgent {
 
   async getRouterHooks(
     chainId: number,
-    jobId: bigint,
+    jobId: JobId,
     selector: Hex,
   ): Promise<Address[]> {
     const client = this.getClient(chainId);
@@ -1415,7 +1416,7 @@ export class AcpAgent {
       address: router,
       abi: MULTI_HOOK_ROUTER_ABI as readonly unknown[],
       functionName: "getHooks",
-      args: [jobId, selector],
+      args: [BigInt(jobId), selector],
     });
     return result as Address[];
   }

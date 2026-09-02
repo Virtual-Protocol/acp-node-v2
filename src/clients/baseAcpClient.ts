@@ -5,6 +5,7 @@ import type {
   CompleteParams,
   CreateJobParams,
   FundParams,
+  JobId,
   OnChainJob,
   OperationResult,
   PreparedTxInput,
@@ -133,9 +134,9 @@ export abstract class BaseAcpClient<TTx> {
     chainId: number,
     txHash: string,
     filter?: JobCreatedFilter
-  ): Promise<bigint | null>;
+  ): Promise<JobId | null>;
 
-  abstract getJob(chainId: number, jobId: bigint): Promise<OnChainJob | null>;
+  abstract getJob(chainId: number, jobId: JobId): Promise<OnChainJob | null>;
 
   abstract getTokenDecimals(
     chainId: number,

@@ -160,7 +160,7 @@ const GUARDED_FEE_PAYER_PATTERNS = [
 // node has not seen yet fails the owner check with InvalidJob; the retryGuard
 // disambiguates lag (job Open on our RPC → retry) from a genuinely wrong job.
 // CleanupProposedTerms gates on job.state == Expired (subscription-hook
-// cleanup_proposed_terms.rs:47) — a pure state read with no clock check. A
+// cleanup_proposed_terms) — a pure state read with no clock check. A
 // JobNotExpired right after claim_refund flipped Open -> Expired is therefore
 // the sponsor's node not having seen that write yet, indistinguishable from
 // the genuine error on a still-live job. Guarded, not blindly retryable: the

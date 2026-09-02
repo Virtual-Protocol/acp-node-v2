@@ -55,6 +55,12 @@ import {
   withFeePayerRetry,
   isComputeBudgetExceededError,
 } from "./feePayerRetry.js";
+import {
+  withCuLimit,
+  withMaxCuLimit,
+  sizedCuLimit,
+  BUMP_CU_HEADROOM,
+} from "../../core/solana/routerLayout.js";
 import { stringifyBigIntSafe } from "../../core/solana/serialization.js";
 import { confirmTransaction } from "./txConfirmation.js";
 import {
@@ -86,6 +92,7 @@ const ATA_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
 
 const COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111";
+const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
 
 // There is deliberately NO prefund logic in this file. The rent prefund — a
 // System transfer from the sponsor into the acting wallet — is sized and
@@ -95,6 +102,56 @@ const COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111";
 // System instruction encoding all live server-side, where the caller is
 // authenticated and the checks cannot be skipped.
 
+// Never compress these out of the static keys. An instruction's program must
+// have a STATIC account index — the runtime bounds program_id_index by the
+// static key list — so the inserted System transfer needs System static. Once
+// compression has moved System into table space it has to be put back, and the
+// same pubkey reachable both ways is AccountLoadedTwice at lock validation.
+//
+// System is eligible for compression because it reaches the compressor as an
+// ACCOUNT, never as an invoked program: `ro(SYSTEM_PROGRAM_ID)` in the router
+// fan-out on complete/submit/reject, and the bundled ATA create on fund.
+const NEVER_COMPRESS: ReadonlySet<string> = new Set([
+  SYSTEM_PROGRAM_ID,
+  // Zero-cost today (cuLimitIx has `accounts: []` and is the message's own
+  // programAddress). Masked so one `ro(COMPUTE_BUDGET)` cannot reintroduce it.
+  COMPUTE_BUDGET_PROGRAM_ID,
+]);
+
+// Substituted for a masked entry so the map keeps its LENGTH and ORDER: the
+// on-wire index is the address's POSITION in this array, resolved against an
+// already-deployed table, so dropping an entry repoints every later account.
+// Never passed as an account by any ACP instruction, so it is never matched.
+const ALT_MASK_PLACEHOLDER = "AddressLookupTab1e1111111111111111111111111";
+
+/**
+ * Compresses against the caller's lookup tables, keeping NEVER_COMPRESS
+ * addresses static. Costs +31 bytes per masked address present (System only in
+ * practice) — one 32-byte static key for one 1-byte index.
+ *
+ * Applied on every path, not just sponsored ones: keeping System static is
+ * always safe, and a `lookupTables` send falls through to self-pay whenever
+ * sponsorship is unavailable.
+ */
+export function compressPreservingSponsorStatics<T>(
+  message: T,
+  lookupTables: NonNullable<SendInstructionsOptions["lookupTables"]>,
+): T {
+  const masked = Object.fromEntries(
+    Object.entries(lookupTables).map(([lut, addresses]) => [
+      lut,
+      // Keyed on ADDRESS, not position: the mask stays correct if the source
+      // list is ever reordered or extended. `.map` preserves length and order.
+      addresses.map((a) =>
+        NEVER_COMPRESS.has(a as string) ? ALT_MASK_PLACEHOLDER : a,
+      ),
+    ]),
+  );
+  return compressTransactionMessageUsingAddressLookupTables(
+    message as never,
+    masked as never,
+  ) as T;
+}
 
 /**
  * Applies the caller's lookup tables and extra signers to a message.
@@ -112,10 +169,7 @@ function applySendOptions<T>(
     m = addSignersToTransactionMessage(options.extraSigners as never, m);
   }
   if (options?.lookupTables && Object.keys(options.lookupTables).length > 0) {
-    m = compressTransactionMessageUsingAddressLookupTables(
-      m,
-      options.lookupTables as never,
-    );
+    m = compressPreservingSponsorStatics(m, options.lookupTables);
   }
   return m as T;
 }
@@ -1009,12 +1063,20 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     if (useSponsorship) {
       // Same ACP traffic, a different sponsor. Kora cannot rewrite the fee
-      // payer the way Alchemy does, so this path writes the rent prefund
-      // itself — see sendKoraSponsoredTransaction.
+      // payer the way Alchemy does — see sendKoraSponsoredTransaction.
       if (this._koraSponsorClients.has(chainId)) {
         return this.sendKoraSponsoredTransaction(chainId, instructions, options);
       }
-      return this.sendSponsoredTransaction(chainId, instructions, options);
+      // The sponsored path does not size its own limit (the server does, on
+      // the unsigned bytes) — so the bump's re-measurement happens here, in
+      // the closure, before the retry is submitted. A re-measurement that
+      // fails leaves the ceiling withCuBump authored.
+      return this.withCuBump(instructions, async (ixs, bump) => {
+        const send = bump
+          ? await this.resizeForBump(chainId, ixs, options)
+          : ixs;
+        return this.sendSponsoredTransaction(chainId, send, options);
+      });
     }
 
     // Non-ACP action. If Kora is configured for this chain, pay fees in SPL.
@@ -1033,25 +1095,188 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         return null;
       });
       if (koraPayer) {
-        return this.sendSplPaidTransaction(
-          chainId,
-          instructions,
-          koraPayer,
-          options,
+        // This attempt re-quotes the fee token before signing, so a bump is
+        // the costliest of the three. Headroom matters most here.
+        return this.withCuBump(instructions, (ixs, bump) =>
+          this.sendSplPaidTransaction(chainId, ixs, koraPayer, options, bump),
         );
       }
     }
 
-    const { value: latestBlockhash } = await this.getRpc(chainId)
-      .getLatestBlockhash()
-      .send();
+    // The blockhash is fetched INSIDE the attempt: a retry that follows an
+    // on-chain failure has already spent the confirmation wait, so reusing
+    // the first attempt's blockhash risks resending against an expired one.
+    return this.withCuBump(instructions, async (ixs, bump) => {
+      const { value: latestBlockhash } = await this.getRpc(chainId)
+        .getLatestBlockhash()
+        .send();
 
-    return this.sendSelfPayTransaction(
-      chainId,
-      instructions,
-      latestBlockhash,
-      options,
-    );
+      return this.sendSelfPayTransaction(
+        chainId,
+        ixs,
+        latestBlockhash,
+        options,
+        bump,
+      );
+    });
+  }
+
+  /**
+   * The instruction list with its compute limit set from a simulation.
+   *
+   * The standard recipe: probe at the ceiling so the simulation is not itself
+   * capped by the runtime's 200k-per-instruction default, read the units the
+   * run actually consumed, and re-declare that plus headroom. Solana charges
+   * the REQUESTED limit against each writable account's per-block budget, so
+   * a limit measured this way is worth the round trip on any path whose fee
+   * payer is shared.
+   *
+   * `trailingInstructions` are MEASURED but not returned. Callers that append
+   * further instructions after this list (the SPL-paid path appends its fee
+   * payment) must pass them, or the limit under-declares by their consumption
+   * and every send bumps.
+   *
+   * FAILS OPEN. Every failure path returns the input untouched, leaving
+   * ROUTER_CU_DEFAULT in place — a sizing problem must never cost a caller
+   * their send. A simulation that ERRORS is treated as unmeasured rather than
+   * as a measurement, because a run that aborted partway under-reports what a
+   * complete run consumes. Below this sits withCuBump, which catches a sized
+   * limit that still proved too small.
+   *
+   * `bump` marks the sizing that runs on withCuBump's retry: the standard
+   * margin already failed once, so the fresh measurement is declared with
+   * BUMP_CU_HEADROOM instead. The fail-open contract is unchanged — on the
+   * retry the input arrives carrying the ceiling, so returning it untouched
+   * IS the fall-back-to-ceiling.
+   */
+  private async sizeCuLimit(params: {
+    chainId: number;
+    instructions: SolanaInstructionLike[];
+    feePayer: Address;
+    latestBlockhash: any;
+    options?: SendInstructionsOptions | undefined;
+    trailingInstructions?: SolanaInstructionLike[] | undefined;
+    bump?: boolean | undefined;
+  }): Promise<SolanaInstructionLike[]> {
+    const { chainId, instructions, feePayer, latestBlockhash, options } =
+      params;
+    const trailing = params.trailingInstructions ?? [];
+
+    try {
+      const probe = applySendOptions(
+        pipe(
+          createTransactionMessage({ version: 0 }),
+          (m) => setTransactionMessageFeePayer(feePayer, m),
+          (m) =>
+            setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
+          (m) =>
+            appendTransactionMessageInstructions(
+              [...withMaxCuLimit(instructions), ...trailing],
+              m,
+            ),
+        ),
+        options,
+      );
+      const encoded = Buffer.from(
+        getTransactionEncoder().encode(compileTransaction(probe as never)),
+      ).toString("base64");
+
+      const { value } = await this.getRpc(chainId)
+        .simulateTransaction(encoded as never, {
+          encoding: "base64",
+          replaceRecentBlockhash: true,
+        } as never)
+        .send();
+
+      const result = value as { err?: unknown; unitsConsumed?: unknown };
+      if (result.err != null) return instructions;
+
+      const units = Number(result.unitsConsumed ?? 0);
+      if (!Number.isFinite(units) || units <= 0) return instructions;
+
+      const headroom = params.bump ? BUMP_CU_HEADROOM : undefined;
+      return withCuLimit(instructions, sizedCuLimit(units, headroom));
+    } catch {
+      return instructions;
+    }
+  }
+
+  /**
+   * The bump re-measurement for a path that has no sizing of its own — the
+   * sponsored send, whose limit is normally authored server-side on the
+   * unsigned bytes.
+   *
+   * Called with the ceiling-authored retry list from withCuBump. Fetches its
+   * own blockhash (the simulation replaces it anyway; compiling the probe
+   * needs one) and sizes with the bump headroom. Everything that can go wrong
+   * falls open onto the input, which carries the ceiling — the retry is never
+   * lost to a sizing problem. The fee payer is the same placeholder the
+   * sponsored build uses; the sponsor rewrites it after our measurement, and
+   * a fee-payer swap does not change the instructions' consumption.
+   */
+  private async resizeForBump(
+    chainId: number,
+    instructions: SolanaInstructionLike[],
+    options?: SendInstructionsOptions,
+  ): Promise<SolanaInstructionLike[]> {
+    try {
+      const { value: latestBlockhash } = await this.getRpc(chainId)
+        .getLatestBlockhash()
+        .send();
+      return await this.sizeCuLimit({
+        chainId,
+        instructions,
+        feePayer: this._signer.address,
+        latestBlockhash,
+        options,
+        bump: true,
+      });
+    } catch {
+      return instructions;
+    }
+  }
+
+  /**
+   * Runs a send, and on compute exhaustion re-runs it exactly ONCE.
+   *
+   * Legs declare ROUTER_CU_DEFAULT rather than the maximum, because Solana
+   * charges the REQUESTED limit against each writable account's per-block
+   * budget. That trades a certain waste for a rare correction, and this is
+   * the correction.
+   *
+   * The retry hands the attempt the CEILING plus `bump = true`. The ceiling
+   * is the fallback, not the goal: paths that size their own limit re-measure
+   * against the drifted state inside the retry (sizeCuLimit with `bump`,
+   * declaring BUMP_CU_HEADROOM over the fresh measurement), and their
+   * fail-open on a broken re-measurement returns the input untouched — which
+   * here carries the ceiling, the one value that can never be too small. The
+   * exhaustion that triggered the bump proves the drift outran the standard
+   * margin, so retrying at the same margin would be a coin flip on the same
+   * failure; retrying blind at the ceiling would spend block budget the leg
+   * never uses.
+   *
+   * A bump is a REBUILD, never a resend: raising the limit rewrites the
+   * message bytes, which voids every signature over them. That is also why
+   * compute exhaustion sits in NON_RETRYABLE_FEE_PAYER_PATTERNS — resending
+   * the identical transaction consumes the identical units.
+   *
+   * Safe to run after an on-chain failure. Compute exhaustion is
+   * deterministic and terminal, so the first attempt cannot land late and
+   * double-execute alongside the retry.
+   */
+  private async withCuBump(
+    instructions: SolanaInstructionLike[],
+    attempt: (
+      ixs: SolanaInstructionLike[],
+      bump: boolean,
+    ) => Promise<string>,
+  ): Promise<string> {
+    try {
+      return await attempt(instructions, false);
+    } catch (err) {
+      if (!isComputeBudgetExceededError(err)) throw err;
+      return attempt(withMaxCuLimit(instructions), true);
+    }
   }
 
   /** Cached Kora fee payer for a chain (stable per node). */
@@ -1077,13 +1302,23 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     latestBlockhash: any,
     options?: SendInstructionsOptions,
+    bump = false,
   ): Promise<string> {
+    const sized = await this.sizeCuLimit({
+      chainId,
+      instructions,
+      feePayer: this._signer.address,
+      latestBlockhash,
+      options,
+      bump,
+    });
+
     let message: any = pipe(
       createTransactionMessage({ version: 0 }),
       (msg) => setTransactionMessageFeePayer(this._signer.address, msg),
       (msg) =>
         setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-      (msg) => appendTransactionMessageInstructions(instructions, msg),
+      (msg) => appendTransactionMessageInstructions(sized, msg),
       (msg) =>
         addSignersToTransactionMessage(
           [this._signer, ...(options?.extraSigners ?? [])],
@@ -1091,9 +1326,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         ),
     );
     if (options?.lookupTables && Object.keys(options.lookupTables).length > 0) {
-      message = compressTransactionMessageUsingAddressLookupTables(
+      message = compressPreservingSponsorStatics(
         message,
-        options.lookupTables as never,
+        options.lookupTables,
       );
     }
 
@@ -1350,6 +1585,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     koraPayer: KoraPayer,
     options?: SendInstructionsOptions,
+    bump = false,
   ): Promise<string> {
     const client = this._koraClients.get(chainId)!;
     let lastSeenSlot: bigint | null = null;
@@ -1362,14 +1598,19 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         lastSeenSlot = context.slot;
 
         // Build with Kora's payer as fee payer, then compile to unsigned bytes
-        // for the fee quote + payment instruction.
-        const baseMessage = pipe(
-          createTransactionMessage({ version: 0 }),
-          (msg) => setTransactionMessageFeePayer(koraPayer.signerAddress, msg),
-          (msg) =>
-            setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
-          (msg) => appendTransactionMessageInstructions(instructions, msg),
-        );
+        // for the fee quote + payment instruction. Parameterised by the
+        // instruction list so the same shape can be rebuilt once the compute
+        // limit has been sized below.
+        const baseMessageOf = (ixs: SolanaInstructionLike[]) =>
+          pipe(
+            createTransactionMessage({ version: 0 }),
+            (msg) =>
+              setTransactionMessageFeePayer(koraPayer.signerAddress, msg),
+            (msg) =>
+              setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, msg),
+            (msg) => appendTransactionMessageInstructions(ixs, msg),
+          );
+        const baseMessage = baseMessageOf(instructions);
         // The caller's lookup tables and extra signers apply here too, and they
         // must be applied to the SAME message the quote is taken from: Kora
         // prices the compiled instruction list, so quoting an uncompressed
@@ -1410,9 +1651,34 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           decimals,
         });
 
+        // Sized AFTER the payment instructions exist, and measured WITH them:
+        // they are appended after the caller's list and consume real compute,
+        // so a limit measured without them under-declares and every send
+        // bumps.
+        //
+        // Safe to resize after quoting. Kora re-derives the fee it requires
+        // from the transaction it is handed, and that fee is the base fee
+        // plus price x limit — with no SetComputeUnitPrice attached the limit
+        // contributes nothing, so the quoted payment still covers it.
+        const sizedInstructions = await this.sizeCuLimit({
+          chainId,
+          instructions,
+          feePayer: koraPayer.signerAddress,
+          latestBlockhash,
+          options,
+          trailingInstructions: finalPaymentIxs,
+          bump,
+        });
+
         // Append the payment instruction, recompile, and collect signatures:
         // the user's (Privy) then Kora's (fee payer).
-        const finalMessage = withOptions(finalPaymentIxs);
+        const finalMessage = applySendOptions(
+          appendTransactionMessageInstructions(
+            finalPaymentIxs,
+            baseMessageOf(sizedInstructions),
+          ),
+          options,
+        );
         const finalBase64 = Buffer.from(
           getTransactionEncoder().encode(compileTransaction(finalMessage)),
         ).toString("base64");
@@ -1502,13 +1768,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // The server is the sole author of the compute-unit limit, the same way
-    // it is the sole author of the rent prefund: prepareSponsoredTransaction
-    // strips any ComputeBudget content and inserts a right-sized
-    // SetComputeUnitLimit, and its sign path refuses SetComputeUnitPrice.
-    // The blanket cuLimitIx the clients attach (shared with the Alchemy /
-    // SPL-paid / self-pay flows, which have no prepare step to re-insert a
-    // limit) is dropped here so the submitted transaction carries none.
+    // This path does not author its own compute-unit limit: it submits with
+    // no ComputeBudget content at all and signs whatever comes back. The
+    // cuLimitIx the clients attach for the other flows is dropped here.
     const bareInstructions = instructions.filter(
       (ix) => (ix.programAddress as string) !== COMPUTE_BUDGET_PROGRAM_ID,
     );
@@ -1520,10 +1782,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         false,
       );
     } catch (err) {
-      // Backstop for a sized limit that proved too small: exactly one re-run
-      // of the whole flow from prepare, asking the server for the maximum
-      // limit. Non-compute failures (blockhash expiry, insufficient funds,
-      // policy rejections) rethrow — they already had their retry path.
+      // Backstop for a compute limit that proved too small: exactly one
+      // re-run of the whole flow, this time requesting the maximum limit.
+      // Non-compute failures (blockhash expiry, insufficient funds, policy
+      // rejections) rethrow — they already had their retry path.
       if (!isComputeBudgetExceededError(err)) throw err;
       return this.sendKoraSponsoredAttempt(
         chainId,
@@ -1575,13 +1837,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           ),
         ).toString("base64");
 
-        // The server sizes AND inserts the rent prefund — the SDK never
-        // authors a transfer out of the sponsor. It also enforces the
-        // 1232-byte wire limit and refuses a transaction that fails
-        // simulation even when funded, so those errors surface here verbatim.
-        // The prepared bytes are signed EXACTLY as returned: no blockhash
-        // refresh, no instruction changes — any retry goes back through
-        // prepare instead of rebuilding locally.
+        // The SDK submits unfunded bytes and never authors a transfer out of
+        // the sponsor itself. Upstream rejections — oversized wire payloads,
+        // transactions that cannot execute — surface here verbatim.
+        // The returned bytes are signed EXACTLY as received: no blockhash
+        // refresh, no instruction changes — any retry re-runs this call
+        // instead of rebuilding locally.
         const { transaction: finalBase64 } =
           await client.prepareSponsoredTransaction(
             unfundedBase64,
@@ -1633,6 +1894,20 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     return payer;
   }
 
+  /**
+   * NO sizeCuLimit here, deliberately. This path submits UNSIGNED bytes, so
+   * the compute limit is sized upstream, one network leg closer to the RPC
+   * than this client is — and sized there for every SDK version, not only
+   * this one. The legs that sign before anything else sees them (SPL-paid,
+   * self-pay) have no such option and size themselves.
+   *
+   * withCuBump still wraps this call: an upstream that declines to size, or
+   * sizes too low, is caught by the same backstop as everywhere else. The
+   * bump retry arrives already re-measured (resizeForBump in the caller's
+   * closure), with the ceiling underneath if that measurement failed — this
+   * relies on the upstream sizer keeping a limit the transaction already
+   * declares, the same assumption the ceiling backstop has always made.
+   */
   private async sendSponsoredTransaction(
     chainId: number,
     instructions: SolanaInstructionLike[],
@@ -1668,9 +1943,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           options.lookupTables &&
           Object.keys(options.lookupTables).length > 0
         ) {
-          message = compressTransactionMessageUsingAddressLookupTables(
+          message = compressPreservingSponsorStatics(
             message,
-            options.lookupTables as never,
+            options.lookupTables,
           );
         }
 

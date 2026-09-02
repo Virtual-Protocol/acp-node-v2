@@ -36,6 +36,16 @@ export type PreparedSolanaTx = OperationResult<SolanaInstructionLike[]> & {
 export type PreparedTx = PreparedEvmTx | PreparedSolanaTx;
 export type PreparedTxInput = PreparedTx[];
 
+/**
+ * A job's identifier, in whichever form the chain gives it its identity.
+ *
+ * EVM: the contract's counter, a bigint.
+ *
+ * Solana: the job account's own base58 ADDRESS. The u64 `seed` behind the
+ * PDA is a write-once derivation input, not an identifier.
+ */
+export type JobId = bigint | string;
+
 export type CreateJobParams = {
   providerAddress: string;
   evaluatorAddress: string;
@@ -57,7 +67,7 @@ export type SubscriptionTermsInput = {
 };
 
 export type SetBudgetParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: bigint;
   clientAddress?: string;
   /**
@@ -88,28 +98,28 @@ export type ApproveAllowanceParams = {
 };
 
 export type FundParams = {
-  jobId: bigint;
+  jobId: JobId;
   expectedBudget: bigint;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type SubmitParams = {
-  jobId: bigint;
+  jobId: JobId;
   deliverable: string;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type CompleteParams = {
-  jobId: bigint;
+  jobId: JobId;
   reason: string;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type RejectParams = {
-  jobId: bigint;
+  jobId: JobId;
   reason: string;
   clientAddress?: string;
   optParams?: Hex;
@@ -117,13 +127,13 @@ export type RejectParams = {
 
 export type BatchConfigureHooksParams = {
   routerAddress: string;
-  jobId: bigint;
+  jobId: JobId;
   selectors: Hex[];
   hooksPerSelector: string[][];
 };
 
 export type OnChainJob = {
-  id: bigint;
+  id: JobId;
   client: string;
   provider: string;
   evaluator: string;

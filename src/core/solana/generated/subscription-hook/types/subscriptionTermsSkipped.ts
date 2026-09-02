@@ -22,6 +22,10 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Terms proposal skipped; client already has an active subscription for
+ * this (provider, package_id).
+ */
 export type SubscriptionTermsSkipped = {
   jobKey: Address;
   packageId: bigint;

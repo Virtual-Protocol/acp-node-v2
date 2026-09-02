@@ -22,6 +22,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Provider proposed subscription terms during `set_budget`. */
 export type SubscriptionTermsProposed = {
   jobKey: Address;
   packageId: bigint;

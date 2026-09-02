@@ -22,6 +22,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Subscription activated after `complete`. */
 export type SubscriptionActivated = {
   jobKey: Address;
   packageId: bigint;

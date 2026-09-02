@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** `ProposedTerms` PDA closed via `cleanup_proposed_terms` after job expiry. */
 export type ProposedTermsCleanedUp = {
   jobKey: Address;
   /**

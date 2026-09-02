@@ -7,24 +7,13 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
-  parseActivateSubscriptionInstruction,
-  parseAddWriterInstruction,
-  parseInitializeInstruction,
-  parseNominateAuthorityInstruction,
-  parsePreCreateSubExpiryInstruction,
-  parseReactivateWriterInstruction,
-  parseRemoveWriterInstruction,
   type ParsedAcceptAuthorityInstruction,
   type ParsedActivateSubscriptionInstruction,
   type ParsedAddWriterInstruction,
@@ -35,8 +24,7 @@ import {
   type ParsedRemoveWriterInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS =
-  "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1" as Address<"5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1">;
+export const SUBSCRIPTION_STATE_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionStateAccount {
   StateConfig,
@@ -194,9 +182,7 @@ export function identifySubscriptionStateInstruction(
   );
 }
 
-export type ParsedSubscriptionStateInstruction<
-  TProgram extends string = "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-> =
+export type ParsedSubscriptionStateInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionStateInstruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)
@@ -221,71 +207,3 @@ export type ParsedSubscriptionStateInstruction<
   | ({
       instructionType: SubscriptionStateInstruction.RemoveWriter;
     } & ParsedRemoveWriterInstruction<TProgram>);
-
-export function parseSubscriptionStateInstruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedSubscriptionStateInstruction<TProgram> {
-  const instructionType = identifySubscriptionStateInstruction(instruction);
-  switch (instructionType) {
-    case SubscriptionStateInstruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.ActivateSubscription: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.ActivateSubscription,
-        ...parseActivateSubscriptionInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.AddWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.AddWriter,
-        ...parseAddWriterInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.NominateAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.PreCreateSubExpiry: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.PreCreateSubExpiry,
-        ...parsePreCreateSubExpiryInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.ReactivateWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.ReactivateWriter,
-        ...parseReactivateWriterInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.RemoveWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.RemoveWriter,
-        ...parseRemoveWriterInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

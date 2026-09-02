@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a provider is assigned to a job via `set_provider`. */
 export type ProviderSet = { job: Address; provider: Address };
 
 export type ProviderSetArgs = ProviderSet;

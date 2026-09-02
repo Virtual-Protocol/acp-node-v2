@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the budget is set on a job via `set_budget`. */
 export type BudgetSet = { job: Address; amount: bigint };
 
 export type BudgetSetArgs = { job: Address; amount: number | bigint };

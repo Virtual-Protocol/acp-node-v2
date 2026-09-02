@@ -20,6 +20,10 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Emitted when a configured sub-hook is no longer whitelisted at fan-out
+ * time; the router skips it and continues.
+ */
 export type DewhitelistedHookSkipped = {
   jobKey: Address;
   action: number;

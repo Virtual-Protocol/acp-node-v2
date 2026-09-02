@@ -22,6 +22,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a subscription is activated or extended by a writer via CPI. */
 export type SubscriptionActivated = {
   client: Address;
   provider: Address;

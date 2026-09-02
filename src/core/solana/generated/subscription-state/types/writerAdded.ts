@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a program is granted the writer role (or re-activated). */
 export type WriterAdded = { writer: Address };
 
 export type WriterAddedArgs = WriterAdded;

@@ -18,6 +18,11 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Emitted when the mint accepted for job budgets is rotated. Carries the
+ * previous value so an indexer can tell which jobs were funded under which
+ * allowlist without replaying every prior update.
+ */
 export type PaymentTokenUpdated = { paymentToken: Address; previous: Address };
 
 export type PaymentTokenUpdatedArgs = PaymentTokenUpdated;

@@ -22,6 +22,7 @@ import {
   type OptionOrNullable,
 } from "@solana/kit";
 
+/** Emitted when an admin detaches a hook from an in-flight job via `detach_hook`. */
 export type HookDetached = {
   job: Address;
   /** The hook address that was detached, captured before it is cleared to None. */

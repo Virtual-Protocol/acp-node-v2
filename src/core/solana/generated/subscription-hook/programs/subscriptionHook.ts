@@ -7,21 +7,13 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAfterActionInstruction,
-  parseBeforeActionInstruction,
-  parseCleanupProposedTermsInstruction,
-  parseInitializeInstruction,
-  parsePreCreateProposedTermsInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedCleanupProposedTermsInstruction,
@@ -29,8 +21,7 @@ import {
   type ParsedPreCreateProposedTermsInstruction,
 } from "../instructions/index.js";
 
-export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS =
-  "6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP" as Address<"6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP">;
+export const SUBSCRIPTION_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum SubscriptionHookAccount {
   HookMetadata,
@@ -140,9 +131,7 @@ export function identifySubscriptionHookInstruction(
   );
 }
 
-export type ParsedSubscriptionHookInstruction<
-  TProgram extends string = "6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP",
-> =
+export type ParsedSubscriptionHookInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionHookInstruction.AfterAction;
     } & ParsedAfterActionInstruction<TProgram>)
@@ -158,50 +147,3 @@ export type ParsedSubscriptionHookInstruction<
   | ({
       instructionType: SubscriptionHookInstruction.PreCreateProposedTerms;
     } & ParsedPreCreateProposedTermsInstruction<TProgram>);
-
-export function parseSubscriptionHookInstruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedSubscriptionHookInstruction<TProgram> {
-  const instructionType = identifySubscriptionHookInstruction(instruction);
-  switch (instructionType) {
-    case SubscriptionHookInstruction.AfterAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.AfterAction,
-        ...parseAfterActionInstruction(instruction),
-      };
-    }
-    case SubscriptionHookInstruction.BeforeAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.BeforeAction,
-        ...parseBeforeActionInstruction(instruction),
-      };
-    }
-    case SubscriptionHookInstruction.CleanupProposedTerms: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.CleanupProposedTerms,
-        ...parseCleanupProposedTermsInstruction(instruction),
-      };
-    }
-    case SubscriptionHookInstruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case SubscriptionHookInstruction.PreCreateProposedTerms: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionHookInstruction.PreCreateProposedTerms,
-        ...parsePreCreateProposedTermsInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when an expired job is claimed via `claim_refund`. */
 export type JobExpired = { job: Address };
 
 export type JobExpiredArgs = JobExpired;

@@ -7,36 +7,13 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
-  parseAddHookWhitelistInstruction,
-  parseClaimRefundInstruction,
-  parseCompleteInstruction,
-  parseCreateJobInstruction,
-  parseDetachHookInstruction,
-  parseFundInstruction,
-  parseInitializeInstruction,
-  parseMigrateStateInstruction,
-  parseNominateAuthorityInstruction,
-  parseRejectInstruction,
-  parseRemoveHookWhitelistInstruction,
-  parseSetBudgetInstruction,
-  parseSetEvaluatorFeeInstruction,
-  parseSetPauseInstruction,
-  parseSetPaymentTokenInstruction,
-  parseSetPlatformFeeInstruction,
-  parseSetProviderInstruction,
-  parseSetSponsorInstruction,
-  parseSubmitInstruction,
   type ParsedAcceptAuthorityInstruction,
   type ParsedAddHookWhitelistInstruction,
   type ParsedClaimRefundInstruction,
@@ -59,8 +36,7 @@ import {
   type ParsedSubmitInstruction,
 } from "../instructions/index.js";
 
-export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS =
-  "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y" as Address<"FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y">;
+export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum AgenticCommerceV3Account {
   AcpState,
@@ -362,9 +338,7 @@ export function identifyAgenticCommerceV3Instruction(
   );
 }
 
-export type ParsedAgenticCommerceV3Instruction<
-  TProgram extends string = "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
-> =
+export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)
@@ -425,155 +399,3 @@ export type ParsedAgenticCommerceV3Instruction<
   | ({
       instructionType: AgenticCommerceV3Instruction.Submit;
     } & ParsedSubmitInstruction<TProgram>);
-
-export function parseAgenticCommerceV3Instruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedAgenticCommerceV3Instruction<TProgram> {
-  const instructionType = identifyAgenticCommerceV3Instruction(instruction);
-  switch (instructionType) {
-    case AgenticCommerceV3Instruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.AddHookWhitelist: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.AddHookWhitelist,
-        ...parseAddHookWhitelistInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.ClaimRefund: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.ClaimRefund,
-        ...parseClaimRefundInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Complete: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Complete,
-        ...parseCompleteInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.CreateJob: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.CreateJob,
-        ...parseCreateJobInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.DetachHook: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.DetachHook,
-        ...parseDetachHookInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Fund: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Fund,
-        ...parseFundInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.MigrateState: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.MigrateState,
-        ...parseMigrateStateInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.NominateAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Reject: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Reject,
-        ...parseRejectInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.RemoveHookWhitelist: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.RemoveHookWhitelist,
-        ...parseRemoveHookWhitelistInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetBudget: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetBudget,
-        ...parseSetBudgetInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetEvaluatorFee: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetEvaluatorFee,
-        ...parseSetEvaluatorFeeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetPause: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetPause,
-        ...parseSetPauseInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetPaymentToken: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetPaymentToken,
-        ...parseSetPaymentTokenInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetPlatformFee: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetPlatformFee,
-        ...parseSetPlatformFeeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetProvider: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetProvider,
-        ...parseSetProviderInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetSponsor: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetSponsor,
-        ...parseSetSponsorInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Submit: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Submit,
-        ...parseSubmitInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

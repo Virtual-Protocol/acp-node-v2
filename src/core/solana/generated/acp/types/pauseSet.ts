@@ -17,6 +17,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the protocol pause flag is toggled via `set_pause`. */
 export type PauseSet = { paused: boolean };
 
 export type PauseSetArgs = PauseSet;

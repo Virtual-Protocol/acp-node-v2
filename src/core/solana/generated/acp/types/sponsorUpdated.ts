@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the rent sponsor is updated via `set_sponsor`. */
 export type SponsorUpdated = { sponsor: Address };
 
 export type SponsorUpdatedArgs = SponsorUpdated;

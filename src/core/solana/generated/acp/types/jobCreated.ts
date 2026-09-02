@@ -26,6 +26,14 @@ import {
   type Encoder,
 } from "@solana/kit";
 
+/**
+ * Emitted when a new job is created via `create_job`.
+ *
+ * `description` is carried here because it is no longer stored on the job.
+ * Nothing on-chain reads it, and as a 260-byte ceiling allocated in full it was
+ * 49% of the account; this is now its only record, so an indexer that wants it
+ * must capture it from this event.
+ */
 export type JobCreated = {
   job: Address;
   client: Address;

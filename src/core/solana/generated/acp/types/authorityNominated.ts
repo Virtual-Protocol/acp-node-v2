@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a new authority is nominated (first step of two-step transfer). */
 export type AuthorityNominated = {
   currentAuthority: Address;
   pendingAuthority: Address;

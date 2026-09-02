@@ -20,6 +20,11 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Emitted when a terminal job's `HookRouter` PDA is closed and its rent
+ * reclaimed. `rent_destination` is recorded so indexers can see where the
+ * lamports went, following the precedent set by `ProposedTermsCleanedUp`.
+ */
 export type HookRouterClosed = {
   jobKey: Address;
   rentDestination: Address;

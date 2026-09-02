@@ -23,6 +23,7 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/** Emitted when a job is completed (evaluator approval or auto-complete). */
 export type JobCompleted = {
   job: Address;
   evaluator: Address;

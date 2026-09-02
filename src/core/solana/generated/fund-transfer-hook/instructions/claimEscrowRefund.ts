@@ -32,11 +32,7 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import {
-  findEscrowAuthorityPda,
-  findHookStatePda,
-  findProviderEscrowIntentIdPda,
-} from "../pdas/index.js";
+import { findEscrowAuthorityPda, findHookStatePda } from "../pdas/index.js";
 import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
@@ -59,7 +55,6 @@ export type ClaimEscrowRefundInstruction<
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountHookState extends string | AccountMeta<string> = string,
   TAccountJobAccount extends string | AccountMeta<string> = string,
-  TAccountProviderEscrowIntentId extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
   TAccountEscrowVault extends string | AccountMeta<string> = string,
   TAccountProviderTokenAccount extends string | AccountMeta<string> = string,
@@ -83,9 +78,6 @@ export type ClaimEscrowRefundInstruction<
       TAccountJobAccount extends string
         ? ReadonlyAccount<TAccountJobAccount>
         : TAccountJobAccount,
-      TAccountProviderEscrowIntentId extends string
-        ? ReadonlyAccount<TAccountProviderEscrowIntentId>
-        : TAccountProviderEscrowIntentId,
       TAccountIntent extends string
         ? WritableAccount<TAccountIntent>
         : TAccountIntent,
@@ -149,7 +141,6 @@ export type ClaimEscrowRefundAsyncInput<
   TAccountCaller extends string = string,
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
-  TAccountProviderEscrowIntentId extends string = string,
   TAccountIntent extends string = string,
   TAccountEscrowVault extends string = string,
   TAccountProviderTokenAccount extends string = string,
@@ -161,10 +152,9 @@ export type ClaimEscrowRefundAsyncInput<
   caller: TransactionSigner<TAccountCaller>;
   hookState?: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
-  providerEscrowIntentId?: Address<TAccountProviderEscrowIntentId>;
   /**
-   * The job-scoped escrow intent. The map is not part of the address
-   * derivation, so the id equality is asserted explicitly.
+   * The job-scoped escrow intent. Its address is its identity, so the seeds
+   * constraint is the whole check.
    */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
@@ -184,7 +174,6 @@ export async function getClaimEscrowRefundInstructionAsync<
   TAccountCaller extends string,
   TAccountHookState extends string,
   TAccountJobAccount extends string,
-  TAccountProviderEscrowIntentId extends string,
   TAccountIntent extends string,
   TAccountEscrowVault extends string,
   TAccountProviderTokenAccount extends string,
@@ -198,7 +187,6 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
@@ -214,7 +202,6 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
@@ -233,10 +220,6 @@ export async function getClaimEscrowRefundInstructionAsync<
     caller: { value: input.caller ?? null, isWritable: false },
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
-    providerEscrowIntentId: {
-      value: input.providerEscrowIntentId ?? null,
-      isWritable: false,
-    },
     intent: { value: input.intent ?? null, isWritable: true },
     escrowVault: { value: input.escrowVault ?? null, isWritable: true },
     providerTokenAccount: {
@@ -263,11 +246,6 @@ export async function getClaimEscrowRefundInstructionAsync<
   if (!accounts.hookState.value) {
     accounts.hookState.value = await findHookStatePda();
   }
-  if (!accounts.providerEscrowIntentId.value) {
-    accounts.providerEscrowIntentId.value = await findProviderEscrowIntentIdPda(
-      { jobKey: expectSome(args.jobKey) },
-    );
-  }
   if (!accounts.escrowAuthority.value) {
     accounts.escrowAuthority.value = await findEscrowAuthorityPda({
       jobKey: expectSome(args.jobKey),
@@ -284,7 +262,6 @@ export async function getClaimEscrowRefundInstructionAsync<
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
-      getAccountMeta(accounts.providerEscrowIntentId),
       getAccountMeta(accounts.intent),
       getAccountMeta(accounts.escrowVault),
       getAccountMeta(accounts.providerTokenAccount),
@@ -302,7 +279,6 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
@@ -317,7 +293,6 @@ export type ClaimEscrowRefundInput<
   TAccountCaller extends string = string,
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
-  TAccountProviderEscrowIntentId extends string = string,
   TAccountIntent extends string = string,
   TAccountEscrowVault extends string = string,
   TAccountProviderTokenAccount extends string = string,
@@ -329,10 +304,9 @@ export type ClaimEscrowRefundInput<
   caller: TransactionSigner<TAccountCaller>;
   hookState: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
-  providerEscrowIntentId: Address<TAccountProviderEscrowIntentId>;
   /**
-   * The job-scoped escrow intent. The map is not part of the address
-   * derivation, so the id equality is asserted explicitly.
+   * The job-scoped escrow intent. Its address is its identity, so the seeds
+   * constraint is the whole check.
    */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
@@ -352,7 +326,6 @@ export function getClaimEscrowRefundInstruction<
   TAccountCaller extends string,
   TAccountHookState extends string,
   TAccountJobAccount extends string,
-  TAccountProviderEscrowIntentId extends string,
   TAccountIntent extends string,
   TAccountEscrowVault extends string,
   TAccountProviderTokenAccount extends string,
@@ -366,7 +339,6 @@ export function getClaimEscrowRefundInstruction<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
@@ -381,7 +353,6 @@ export function getClaimEscrowRefundInstruction<
   TAccountCaller,
   TAccountHookState,
   TAccountJobAccount,
-  TAccountProviderEscrowIntentId,
   TAccountIntent,
   TAccountEscrowVault,
   TAccountProviderTokenAccount,
@@ -399,10 +370,6 @@ export function getClaimEscrowRefundInstruction<
     caller: { value: input.caller ?? null, isWritable: false },
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
-    providerEscrowIntentId: {
-      value: input.providerEscrowIntentId ?? null,
-      isWritable: false,
-    },
     intent: { value: input.intent ?? null, isWritable: true },
     escrowVault: { value: input.escrowVault ?? null, isWritable: true },
     providerTokenAccount: {
@@ -437,7 +404,6 @@ export function getClaimEscrowRefundInstruction<
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
-      getAccountMeta(accounts.providerEscrowIntentId),
       getAccountMeta(accounts.intent),
       getAccountMeta(accounts.escrowVault),
       getAccountMeta(accounts.providerTokenAccount),
@@ -455,7 +421,6 @@ export function getClaimEscrowRefundInstruction<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
@@ -475,22 +440,21 @@ export type ParsedClaimEscrowRefundInstruction<
     caller: TAccountMetas[0];
     hookState: TAccountMetas[1];
     jobAccount: TAccountMetas[2];
-    providerEscrowIntentId: TAccountMetas[3];
     /**
-     * The job-scoped escrow intent. The map is not part of the address
-     * derivation, so the id equality is asserted explicitly.
+     * The job-scoped escrow intent. Its address is its identity, so the seeds
+     * constraint is the whole check.
      */
-    intent: TAccountMetas[4];
+    intent: TAccountMetas[3];
     /** Escrow vault holding the escrowed tokens */
-    escrowVault: TAccountMetas[5];
+    escrowVault: TAccountMetas[4];
     /** Provider's token account to receive refund */
-    providerTokenAccount: TAccountMetas[6];
-    escrowAuthority: TAccountMetas[7];
-    tokenProgram: TAccountMetas[8];
+    providerTokenAccount: TAccountMetas[5];
+    escrowAuthority: TAccountMetas[6];
+    tokenProgram: TAccountMetas[7];
     /** against `hook_state.acp_program`. Read only to source the treasury. */
-    acpState: TAccountMetas[9];
+    acpState: TAccountMetas[8];
     /** equal `acp_state.sponsor`. */
-    sponsor: TAccountMetas[10];
+    sponsor: TAccountMetas[9];
   };
   data: ClaimEscrowRefundInstructionData;
 };
@@ -503,7 +467,7 @@ export function parseClaimEscrowRefundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimEscrowRefundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 10) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -519,7 +483,6 @@ export function parseClaimEscrowRefundInstruction<
       caller: getNextAccount(),
       hookState: getNextAccount(),
       jobAccount: getNextAccount(),
-      providerEscrowIntentId: getNextAccount(),
       intent: getNextAccount(),
       escrowVault: getNextAccount(),
       providerTokenAccount: getNextAccount(),

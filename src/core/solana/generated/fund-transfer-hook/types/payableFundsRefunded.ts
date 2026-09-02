@@ -22,7 +22,7 @@ import {
 
 export type PayableFundsRefunded = {
   jobKey: Address;
-  intentId: bigint;
+  intentKey: Address;
   sender: Address;
   token: Address;
   amount: bigint;
@@ -30,7 +30,7 @@ export type PayableFundsRefunded = {
 
 export type PayableFundsRefundedArgs = {
   jobKey: Address;
-  intentId: number | bigint;
+  intentKey: Address;
   sender: Address;
   token: Address;
   amount: number | bigint;
@@ -39,7 +39,7 @@ export type PayableFundsRefundedArgs = {
 export function getPayableFundsRefundedEncoder(): FixedSizeEncoder<PayableFundsRefundedArgs> {
   return getStructEncoder([
     ["jobKey", getAddressEncoder()],
-    ["intentId", getU64Encoder()],
+    ["intentKey", getAddressEncoder()],
     ["sender", getAddressEncoder()],
     ["token", getAddressEncoder()],
     ["amount", getU64Encoder()],
@@ -49,7 +49,7 @@ export function getPayableFundsRefundedEncoder(): FixedSizeEncoder<PayableFundsR
 export function getPayableFundsRefundedDecoder(): FixedSizeDecoder<PayableFundsRefunded> {
   return getStructDecoder([
     ["jobKey", getAddressDecoder()],
-    ["intentId", getU64Decoder()],
+    ["intentKey", getAddressDecoder()],
     ["sender", getAddressDecoder()],
     ["token", getAddressDecoder()],
     ["amount", getU64Decoder()],

@@ -54,6 +54,7 @@ import {
 import {
   withFeePayerRetry,
   isComputeBudgetExceededError,
+  isOpaqueSimulationRefusal,
 } from "./feePayerRetry.js";
 import {
   withCuLimit,
@@ -1695,6 +1696,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       },
       {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        ...(options?.expectedErrors
+          ? { expectedErrors: options.expectedErrors }
+          : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
@@ -1843,14 +1847,35 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         // The returned bytes are signed EXACTLY as received: no blockhash
         // refresh, no instruction changes — any retry re-runs this call
         // instead of rebuilding locally.
-        const { transaction: finalBase64 } =
-          await client.prepareSponsoredTransaction(
+        let finalBase64: string;
+        try {
+          ({ transaction: finalBase64 } =
+            await client.prepareSponsoredTransaction(
+              unfundedBase64,
+              forceMaxCuLimit ? { forceMaxCuLimit: true } : undefined,
+            ));
+        } catch (err) {
+          throw await this.explainOpaqueSimulationRefusal(
+            chainId,
             unfundedBase64,
-            forceMaxCuLimit ? { forceMaxCuLimit: true } : undefined,
+            err,
           );
+        }
 
         const userSigned = await this.signTransactionViaPrivy(finalBase64);
-        const fullySigned = await client.signTransaction(userSigned);
+        let fullySigned: string;
+        try {
+          fullySigned = await client.signTransaction(userSigned);
+        } catch (err) {
+          // `userSigned`, not `unfundedBase64`: by this point Kora has rewritten
+          // the transaction (rent prefund, compute budget), and re-simulating
+          // the pre-prepare bytes would explain a transaction nobody sent.
+          throw await this.explainOpaqueSimulationRefusal(
+            chainId,
+            userSigned,
+            err,
+          );
+        }
 
         return this.broadcastAndConfirm(
           chainId,
@@ -1861,6 +1886,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       },
       {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        ...(options?.expectedErrors
+          ? { expectedErrors: options.expectedErrors }
+          : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
@@ -1879,6 +1907,59 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         },
       },
     );
+  }
+
+  /**
+   * Re-attaches the program logs a sponsor swallowed.
+   *
+   * Kora refuses a transaction it cannot simulate with a bare "Transaction
+   * fails simulation." — no program, no error code, no logs. Every caller
+   * downstream that reasons about WHY a send failed is then blind: the
+   * fee-payer retry classifier cannot tell sponsor-node lag from a
+   * deterministic revert, and a negative test cannot tell which guard fired.
+   * Alchemy returns the simulation logs, so the same code reads the error
+   * correctly there and not here — one sponsor's response shape silently
+   * changing the SDK's behavior.
+   *
+   * The logs are not the sponsor's to give: the transaction is ours and our
+   * own RPC will simulate it. `sigVerify: false` because the bytes are
+   * deliberately unsigned at this point, `replaceRecentBlockhash: true`
+   * because the blockhash may already have moved on.
+   *
+   * FAILS OPEN in both directions. A refusal that already carries a reason is
+   * returned untouched (no extra RPC round trip), and a simulation that
+   * errors, times out, or returns no logs returns the original error
+   * unchanged — recovering context must never turn one failure into another.
+   * The returned error keeps the original as its `cause`, so nothing that
+   * matches on the original message stops matching.
+   */
+  private async explainOpaqueSimulationRefusal(
+    chainId: number,
+    transactionBase64: string,
+    err: unknown,
+  ): Promise<unknown> {
+    if (!isOpaqueSimulationRefusal(err)) return err;
+    try {
+      const { value } = await this.getRpc(chainId)
+        .simulateTransaction(transactionBase64 as never, {
+          encoding: "base64",
+          sigVerify: false,
+          replaceRecentBlockhash: true,
+        } as never)
+        .send();
+      const logs = (value as { logs?: string[] | null })?.logs;
+      if (!logs || logs.length === 0) return err;
+      const original = err instanceof Error ? err.message : String(err);
+      const explained = new Error(
+        `${original}\nlocal simulation logs (sponsor returned none):\n${logs.join("\n")}`,
+      );
+      // Assigned rather than passed to the constructor: `cause` as a
+      // constructor option needs lib ES2022, and this file targets lower.
+      (explained as { cause?: unknown }).cause = err;
+      return explained;
+    } catch {
+      return err;
+    }
   }
 
   /** The sponsor node has one signer, so its payer is stable and cacheable. */
@@ -1995,6 +2076,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       },
       {
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        ...(options?.expectedErrors
+          ? { expectedErrors: options.expectedErrors }
+          : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,
@@ -2110,6 +2194,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         // Fixed bytes: an expired blockhash can never land on a retry.
         retryExpired: false,
         ...(options?.retryGuard ? { retryGuard: options.retryGuard } : {}),
+        ...(options?.expectedErrors
+          ? { expectedErrors: options.expectedErrors }
+          : {}),
         onRetry: (attempt, maxAttempts, message, error) => {
           const { requiredSlot, nodeSlot } = resolveSponsoredRetrySlots(error, {
             lastConfirmedSlot: this._lastConfirmedSlot.get(chainId) ?? null,

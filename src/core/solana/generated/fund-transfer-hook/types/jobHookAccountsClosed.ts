@@ -20,6 +20,11 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/**
+ * Emitted when a terminal job's fund-transfer-hook PDAs are reclaimed.
+ * `rent_destination` is recorded so indexers can see where the lamports went,
+ * following the precedent set by `ProposedTermsCleanedUp`.
+ */
 export type JobHookAccountsClosed = {
   jobKey: Address;
   rentDestination: Address;

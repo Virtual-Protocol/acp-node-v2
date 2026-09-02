@@ -120,6 +120,38 @@ function collectErrorText(err: unknown): string {
   return parts.join(" ").toLowerCase();
 }
 
+// A sponsor refusal that names no reason. Kora's `prepareSponsoredTransaction`
+// answers a transaction it could not simulate with a bare "Transaction fails
+// simulation." — no program id, no error code, no logs — so neither the retry
+// classifier below nor a caller inspecting the error can tell node lag from a
+// deterministic revert. The second half of the test is what keeps this narrow:
+// a refusal that DID carry a reason is not opaque and needs no recovery.
+const OPAQUE_SIMULATION_REFUSAL_PATTERNS = [
+  "transaction fails simulation",
+  "transaction failed simulation",
+];
+
+const SIMULATION_DETAIL_MARKERS = [
+  "program log:",
+  "error code:",
+  "custom program error",
+  "instructionerror",
+  "error processing instruction",
+];
+
+/**
+ * True when a sponsor refused the transaction at simulation WITHOUT saying
+ * why. Callers that can simulate the same bytes themselves use this to decide
+ * whether recovering the logs is worth an RPC round trip.
+ */
+export function isOpaqueSimulationRefusal(err: unknown): boolean {
+  const text = collectErrorText(err);
+  return (
+    OPAQUE_SIMULATION_REFUSAL_PATTERNS.some((p) => text.includes(p)) &&
+    !SIMULATION_DETAIL_MARKERS.some((p) => text.includes(p))
+  );
+}
+
 export function isRetryableFeePayerError(err: unknown): boolean {
   // An expired transaction is provably dropped (blockhash validity ended
   // without inclusion), so retrying cannot double-apply. Whether a retry can
@@ -170,6 +202,30 @@ const GUARDED_FEE_PAYER_PATTERN_GROUPS: string[][] = [
   ["instruction: cleanupproposedterms", "error code: jobnotexpired."],
 ];
 
+/**
+ * True when the error is one the caller declared it EXPECTS (negative test).
+ *
+ * This outranks every other classification. A revert the caller asked for is
+ * deterministic by construction: resending the same transaction reproduces it,
+ * so retrying can only burn the attempt budget and the wall clock. It also
+ * keeps such sends out of the sponsored-retry count, which otherwise reports
+ * guard cases as sponsor-node lag.
+ *
+ * Matched case-insensitively as substrings of the flattened error chain, so a
+ * caller may pass an Anchor error name, a decimal code, or a hex code.
+ */
+export function isExpectedFeePayerError(
+  err: unknown,
+  expectedErrors: string[] | undefined,
+): boolean {
+  if (!expectedErrors || expectedErrors.length === 0) return false;
+  const text = collectErrorText(err);
+  return expectedErrors.some((name) => {
+    const needle = name.trim().toLowerCase();
+    return needle.length > 0 && text.includes(needle);
+  });
+}
+
 export function isGuardedFeePayerError(err: unknown): boolean {
   const text = collectErrorText(err);
   return (
@@ -202,6 +258,13 @@ export interface FeePayerRetryOptions {
    * cannot abort an otherwise recoverable send.
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+  /**
+   * Error names/codes the CALLER expects this send to fail with. A matching
+   * failure is terminal by definition — the caller asked for it — so it
+   * propagates on the first attempt, ahead of both the retryable and the
+   * guarded lists. See isExpectedFeePayerError.
+   */
+  expectedErrors?: string[];
   /**
    * Set false when every attempt rebroadcasts the SAME transaction bytes
    * (fixed blockhash): an "expired" confirmation is then terminal — the
@@ -236,8 +299,9 @@ export function computeRetryDelayMs(
  * sponsor-simulation / broadcast-lag pattern. Guarded errors (WrongStatus)
  * are granted one unconditional grace retry, then retried only while
  * `retryGuard` confirms sponsor lag; without a retryGuard they propagate
- * immediately. Non-retryable errors and the final attempt's error propagate
- * unchanged.
+ * immediately. Errors the caller listed in `expectedErrors` propagate on the
+ * first attempt, ahead of both lists. Non-retryable errors and the final
+ * attempt's error propagate unchanged.
  */
 export async function withFeePayerRetry<T>(
   fn: () => Promise<T>,
@@ -254,6 +318,10 @@ export async function withFeePayerRetry<T>(
       return await fn();
     } catch (err) {
       lastError = err;
+      // A failure the caller declared it expects is terminal on attempt 1,
+      // ahead of every other rule: it is the ANSWER the send was made to
+      // obtain, not a symptom of a stale sponsor node.
+      if (isExpectedFeePayerError(err, options.expectedErrors)) throw err;
       let retryable = isRetryableFeePayerError(err);
       if (
         retryable &&

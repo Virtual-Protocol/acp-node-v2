@@ -22,7 +22,7 @@ import {
 
 export type PayableTransferExecuted = {
   jobKey: Address;
-  intentId: bigint;
+  intentKey: Address;
   from: Address;
   to: Address;
   token: Address;
@@ -31,7 +31,7 @@ export type PayableTransferExecuted = {
 
 export type PayableTransferExecutedArgs = {
   jobKey: Address;
-  intentId: number | bigint;
+  intentKey: Address;
   from: Address;
   to: Address;
   token: Address;
@@ -41,7 +41,7 @@ export type PayableTransferExecutedArgs = {
 export function getPayableTransferExecutedEncoder(): FixedSizeEncoder<PayableTransferExecutedArgs> {
   return getStructEncoder([
     ["jobKey", getAddressEncoder()],
-    ["intentId", getU64Encoder()],
+    ["intentKey", getAddressEncoder()],
     ["from", getAddressEncoder()],
     ["to", getAddressEncoder()],
     ["token", getAddressEncoder()],
@@ -52,7 +52,7 @@ export function getPayableTransferExecutedEncoder(): FixedSizeEncoder<PayableTra
 export function getPayableTransferExecutedDecoder(): FixedSizeDecoder<PayableTransferExecuted> {
   return getStructDecoder([
     ["jobKey", getAddressDecoder()],
-    ["intentId", getU64Decoder()],
+    ["intentKey", getAddressDecoder()],
     ["from", getAddressDecoder()],
     ["to", getAddressDecoder()],
     ["token", getAddressDecoder()],

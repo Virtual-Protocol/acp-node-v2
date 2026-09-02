@@ -9,4 +9,3 @@
 export * from "./escrowAuthority.js";
 export * from "./hookMetadata.js";
 export * from "./hookState.js";
-export * from "./providerEscrowIntentId.js";

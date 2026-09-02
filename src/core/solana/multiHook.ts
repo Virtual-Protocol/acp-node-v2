@@ -263,14 +263,27 @@ const FUND_REQUEST_INTENT_ID_DISCRIMINATOR = new Uint8Array([
   115, 10, 133, 59, 77, 84, 106, 104,
 ]);
 
-// On-chain layout: 8-byte discriminator, job_key Pubkey, intent_id u64 LE, bump u8.
-const FUND_REQUEST_INTENT_ID_SIZE = 8 + 32 + 8 + 1;
+/** sha256("account:ProviderEscrowIntentId")[0..8]. Dropped from the IDL for
+ *  the same reason as its fund-request sibling: no instruction takes it typed
+ *  any more, so there is no generated fetcher. */
+const PROVIDER_ESCROW_INTENT_ID_DISCRIMINATOR = new Uint8Array([
+  132, 9, 212, 245, 34, 170, 187, 104,
+]);
 
-export type FundRequestIntentId = {
+// On-chain layout, shared by both maps: 8-byte discriminator, job_key Pubkey,
+// has_live_intent bool, bump u8. The flag replaced a u64 intent_id when the
+// hook's global intent counter was removed -- the intent's PDA is now its
+// identity, so the map only has to record whether one is live.
+const INTENT_ID_MAP_SIZE = 8 + 32 + 1 + 1;
+
+export type IntentIdMap = {
   jobKey: Address;
-  intentId: bigint;
+  hasLiveIntent: boolean;
   bump: number;
 };
+
+/** @deprecated Kept as an alias so existing imports keep resolving. */
+export type FundRequestIntentId = IntentIdMap;
 
 export type MaybeFundRequestIntentId =
   | { exists: false }
@@ -284,14 +297,44 @@ export type MaybeFundRequestIntentId =
  * fetchMaybe* convention this replaces.
  */
 export async function fetchMaybeFundRequestIntentId(
-  rpc: {
-    getAccountInfo: (
-      address: Address,
-      config: { encoding: "base64"; commitment: "confirmed" | "finalized" | "processed" }
-    ) => { send: () => Promise<{ value: { data: unknown } | null }> };
-  },
+  rpc: IntentIdMapRpc,
   address: Address,
   config: { commitment: "confirmed" | "finalized" | "processed" }
+): Promise<MaybeFundRequestIntentId> {
+  return fetchMaybeIntentIdMap(
+    rpc,
+    address,
+    config,
+    FUND_REQUEST_INTENT_ID_DISCRIMINATOR
+  );
+}
+
+/** The escrow-side sibling of the above; same layout, different discriminator. */
+export async function fetchMaybeProviderEscrowIntentId(
+  rpc: IntentIdMapRpc,
+  address: Address,
+  config: { commitment: "confirmed" | "finalized" | "processed" }
+): Promise<MaybeFundRequestIntentId> {
+  return fetchMaybeIntentIdMap(
+    rpc,
+    address,
+    config,
+    PROVIDER_ESCROW_INTENT_ID_DISCRIMINATOR
+  );
+}
+
+type IntentIdMapRpc = {
+  getAccountInfo: (
+    address: Address,
+    config: { encoding: "base64"; commitment: "confirmed" | "finalized" | "processed" }
+  ) => { send: () => Promise<{ value: { data: unknown } | null }> };
+};
+
+async function fetchMaybeIntentIdMap(
+  rpc: IntentIdMapRpc,
+  address: Address,
+  config: { commitment: "confirmed" | "finalized" | "processed" },
+  discriminator: Uint8Array
 ): Promise<MaybeFundRequestIntentId> {
   const info = await rpc
     .getAccountInfo(address, { encoding: "base64", commitment: config.commitment })
@@ -300,17 +343,16 @@ export async function fetchMaybeFundRequestIntentId(
   const b64 = Array.isArray(raw) ? raw[0] : undefined;
   if (typeof b64 !== "string" || b64.length === 0) return { exists: false };
   const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  if (data.length < FUND_REQUEST_INTENT_ID_SIZE) return { exists: false };
+  if (data.length < INTENT_ID_MAP_SIZE) return { exists: false };
   for (let i = 0; i < 8; i++) {
-    if (data[i] !== FUND_REQUEST_INTENT_ID_DISCRIMINATOR[i]) return { exists: false };
+    if (data[i] !== discriminator[i]) return { exists: false };
   }
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   return {
     exists: true,
     data: {
       jobKey: getAddressDecoder().decode(data.subarray(8, 40)),
-      intentId: view.getBigUint64(40, true),
-      bump: data[48]!,
+      hasLiveIntent: data[40] === 1,
+      bump: data[41]!,
     },
   };
 }

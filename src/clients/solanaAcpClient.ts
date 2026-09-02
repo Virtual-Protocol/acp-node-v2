@@ -29,6 +29,7 @@ import {
   decodeSubParams,
   fetchProposedTermsForSlice,
   fetchMaybeFundRequestIntentId,
+  fetchMaybeProviderEscrowIntentId,
   hookRouterPda,
   routerStatePda,
   subExpiryPda,
@@ -90,6 +91,8 @@ import {
   INTENT_KIND_FUND_REQUEST,
   INTENT_KIND_ESCROW,
   SOLANA_CHAIN_ID_CLUSTERS,
+  USDC_ADDRESSES,
+  USDC_SYMBOL,
 } from "../core/constants.js";
 
 import { buildJobStateRetryGuard } from "../core/solana/jobStateRetryGuard.js";
@@ -112,8 +115,8 @@ import { getCompleteInstruction } from "../core/solana/generated/acp/instruction
 import { getRejectInstruction } from "../core/solana/generated/acp/instructions/reject.js";
 import { getBatchConfigureHooksInstructionAsync } from "../core/solana/generated/multi-hook-router/instructions/batchConfigureHooks.js";
 import { getJobCreatedDecoder } from "../core/solana/generated/acp/types/jobCreated.js";
-import { fetchMaybeProviderEscrowIntentId } from "../core/solana/generated/fund-transfer-hook/accounts/providerEscrowIntentId.js";
 import { fetchIntent } from "../core/solana/generated/fund-transfer-hook/accounts/intent.js";
+
 
 // JobState enum values (inlined to avoid Node v24 ESM enum transform issues)
 const JOB_STATE_FUNDED = 1;
@@ -183,6 +186,7 @@ const ACCOUNT_NOT_INITIALIZED_STALE_MARKER_GROUPS: string[][] = [
   ["alchemy_requestfeepayer failed", "error code: accountnotinitialized."],
   ["transaction preflight failed", "error code: accountnotinitialized."],
 ];
+
 
 const DEFAULT_PUBKEY = SOLANA_NO_EVALUATOR_ADDRESS as Address;
 
@@ -690,7 +694,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         fundRequestIntentIdPda,
         { commitment: ACP_COMMITMENT }
       );
-      if (!maybeFriid.exists || maybeFriid.data.intentId === 0n) {
+      if (!maybeFriid.exists || !maybeFriid.data.hasLiveIntent) {
         fundOptParams = EMPTY_OPT_PARAMS;
         extraAccounts.push(
           { address: hookStatePda, role: AccountRole.WRITABLE },
@@ -1049,9 +1053,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           // (of remaining + appended job) belonging to the Submit slice.
           //
           // auto_sign_escrow layout: [hook_state, sysvar, escrow_map, intent,
-          // escrow_vault, dest, escrow_authority, token_program]. dest must be
-          // owned by intent.recipient == job.client (the escrow releases to
-          // the client on completion; the appended job account is ignored).
+          // escrow_vault, dest, escrow_authority, token_program, acp_state,
+          // sponsor]. dest must be owned by intent.recipient == job.client
+          // (the escrow releases to the client on completion; the appended job
+          // account is ignored).
           const clientAta = await this.deriveAta(job.data.client, escrowToken);
           preIxs.push(
             this.buildCreateAtaIdempotentIx(
@@ -1071,6 +1076,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
             { address: clientAta, role: AccountRole.WRITABLE },
             { address: escrowAuthorityPda, role: AccountRole.READONLY },
             { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+            // Same tail as the evaluator complete() path: auto_sign_escrow is
+            // the SAME handler, so it also deserializes acp_state to learn the
+            // sponsor and closes the escrow vault with that sponsor as the rent
+            // destination. Omitting them leaves the slice at 8 and the hook
+            // rejects it with IncompleteHookAccountSet (6019).
+            { address: acpStatePda, role: AccountRole.READONLY },
+            { address: acpState.data.sponsor, role: AccountRole.WRITABLE },
           ];
           extraAccounts.push(...submitSlice, ...completeSlice);
 
@@ -1265,9 +1277,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { commitment: ACP_COMMITMENT }
       );
 
-      // A pre-created (zeroed) map means no escrow was ever proposed —
-      // intentId 0 is the unset sentinel, not a live escrow.
-      if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
+      if (maybePeii.exists && maybePeii.data.hasLiveIntent) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
           jobPda,
@@ -1303,7 +1313,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           { address: escrowVault, role: AccountRole.WRITABLE },
           { address: recipientAta, role: AccountRole.WRITABLE },
           { address: escrowAuthorityPda, role: AccountRole.READONLY },
-          { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY }
+          { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+          // remaining[7] and [8]: the hook deserializes acp_state to learn the
+          // sponsor, then closes the escrow vault with the sponsor as the rent
+          // destination. Omitting them leaves the slice at 7 and the hook
+          // rejects it with IncompleteHookAccountSet (6019).
+          { address: acpStatePda, role: AccountRole.READONLY },
+          { address: acpState.data.sponsor, role: AccountRole.WRITABLE }
         );
       }
     }
@@ -1446,9 +1462,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         { commitment: ACP_COMMITMENT }
       );
 
-      // A pre-created (zeroed) map means no escrow was ever proposed —
-      // intentId 0 is the unset sentinel, not a live escrow.
-      if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
+      if (maybePeii.exists && maybePeii.data.hasLiveIntent) {
         const escrowIntentPda = await this.deriveIntentPda(
           hookAddress,
           jobPda,
@@ -1475,7 +1489,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
           { address: escrowVault, role: AccountRole.WRITABLE },
           { address: providerAta, role: AccountRole.WRITABLE },
           { address: escrowAuthorityPda, role: AccountRole.READONLY },
-          { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY }
+          { address: TOKEN_PROGRAM_ID, role: AccountRole.READONLY },
+          // Same tail as complete: acp_state then the sponsor that receives the
+          // escrow vault's rent on close.
+          { address: acpStatePda, role: AccountRole.READONLY },
+          { address: acpState.data.sponsor, role: AccountRole.WRITABLE }
         );
       }
     }
@@ -1664,13 +1682,32 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     return data[44]!;
   }
 
+  /**
+   * A short, always-available display label for a mint.
+   *
+   * An SPL Token mint account carries no symbol — the field does not exist in
+   * its layout. A human symbol lives only in off-chain Metaplex metadata, which
+   * this client does not read, so there is nothing authoritative to return for
+   * an arbitrary mint.
+   *
+   * This used to throw. The symbol is display-only (JobSession's transcript and
+   * context lines), but AssetToken.fromOnChain/fromOnChainRaw call it for every
+   * NON-USDC mint, so the throw propagated out of the job event handler and
+   * killed the whole flow the moment a job referenced a foreign mint — a
+   * cosmetic field taking down the lifecycle. Falling back to a truncated mint
+   * keeps the label identifiable and the handler alive; callers that need a real
+   * symbol still pass one explicitly via AssetToken.create().
+   *
+   * The chain's own payment mint is the one case with a known symbol, so it is
+   * returned as such rather than truncated.
+   */
   override async getTokenSymbol(
     chainId: number,
-    _tokenAddress: string
+    tokenAddress: string
   ): Promise<string> {
-    throw new Error(
-      "getTokenSymbol is not supported on Solana. Use AssetToken.create() with explicit symbol."
-    );
+    const mint = assertSolanaAddress(tokenAddress, "tokenAddress");
+    if (mint === USDC_ADDRESSES[chainId]) return USDC_SYMBOL;
+    return `${mint.slice(0, 4)}…${mint.slice(-4)}`;
   }
 
   /**
@@ -1899,9 +1936,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       provEscrowIntentIdPda,
       { commitment: ACP_COMMITMENT }
     );
-    // A pre-created (zeroed) map means no escrow was ever proposed —
-    // intentId 0 is the unset sentinel, not a live escrow.
-    if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
+    if (maybePeii.exists && maybePeii.data.hasLiveIntent) {
       const escrowIntentPda = await this.deriveIntentPda(
         ctx.fundHook,
         jobPda,
@@ -2766,7 +2801,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       fundRequestIntentIdPda,
       { commitment: ACP_COMMITMENT }
     );
-    if (maybeFriid.exists && maybeFriid.data.intentId !== 0n) {
+    if (maybeFriid.exists && maybeFriid.data.hasLiveIntent) {
       const intentPda = await this.deriveIntentPda(
         ctx.fundHook,
         s.jobPda,
@@ -3224,9 +3259,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       provEscrowIntentIdPda,
       { commitment: ACP_COMMITMENT }
     );
-    // A pre-created (zeroed) map means no escrow was ever proposed —
-    // intentId 0 is the unset sentinel, not a live escrow.
-    if (maybePeii.exists && maybePeii.data.intentId !== 0n) {
+    if (maybePeii.exists && maybePeii.data.hasLiveIntent) {
       const escrowIntentPda = await this.deriveIntentPda(
         ctx.fundHook,
         s.jobPda,

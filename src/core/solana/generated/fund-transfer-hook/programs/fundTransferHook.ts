@@ -7,38 +7,28 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAfterActionInstruction,
-  parseBeforeActionInstruction,
-  parseClaimEscrowRefundInstruction,
-  parseCloseJobHookAccountsInstruction,
-  parseInitializeInstruction,
-  parsePreCreateIntentInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBeforeActionInstruction,
   type ParsedClaimEscrowRefundInstruction,
   type ParsedCloseJobHookAccountsInstruction,
   type ParsedInitializeInstruction,
+  type ParsedMigrateHookStateInstruction,
   type ParsedPreCreateIntentInstruction,
 } from "../instructions/index.js";
 
-export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS =
-  "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q" as Address<"HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q">;
+export const FUND_TRANSFER_HOOK_PROGRAM_ADDRESS = "" as Address<"">;
 
 export enum FundTransferHookAccount {
   HookMetadata,
   HookState,
   Intent,
-  ProviderEscrowIntentId,
 }
 
 export function identifyFundTransferHookAccount(
@@ -78,17 +68,6 @@ export function identifyFundTransferHookAccount(
   ) {
     return FundTransferHookAccount.Intent;
   }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([132, 9, 212, 245, 34, 170, 187, 104]),
-      ),
-      0,
-    )
-  ) {
-    return FundTransferHookAccount.ProviderEscrowIntentId;
-  }
   throw new Error(
     "The provided account could not be identified as a fundTransferHook account.",
   );
@@ -100,6 +79,7 @@ export enum FundTransferHookInstruction {
   ClaimEscrowRefund,
   CloseJobHookAccounts,
   Initialize,
+  MigrateHookState,
   PreCreateIntent,
 }
 
@@ -166,6 +146,17 @@ export function identifyFundTransferHookInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([150, 253, 139, 156, 93, 36, 208, 117]),
+      ),
+      0,
+    )
+  ) {
+    return FundTransferHookInstruction.MigrateHookState;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([157, 244, 37, 181, 86, 92, 73, 162]),
       ),
       0,
@@ -178,9 +169,7 @@ export function identifyFundTransferHookInstruction(
   );
 }
 
-export type ParsedFundTransferHookInstruction<
-  TProgram extends string = "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q",
-> =
+export type ParsedFundTransferHookInstruction<TProgram extends string = ""> =
   | ({
       instructionType: FundTransferHookInstruction.AfterAction;
     } & ParsedAfterActionInstruction<TProgram>)
@@ -197,59 +186,8 @@ export type ParsedFundTransferHookInstruction<
       instructionType: FundTransferHookInstruction.Initialize;
     } & ParsedInitializeInstruction<TProgram>)
   | ({
+      instructionType: FundTransferHookInstruction.MigrateHookState;
+    } & ParsedMigrateHookStateInstruction<TProgram>)
+  | ({
       instructionType: FundTransferHookInstruction.PreCreateIntent;
     } & ParsedPreCreateIntentInstruction<TProgram>);
-
-export function parseFundTransferHookInstruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedFundTransferHookInstruction<TProgram> {
-  const instructionType = identifyFundTransferHookInstruction(instruction);
-  switch (instructionType) {
-    case FundTransferHookInstruction.AfterAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.AfterAction,
-        ...parseAfterActionInstruction(instruction),
-      };
-    }
-    case FundTransferHookInstruction.BeforeAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.BeforeAction,
-        ...parseBeforeActionInstruction(instruction),
-      };
-    }
-    case FundTransferHookInstruction.ClaimEscrowRefund: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.ClaimEscrowRefund,
-        ...parseClaimEscrowRefundInstruction(instruction),
-      };
-    }
-    case FundTransferHookInstruction.CloseJobHookAccounts: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.CloseJobHookAccounts,
-        ...parseCloseJobHookAccountsInstruction(instruction),
-      };
-    }
-    case FundTransferHookInstruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case FundTransferHookInstruction.PreCreateIntent: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: FundTransferHookInstruction.PreCreateIntent,
-        ...parsePreCreateIntentInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

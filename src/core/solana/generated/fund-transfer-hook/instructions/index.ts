@@ -11,4 +11,5 @@ export * from "./beforeAction.js";
 export * from "./claimEscrowRefund.js";
 export * from "./closeJobHookAccounts.js";
 export * from "./initialize.js";
+export * from "./migrateHookState.js";
 export * from "./preCreateIntent.js";

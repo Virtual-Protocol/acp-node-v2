@@ -157,13 +157,12 @@ export type CloseJobHookAccountsAsyncInput<
   fundRequestIntent?: Address<TAccountFundRequestIntent>;
   escrowIntent?: Address<TAccountEscrowIntent>;
   /**
-   * `Account<FundRequestIntentId>`: a typed account is deserialized at entry,
-   * so a second call on an already-closed map would fail
-   * `AccountNotInitialized` and break the blind-sweep idempotence the bundled
-   * close depends on. The cost is that `FundRequestIntentId` no longer
-   * appears in the IDL — `close_intent` was its last typed reference — so
-   * off-chain readers must decode it manually. Its layout is
-   * `job_key: Pubkey, intent_id: u64, bump: u8` after the 8-byte discriminator.
+   * a typed account deserializes at entry, so a second call on an
+   * already-closed map would fail `AccountNotInitialized` and break the
+   * idempotence the blind sweep needs. The trade-off is that
+   * `FundRequestIntentId` no longer appears in the IDL, so off-chain readers
+   * decode it by hand: `job_key: Pubkey, has_live_intent: bool, bump: u8`
+   * after the 8-byte discriminator.
    */
   fundRequestMap?: Address<TAccountFundRequestMap>;
   escrowMap?: Address<TAccountEscrowMap>;
@@ -302,13 +301,12 @@ export type CloseJobHookAccountsInput<
   fundRequestIntent?: Address<TAccountFundRequestIntent>;
   escrowIntent?: Address<TAccountEscrowIntent>;
   /**
-   * `Account<FundRequestIntentId>`: a typed account is deserialized at entry,
-   * so a second call on an already-closed map would fail
-   * `AccountNotInitialized` and break the blind-sweep idempotence the bundled
-   * close depends on. The cost is that `FundRequestIntentId` no longer
-   * appears in the IDL — `close_intent` was its last typed reference — so
-   * off-chain readers must decode it manually. Its layout is
-   * `job_key: Pubkey, intent_id: u64, bump: u8` after the 8-byte discriminator.
+   * a typed account deserializes at entry, so a second call on an
+   * already-closed map would fail `AccountNotInitialized` and break the
+   * idempotence the blind sweep needs. The trade-off is that
+   * `FundRequestIntentId` no longer appears in the IDL, so off-chain readers
+   * decode it by hand: `job_key: Pubkey, has_live_intent: bool, bump: u8`
+   * after the 8-byte discriminator.
    */
   fundRequestMap?: Address<TAccountFundRequestMap>;
   escrowMap?: Address<TAccountEscrowMap>;
@@ -435,13 +433,12 @@ export type ParsedCloseJobHookAccountsInstruction<
     fundRequestIntent?: TAccountMetas[2] | undefined;
     escrowIntent?: TAccountMetas[3] | undefined;
     /**
-     * `Account<FundRequestIntentId>`: a typed account is deserialized at entry,
-     * so a second call on an already-closed map would fail
-     * `AccountNotInitialized` and break the blind-sweep idempotence the bundled
-     * close depends on. The cost is that `FundRequestIntentId` no longer
-     * appears in the IDL — `close_intent` was its last typed reference — so
-     * off-chain readers must decode it manually. Its layout is
-     * `job_key: Pubkey, intent_id: u64, bump: u8` after the 8-byte discriminator.
+     * a typed account deserializes at entry, so a second call on an
+     * already-closed map would fail `AccountNotInitialized` and break the
+     * idempotence the blind sweep needs. The trade-off is that
+     * `FundRequestIntentId` no longer appears in the IDL, so off-chain readers
+     * decode it by hand: `job_key: Pubkey, has_live_intent: bool, bump: u8`
+     * after the 8-byte discriminator.
      */
     fundRequestMap?: TAccountMetas[4] | undefined;
     escrowMap?: TAccountMetas[5] | undefined;

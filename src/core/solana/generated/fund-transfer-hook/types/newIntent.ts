@@ -12,35 +12,29 @@ import {
   getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type NewIntent = { jobKey: Address; actor: Address; intentId: bigint };
+export type NewIntent = { jobKey: Address; intentKey: Address; actor: Address };
 
-export type NewIntentArgs = {
-  jobKey: Address;
-  actor: Address;
-  intentId: number | bigint;
-};
+export type NewIntentArgs = NewIntent;
 
 export function getNewIntentEncoder(): FixedSizeEncoder<NewIntentArgs> {
   return getStructEncoder([
     ["jobKey", getAddressEncoder()],
+    ["intentKey", getAddressEncoder()],
     ["actor", getAddressEncoder()],
-    ["intentId", getU64Encoder()],
   ]);
 }
 
 export function getNewIntentDecoder(): FixedSizeDecoder<NewIntent> {
   return getStructDecoder([
     ["jobKey", getAddressDecoder()],
+    ["intentKey", getAddressDecoder()],
     ["actor", getAddressDecoder()],
-    ["intentId", getU64Decoder()],
   ]);
 }
 

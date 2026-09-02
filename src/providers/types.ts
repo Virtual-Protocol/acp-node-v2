@@ -71,6 +71,19 @@ export type SendInstructionsOptions = {
    * ignore it.
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
+  /**
+   * Error names/codes this send is EXPECTED to fail with (negative tests).
+   * A failure matching one of them propagates immediately instead of being
+   * treated as sponsor-node lag.
+   *
+   * Without it, a guard case whose expected error happens to sit in the
+   * retryable list — BudgetMismatch (E-U3), AccountNotInitialized (ST-5) —
+   * burns the whole attempt budget proving a revert we asked for, ~26s per
+   * send, and inflates the run's sponsored-retry count with failures that
+   * have nothing to do with the sponsor. Matched case-insensitively against
+   * the flattened error chain. See providers/solana/feePayerRetry.ts.
+   */
+  expectedErrors?: string[];
   preflightCommitment?: Commitment;
   /**
    * Additional required signers beyond the adapter's own signer (e.g. the

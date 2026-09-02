@@ -24,7 +24,10 @@
       "accounts": [
         {
           "name": "hook_state",
-          "writable": true,
+          "docs": [
+            "Not `mut`: no path writes it, and a write lock on this one global",
+            "account would serialise every hooked job."
+          ],
           "pda": {
             "seeds": [
               {
@@ -177,51 +180,10 @@
           "name": "job_account"
         },
         {
-          "name": "provider_escrow_intent_id",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  118,
-                  105,
-                  100,
-                  101,
-                  114,
-                  95,
-                  101,
-                  115,
-                  99,
-                  114,
-                  111,
-                  119,
-                  95,
-                  105,
-                  110,
-                  116,
-                  101,
-                  110,
-                  116,
-                  95,
-                  105,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "job_key"
-              }
-            ]
-          }
-        },
-        {
           "name": "intent",
           "docs": [
-            "The job-scoped escrow intent. The map is not part of the address",
-            "derivation, so the id equality is asserted explicitly."
+            "The job-scoped escrow intent. Its address is its identity, so the seeds",
+            "constraint is the whole check."
           ],
           "writable": true
         },
@@ -300,7 +262,7 @@
       "name": "close_job_hook_accounts",
       "docs": [
         "Reclaim a terminal job's intents and intent-id maps to",
-        "`acp_state.sponsor`. Permissionless — the caller receives nothing — and",
+        "`acp_state.sponsor`. Permissionless \u2014 the caller receives nothing \u2014 and",
         "idempotent per account, so it can be swept blindly over terminal jobs.",
         "Blocks while the escrow is unsettled, so it cannot strand a provider's",
         "stake by closing the accounts `claim_escrow_refund` needs."
@@ -350,13 +312,12 @@
         {
           "name": "fund_request_map",
           "docs": [
-            "`Account<FundRequestIntentId>`: a typed account is deserialized at entry,",
-            "so a second call on an already-closed map would fail",
-            "`AccountNotInitialized` and break the blind-sweep idempotence the bundled",
-            "close depends on. The cost is that `FundRequestIntentId` no longer",
-            "appears in the IDL — `close_intent` was its last typed reference — so",
-            "off-chain readers must decode it manually. Its layout is",
-            "`job_key: Pubkey, intent_id: u64, bump: u8` after the 8-byte discriminator."
+            "a typed account deserializes at entry, so a second call on an",
+            "already-closed map would fail `AccountNotInitialized` and break the",
+            "idempotence the blind sweep needs. The trade-off is that",
+            "`FundRequestIntentId` no longer appears in the IDL, so off-chain readers",
+            "decode it by hand: `job_key: Pubkey, has_live_intent: bool, bump: u8`",
+            "after the 8-byte discriminator."
           ],
           "writable": true,
           "optional": true
@@ -570,6 +531,119 @@
       ]
     },
     {
+      "name": "migrate_hook_state",
+      "docs": [
+        "Rewrites the global HookState account into its current layout. Run once",
+        "right after deploying; idempotent after that. Upgrade authority only."
+      ],
+      "discriminator": [
+        150,
+        253,
+        139,
+        156,
+        93,
+        36,
+        208,
+        117
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "hook_state",
+          "docs": [
+            "and a typed account would fail to deserialize. Address, owner and",
+            "discriminator are verified in the handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "program_data",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  246,
+                  71,
+                  52,
+                  188,
+                  141,
+                  72,
+                  100,
+                  245,
+                  18,
+                  10,
+                  17,
+                  229,
+                  45,
+                  152,
+                  144,
+                  5,
+                  191,
+                  169,
+                  137,
+                  86,
+                  3,
+                  180,
+                  252,
+                  183,
+                  196,
+                  60,
+                  27,
+                  104,
+                  33,
+                  19,
+                  36,
+                  51
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                2,
+                168,
+                246,
+                145,
+                78,
+                136,
+                161,
+                176,
+                226,
+                16,
+                21,
+                62,
+                247,
+                99,
+                174,
+                43,
+                0,
+                194,
+                185,
+                61,
+                22,
+                193,
+                36,
+                210,
+                192,
+                83,
+                122,
+                16,
+                4,
+                128,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "pre_create_intent",
       "docs": [
         "Pre-creates the intent + intent-id map PDAs for a job, zeroed, rent",
@@ -690,19 +764,6 @@
         111,
         129,
         109
-      ]
-    },
-    {
-      "name": "ProviderEscrowIntentId",
-      "discriminator": [
-        132,
-        9,
-        212,
-        245,
-        34,
-        170,
-        187,
-        104
       ]
     }
   ],
@@ -825,7 +886,8 @@
     {
       "name": "HookState",
       "docs": [
-        "Global hook state — stores intent counter and config."
+        "Global hook state \u2014 config only. Read-only on every hook path, so hooked",
+        "jobs never contend on it."
       ],
       "type": {
         "kind": "struct",
@@ -833,10 +895,6 @@
           {
             "name": "acp_program",
             "type": "pubkey"
-          },
-          {
-            "name": "intent_counter",
-            "type": "u64"
           },
           {
             "name": "bump",
@@ -854,10 +912,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "id",
-            "type": "u64"
-          },
           {
             "name": "job_key",
             "type": "pubkey"
@@ -910,8 +964,12 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent_key",
+            "type": "pubkey"
           },
           {
             "name": "actor",
@@ -926,8 +984,12 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent_key",
+            "type": "pubkey"
           },
           {
             "name": "signer",
@@ -975,12 +1037,12 @@
             "type": "pubkey"
           },
           {
-            "name": "actor",
+            "name": "intent_key",
             "type": "pubkey"
           },
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "actor",
+            "type": "pubkey"
           }
         ]
       }
@@ -995,8 +1057,8 @@
             "type": "pubkey"
           },
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "intent_key",
+            "type": "pubkey"
           },
           {
             "name": "sender",
@@ -1023,8 +1085,8 @@
             "type": "pubkey"
           },
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "intent_key",
+            "type": "pubkey"
           },
           {
             "name": "sender",
@@ -1051,8 +1113,8 @@
             "type": "pubkey"
           },
           {
-            "name": "intent_id",
-            "type": "u64"
+            "name": "intent_key",
+            "type": "pubkey"
           },
           {
             "name": "from",
@@ -1069,30 +1131,6 @@
           {
             "name": "amount",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ProviderEscrowIntentId",
-      "docs": [
-        "Maps a job to a provider escrow intent ID.",
-        "Seeds: [\"provider_escrow_intent_id\", job_key]"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "job_key",
-            "type": "pubkey"
-          },
-          {
-            "name": "intent_id",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }

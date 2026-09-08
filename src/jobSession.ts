@@ -350,19 +350,19 @@ export class JobSession {
     );
   }
 
-  private detectConfiguredHooks(selector: Hex): {
+  private detectConfiguredHooks(selector: Hex, job = this._job): {
     hasSub: boolean;
     hasFund: boolean;
   } {
-    if (!this._job) throw new Error("Job not loaded");
+    if (!job) throw new Error("Job not loaded");
 
-    const hook = this._job.hookAddress.toLowerCase();
+    const hook = job.hookAddress.toLowerCase();
     const router = MULTI_HOOK_ROUTER_ADDRESSES[this.chainId]?.toLowerCase();
     const subHook = SUBSCRIPTION_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
     const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
 
     if (hook === router) {
-      const configured = (this._job.hookConfigs ?? {})[selector];
+      const configured = (job.hookConfigs ?? {})[selector];
       const lower = configured?.map((h) => h.toLowerCase()) ?? [];
       return {
         hasSub: lower.includes(subHook ?? ""),
@@ -505,23 +505,34 @@ export class JobSession {
 
   async fund(amount?: AssetToken): Promise<void> {
     if (!this._job) throw new Error("Job not loaded");
-    const effectiveAmount = amount ?? this._job.budget;
+    // Hold one immutable job reference across the asynchronous policy decision
+    // and every downstream funding branch. fetchJob() may refresh this._job
+    // while a slow policy is running; funding must use the exact snapshot that
+    // the policy approved.
+    const job = this._job;
+    const effectiveAmount = amount ?? job.budget;
     const jobId = BigInt(this.jobId);
 
-    const hook = this._job.hookAddress.toLowerCase();
+    // Evaluate the exact provider wallet, chain and amount before any funding
+    // branch prepares or sends an on-chain transaction. A denied or failed
+    // policy is intentionally fail-closed.
+    await this.agent.enforceFundPolicy(job, effectiveAmount);
+
+    const hook = job.hookAddress.toLowerCase();
     const router = (
       MULTI_HOOK_ROUTER_ADDRESSES[this.chainId] ?? ""
     ).toLowerCase();
 
     if (router && hook === router) {
-      const hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
+      const hookConfigs = (job.hookConfigs ?? {})[ACP_SELECTORS.fund];
       if (!hookConfigs || hookConfigs.length === 0) {
         throw new Error(
           "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
         );
       }
       const { hasSub, hasFund } = this.detectConfiguredHooks(
-        ACP_SELECTORS.fund
+        ACP_SELECTORS.fund,
+        job
       );
 
       let subscriptionTerms:
@@ -538,7 +549,7 @@ export class JobSession {
       }
 
       if (hasFund) {
-        const intent = this._job.getFundRequestIntent();
+        const intent = job.getFundRequestIntent();
         if (!intent) {
           throw new Error(
             "FundTransferHook is configured on the router but no fund request intent was recorded"
@@ -564,7 +575,10 @@ export class JobSession {
       return;
     }
 
-    const { hasSub, hasFund } = this.detectConfiguredHooks(ACP_SELECTORS.fund);
+    const { hasSub, hasFund } = this.detectConfiguredHooks(
+      ACP_SELECTORS.fund,
+      job
+    );
 
     if (hasSub) {
       const terms = await this.agent.getProposedSubscriptionTerms(
@@ -580,7 +594,7 @@ export class JobSession {
       return;
     }
 
-    const intent = this._job.getFundRequestIntent();
+    const intent = job.getFundRequestIntent();
     if (intent && hasFund) {
       const transferAmount = await intent.resolveAmount(
         this.chainId,
@@ -592,7 +606,7 @@ export class JobSession {
         amount: effectiveAmount,
         transferAmount,
         destination: intent.recipientAddress,
-        clientAddress: this._job.clientAddress,
+        clientAddress: job.clientAddress,
       });
       return;
     }
@@ -600,7 +614,7 @@ export class JobSession {
     await this.agent.internalFund(this.chainId, {
       jobId,
       amount: effectiveAmount,
-      clientAddress: this._job.clientAddress,
+      clientAddress: job.clientAddress,
     });
   }
 

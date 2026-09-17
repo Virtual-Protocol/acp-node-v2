@@ -89,6 +89,14 @@ export const ERC20_SPONSORED_CHAINS: Chain[] = [
   optimism,
   monad,
   robinhood,
+  // Arc's gas token IS USDC, so it needs no ERC-20 paymaster to pay for a
+  // wallet with no native coin. It is here anyway because this list does not
+  // mean what its name suggests: getErc20Client() resolves against it, and
+  // sendTransaction() — the single-call path — throws
+  // "sendTransaction not supported for chainId" for any chain absent from it.
+  // Membership is what makes that path WORK AT ALL, not merely sponsored.
+  // (This is what broke 4663 sells before 0.1.7: same list, same omission.)
+  arc,
 ] as const;
 
 export const EVM_CHAINS = [

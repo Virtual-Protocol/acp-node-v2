@@ -272,10 +272,34 @@ export interface AcpAgentOffering {
   priceType: string;
   priceValue: number;
   requiredFunds: boolean;
+  /**
+   * Off-escrow proportional-fee offerings (`priceType` "percentage" with
+   * `requiredFunds: false`): names the requirement field carrying the fee
+   * notional in atomic units, e.g. "notionalAtomic". The fee is computed as a
+   * proportion of that value via {@link computePercentageFee} — the SDK never
+   * derives it from custodied capital. Undefined for flat-fee and custodial
+   * offerings. See `src/core/fee.ts` and the `off-escrow-percentage` example.
+   */
+  feeBasisField?: string;
   isHidden: boolean;
   isPrivate: boolean;
   subscriptions?: Array<AcpAgentSubscription>;
 }
+
+/**
+ * Known `AcpAgentOffering.priceType` values.
+ * - `FIXED`: flat fee; `priceValue` is the fee amount.
+ * - `PERCENTAGE`: proportional fee; `priceValue` is a rate applied to the fee
+ *   notional (see {@link AcpAgentOffering.feeBasisField} and
+ *   `computePercentageFee`). Whether `priceValue` is basis points or percent is
+ *   a backend convention — pass the matching `FeeUnit`.
+ */
+export const PRICE_TYPE = {
+  FIXED: "fixed",
+  PERCENTAGE: "percentage",
+} as const;
+
+export type PriceType = (typeof PRICE_TYPE)[keyof typeof PRICE_TYPE];
 
 export interface AcpAgentResource {
   name: string;

@@ -54,6 +54,11 @@ import {
   type MultiHookConfig,
 } from "./core/hookEncoding.js";
 import { AssetToken } from "./core/assetToken.js";
+import type { AcpJob } from "./acpJob.js";
+import {
+  enforceFundPolicy,
+  type FundPolicy,
+} from "./core/fundPolicy.js";
 import { withReprepare } from "./core/reprepareRetry.js";
 import { JobSession } from "./jobSession.js";
 import { AcpApiClient } from "./events/acpApiClient.js";
@@ -83,6 +88,8 @@ export type EntryHandler = (
 export type CreateAgentInput = CreateAcpClientInput & {
   transport?: AcpChatTransport;
   api?: AcpJobApi;
+  /** Optional fail-closed gate evaluated immediately before every fund(). */
+  fundPolicy?: FundPolicy;
 };
 
 export type SetBudgetParams = {
@@ -176,6 +183,7 @@ export class AcpAgent {
   private readonly clients: Map<ChainFamily, AcpClient>;
   private readonly transport: AcpChatTransport;
   private readonly api: AcpJobApi;
+  private readonly fundPolicy: FundPolicy | undefined;
   private started = false;
   private entryHandler: EntryHandler | null = null;
   private sessionMap = new Map<string, JobSession>();
@@ -185,20 +193,23 @@ export class AcpAgent {
     clients: Map<ChainFamily, AcpClient>,
     transport: AcpChatTransport,
     api: AcpJobApi,
+    fundPolicy?: FundPolicy,
   ) {
     this.clients = clients;
     this.transport = transport;
     this.api = api;
+    this.fundPolicy = fundPolicy;
   }
 
   static async create(input: CreateAgentInput): Promise<AcpAgent> {
     const {
       transport = new SseTransport(),
       api = new AcpApiClient(),
+      fundPolicy,
       ...clientInput
     } = input;
     const clients = await createAcpClients(clientInput);
-    const agent = new AcpAgent(clients, transport, api);
+    const agent = new AcpAgent(clients, transport, api, fundPolicy);
 
     const ctx = await agent.buildTransportContext();
     if (transport instanceof AcpHttpClient) transport.setContext(ctx);
@@ -226,6 +237,18 @@ export class AcpAgent {
 
   getApi(): AcpJobApi {
     return this.api;
+  }
+
+  async enforceFundPolicy(job: AcpJob, amount: AssetToken): Promise<void> {
+    await enforceFundPolicy(this.fundPolicy, {
+      action: "fund",
+      job,
+      chainId: job.chainId,
+      jobId: job.id,
+      providerAddress: job.providerAddress,
+      clientAddress: job.clientAddress,
+      amount,
+    });
   }
 
   getSupportedChainIds(): number[] {

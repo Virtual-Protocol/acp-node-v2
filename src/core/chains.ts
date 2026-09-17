@@ -46,7 +46,31 @@ export const robinhood = defineChain({
   },
 });
 
-export const EVM_MAINNET_CHAINS: Chain[] = [base, robinhood] as const;
+// Arc mainnet (Circle's L1). Defined here rather than imported: viem 2.47 only
+// exports arcTestnet, and even in later versions viem's `arc` carries an EMPTY
+// default rpcUrls list, so a client built from it has no endpoint to fall back
+// to. Every transport in this SDK is supplied explicitly (the ACP wallet proxy),
+// but the fallback is kept honest anyway.
+//
+// nativeCurrency is USDC at 18 decimals, and that is not a typo: on Arc, USDC is
+// ONE balance behind two interfaces -- native (msg.value / eth_getBalance, 18
+// decimals) pays gas, and an ERC-20 predeploy at 0x3600...0000 (6 decimals) is
+// what transfers and approvals move. The two differ by exactly 10^12. Anything
+// reading a balance here must know which interface it is looking at.
+export const arc = defineChain({
+  id: 5042,
+  name: "Arc",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.mainnet.arc.io"] },
+  },
+  // No blockExplorers: the mainnet explorer URL could not be verified (the
+  // candidate host sits behind a challenge page), and a wrong one here would be
+  // worse than none. viem's arcTestnet points at ArcScan; add the mainnet
+  // equivalent once confirmed.
+});
+
+export const EVM_MAINNET_CHAINS: Chain[] = [base, robinhood, arc] as const;
 
 export const EVM_TESTNET_CHAINS: Chain[] = [
   baseSepolia,

@@ -1,8 +1,8 @@
 import { Address, toFunctionSelector } from "viem";
-import { base, baseSepolia, bscTestnet } from "viem/chains";
+import { arcTestnet, base, baseSepolia, bscTestnet } from "viem/chains";
 import type { Commitment } from "@solana/kit";
 import type { ChainFamily, SolanaCluster } from "./chains.js";
-import { robinhood, robinhoodTestnet } from "./chains.js";
+import { arc, robinhood, robinhoodTestnet } from "./chains.js";
 
 // ---------------------------------------------------------------------------
 // Solana chain ids / clusters
@@ -77,6 +77,8 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   [robinhoodTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
   [robinhood.id]: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+  [arc.id]: "0x3600000000000000000000000000000000000000",
+  [arcTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
 };
 
 // SPL fee-token mints for the Kora SPL-paid tier list; USDC lives in
@@ -113,6 +115,8 @@ export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "GFASZMVakVEBYo8vDJvhc7zfQ21T6mrPeWe4JNC7z9YP",
   [robinhoodTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [robinhood.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
+  [arc.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
+  [arcTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
 };
 
 export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
@@ -123,6 +127,8 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "EjuUUZuBHs47kPVjWzvD1DJzfAgTXVvKVKrDaRgVoju1",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
+  [arc.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
+  [arcTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
 };
 
 export const INTENT_KIND_FUND_REQUEST = 0;
@@ -135,6 +141,8 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "CSiGLgpBif1AuEU1XViYRsmV6X2X7SN8vNhc5mztKnB6",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
+  [arc.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
+  [arcTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
 };
 
 export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
@@ -144,6 +152,8 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "79yCchFsY1tgnwAEVGhNcjDcpmdnJMjntx7s2bNimkgb",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
+  [arc.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
+  [arcTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
 };
 
 export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
@@ -153,12 +163,12 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [SOLANA_MAINNET_CHAIN_ID]: "5jfRqQpHoeMLRDBa8fVuaGinXYAXrDvcdig5JskpjzDU",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
+  [arc.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
+  [arcTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
 };
 
 export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
   [SOLANA_DEVNET_CHAIN_ID]: "BXxVuLL76ue6ixDRanyYAmx2DLXdsaELj6eyPTZUMUwP",
-  // Must match the current mainnet program set — a superseded table holds the
-  // previous programs at these same slots.
   [SOLANA_MAINNET_CHAIN_ID]: "DAR5cGx7wn6AFBvaeYGYzmKJTKgp11zEjP7v9fEpTg9n",
 };
 
@@ -178,6 +188,8 @@ export const USDC_DECIMALS: Record<number, number> = {
   [SOLANA_MAINNET_CHAIN_ID]: 6,
   [robinhoodTestnet.id]: 6,
   [robinhood.id]: 6,
+  [arc.id]: 6,
+  [arcTestnet.id]: 6,
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +243,14 @@ export const SUPPORTED_CHAINS = [
   {
     id: robinhood.id,
     name: robinhood.name,
+  },
+  {
+    id: arcTestnet.id,
+    name: arcTestnet.name,
+  },
+  {
+    id: arc.id,
+    name: arc.name,
   },
   {
     id: SOLANA_DEVNET_CHAIN_ID,

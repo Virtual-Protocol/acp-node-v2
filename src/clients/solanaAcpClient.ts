@@ -38,7 +38,6 @@ import {
   proposedTermsPda,
 } from "../core/solana/multiHook.js";
 import {
-  sponsorFor,
   pinIfSharded,
   sponsorForRecorded,
   treasuryOwnerFor,
@@ -562,7 +561,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         accounts: [...ix.accounts, ...extraAccounts],
         data: ix.data as Uint8Array,
       },
-    ], pinIfSharded(acpState.data, sponsorFor(acpState.data, jobPda)));
+      // The recorded index, matching every other pin. The job already exists
+      // here, so the derivation has nothing to add and can only disagree with
+      // what settlement will enforce.
+    ], pinIfSharded(acpState.data, sponsorForRecorded(acpState.data, job.data.shardIndex)));
   }
 
   override async approveAllowance(
@@ -787,7 +789,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         data: ix.data as Uint8Array,
       },
       ...hookPostIxs,
-    ], pinIfSharded(acpState.data, sponsorFor(acpState.data, jobPda)));
+    ], pinIfSharded(acpState.data, sponsorForRecorded(acpState.data, job.data.shardIndex)));
   }
 
   override async submit(
@@ -2367,11 +2369,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         vaultAuthority: vaultAuthorityPda,
         providerTokenAccount: providerAta,
         treasuryTokenAccount: treasuryAta,
-        // Derived, deliberately: this builds a SAMPLE instruction whose account
-        // list seeds the lookup table - it is not an enforced destination. The
-        // table carries every live sponsor via allSponsors() above, so a job
-        // settling on any shard is covered whatever this picks.
-        sponsor: sponsorFor(acpState.data, s.jobPda),
+        sponsor: sponsorForRecorded(acpState.data, job.data.shardIndex),
       };
     }
 
@@ -2424,7 +2422,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         provider: s.signer.address,
         clientAddress: job.data.client,
         packageId: terms ? terms.packageId : null,
-        sponsor: sponsorFor(acpState.data, s.jobPda),
+        sponsor: sponsorForRecorded(acpState.data, job.data.shardIndex),
       });
       extraAccounts.push(...completeSlice.accounts);
       const submitCount = submitSlice.length;
@@ -2589,7 +2587,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       provider: job.data.provider,
       clientAddress: job.data.client,
       packageId: terms ? terms.packageId : null,
-      sponsor: sponsorFor(acpState.data, s.jobPda),
+      sponsor: sponsorForRecorded(acpState.data, job.data.shardIndex),
     });
 
     // Sync builder, deliberately not Async: the escrow group below is dropped
@@ -2608,7 +2606,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
               providerTokenAccount: providerAta,
               treasuryTokenAccount: treasuryAta,
               ...(evaluatorAta ? { evaluatorTokenAccount: evaluatorAta } : {}),
-              sponsor: sponsorFor(acpState.data, s.jobPda),
+              sponsor: sponsorForRecorded(acpState.data, job.data.shardIndex),
             }
           : {}),
         hookProgram: sctx.subHook,
@@ -3140,7 +3138,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
               vaultAuthority: vaultAuthorityPda,
               providerTokenAccount: providerAta,
               treasuryTokenAccount: treasuryAta,
-              sponsor: sponsorFor(acpState.data, s.jobPda),
+              sponsor: sponsorForRecorded(acpState.data, job.data.shardIndex),
             }
           : {}),
         deliverable: s.deliverableBytes,

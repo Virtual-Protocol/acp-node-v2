@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBooleanDecoder,
   getBooleanEncoder,
   getBytesDecoder,
@@ -84,6 +86,46 @@ export type AcpState = {
    * inferred from existing state.
    */
   sponsor: Address;
+  /**
+   * Additional rent destinations. `sponsor` above is shard 0; these are
+   * shards 1..=3. Slots at or past `sponsor_shard_count - 1` are never read,
+   * so a zero-filled realloc tail is already a valid "one shard" state.
+   */
+  sponsorShards: Array<Address>;
+  /** Live rent destinations INCLUDING `sponsor`. 0 and 1 both mean scalar-only. */
+  sponsorShardCount: number;
+  /**
+   * Additional platform-fee OWNER WALLETS. `platform_treasury` is shard 0.
+   *
+   * These are wallets, not token accounts: the fee lands in
+   * `ATA(shard_i, vault_mint)`, so any caller can derive a valid destination
+   * from state it already reads. Storing token accounts instead would pin
+   * them to one mint and force the list to travel out-of-band to every
+   * third-party agent that calls `submit` or `complete`.
+   */
+  treasuryShards: Array<Address>;
+  /**
+   * Live fee destinations INCLUDING `platform_treasury`. 0 and 1 both mean
+   * scalar-only.
+   */
+  treasuryShardCount: number;
+  /**
+   * May sweep collected fees out of a program-owned treasury. Deliberately
+   * NOT `authority`: fee ROUTING is configuration and stays with the admin,
+   * while moving an accumulated balance is custody. Before treasuries could
+   * be PDAs the split was implicit — nothing in this program transferred out
+   * of a treasury, so only the treasury wallet's own key could — and
+   * `sweep_treasury` would have folded custody into the admin role without
+   * that ever being decided. Backfilled to `authority` on migration, so
+   * adopting the split is a deliberate transfer rather than a flag day.
+   */
+  treasuryAuthority: Address;
+  /**
+   * Nominated successor for `treasury_authority` (two-step, mirroring
+   * `pending_authority`). Rotated by the treasury authority ITSELF and never
+   * by `authority`; otherwise the separation is one instruction deep.
+   */
+  pendingTreasuryAuthority: Option<Address>;
 };
 
 export type AcpStateArgs = {
@@ -116,6 +158,46 @@ export type AcpStateArgs = {
    * inferred from existing state.
    */
   sponsor: Address;
+  /**
+   * Additional rent destinations. `sponsor` above is shard 0; these are
+   * shards 1..=3. Slots at or past `sponsor_shard_count - 1` are never read,
+   * so a zero-filled realloc tail is already a valid "one shard" state.
+   */
+  sponsorShards: Array<Address>;
+  /** Live rent destinations INCLUDING `sponsor`. 0 and 1 both mean scalar-only. */
+  sponsorShardCount: number;
+  /**
+   * Additional platform-fee OWNER WALLETS. `platform_treasury` is shard 0.
+   *
+   * These are wallets, not token accounts: the fee lands in
+   * `ATA(shard_i, vault_mint)`, so any caller can derive a valid destination
+   * from state it already reads. Storing token accounts instead would pin
+   * them to one mint and force the list to travel out-of-band to every
+   * third-party agent that calls `submit` or `complete`.
+   */
+  treasuryShards: Array<Address>;
+  /**
+   * Live fee destinations INCLUDING `platform_treasury`. 0 and 1 both mean
+   * scalar-only.
+   */
+  treasuryShardCount: number;
+  /**
+   * May sweep collected fees out of a program-owned treasury. Deliberately
+   * NOT `authority`: fee ROUTING is configuration and stays with the admin,
+   * while moving an accumulated balance is custody. Before treasuries could
+   * be PDAs the split was implicit — nothing in this program transferred out
+   * of a treasury, so only the treasury wallet's own key could — and
+   * `sweep_treasury` would have folded custody into the admin role without
+   * that ever being decided. Backfilled to `authority` on migration, so
+   * adopting the split is a deliberate transfer rather than a flag day.
+   */
+  treasuryAuthority: Address;
+  /**
+   * Nominated successor for `treasury_authority` (two-step, mirroring
+   * `pending_authority`). Rotated by the treasury authority ITSELF and never
+   * by `authority`; otherwise the separation is one instruction deep.
+   */
+  pendingTreasuryAuthority: OptionOrNullable<Address>;
 };
 
 /** Gets the encoder for {@link AcpStateArgs} account data. */
@@ -132,6 +214,12 @@ export function getAcpStateEncoder(): Encoder<AcpStateArgs> {
       ["bump", getU8Encoder()],
       ["paused", getBooleanEncoder()],
       ["sponsor", getAddressEncoder()],
+      ["sponsorShards", getArrayEncoder(getAddressEncoder(), { size: 3 })],
+      ["sponsorShardCount", getU8Encoder()],
+      ["treasuryShards", getArrayEncoder(getAddressEncoder(), { size: 3 })],
+      ["treasuryShardCount", getU8Encoder()],
+      ["treasuryAuthority", getAddressEncoder()],
+      ["pendingTreasuryAuthority", getOptionEncoder(getAddressEncoder())],
     ]),
     (value) => ({ ...value, discriminator: ACP_STATE_DISCRIMINATOR }),
   );
@@ -150,6 +238,12 @@ export function getAcpStateDecoder(): Decoder<AcpState> {
     ["bump", getU8Decoder()],
     ["paused", getBooleanDecoder()],
     ["sponsor", getAddressDecoder()],
+    ["sponsorShards", getArrayDecoder(getAddressDecoder(), { size: 3 })],
+    ["sponsorShardCount", getU8Decoder()],
+    ["treasuryShards", getArrayDecoder(getAddressDecoder(), { size: 3 })],
+    ["treasuryShardCount", getU8Decoder()],
+    ["treasuryAuthority", getAddressDecoder()],
+    ["pendingTreasuryAuthority", getOptionDecoder(getAddressDecoder())],
   ]);
 }
 

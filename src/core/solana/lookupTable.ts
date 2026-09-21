@@ -1,14 +1,11 @@
 /**
- * Address lookup table lifecycle for the multi-hook complete leg. The
- * complete instruction carries ~40 accounts — beyond the legacy transaction
- * size limit — so the sender creates a fresh ALT, extends it with every
- * non-signer account, waits until the table is safe to reference, and then
- * compresses a v0 transaction against it.
+ * Address lookup table lifecycle for the multi-hook complete leg, whose ~40
+ * accounts exceed the legacy transaction size limit. The sender creates a
+ * fresh ALT, extends it with every non-signer account, waits until it is safe
+ * to reference, then compresses a v0 transaction against it.
  *
- * The table is never deactivated or closed: rent (paid by the actor) stays
- * locked and one table is left behind per complete. Closing requires a
- * deactivate + cooldown across ~513 slots, which is not worth blocking a
- * job completion on.
+ * The table is never deactivated or closed: closing needs a deactivate plus a
+ * multi-slot cooldown, which is not worth blocking a completion on.
  */
 import {
   AccountRole,
@@ -39,13 +36,13 @@ const ad = getAddressDecoder();
 type Rpc = ReturnType<ISolanaProviderAdapter["getRpc"]>;
 
 /**
- * Create a fresh ALT owned by the adapter's signer and extend it with
- * `addresses`, then poll until it is safe to use for compression. Returns the
- * table address and the authoritative ON-CHAIN address ordering — always
- * compress against that ordering, not the local input array: the table
- * address derives from (authority, slot), which cannot be nonced, so a
- * concurrent same-slot complete may share this table and its extends land
- * interleaved with ours, shifting the indices.
+ * Create a fresh ALT owned by the adapter's signer, extend it with
+ * `addresses`, and poll until it is safe to use for compression.
+ *
+ * Returns the table address and the authoritative ON-CHAIN ordering. Always
+ * compress against that, not the local input array: the table address derives
+ * from (authority, slot), so a concurrent same-slot complete can share the
+ * table and shift the indices.
  */
 export async function createAndWarmLookupTable(
   actor: ISolanaProviderAdapter,
@@ -92,15 +89,12 @@ export async function createAndWarmLookupTable(
 
 /**
  * Poll the ALT until it is safe to use for compression:
- *  - every one of `expected` has landed on-chain (partial-read guard: a
- *    missing address would stay uncompressed and can overflow the tx size).
- *    This is a SUBSET check, not a count check, so a table shared by a
- *    concurrent same-slot complete — whose extends make the on-chain list
- *    LONGER than `expected` — still passes; and
- *  - its `last_extended_slot` is strictly behind the current slot: the
- *    runtime rejects a lookup table referenced in the slot it was extended.
- * Returns the full on-chain ordering (superset-safe for compression).
- * Bounded retry; throws if the table never converges.
+ *  - every one of `expected` has landed on-chain. A SUBSET check, not a count
+ *    check, so a table shared by a concurrent same-slot complete still passes;
+ *  - `last_extended_slot` is strictly behind the current slot, which the
+ *    runtime requires.
+ * Returns the full on-chain ordering. Bounded retry; throws if it never
+ * converges.
  */
 export async function awaitLookupTableReady(
   rpc: Rpc,

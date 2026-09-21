@@ -425,16 +425,11 @@ export class AcpAgent {
   }
 
   /**
-   * All sessions currently tracked by this agent.
+   * All sessions currently tracked by this agent — hydrated jobs plus any
+   * created live. Sessions stay across status transitions until `stop()`, so
+   * filter by `session.status` for non-terminal jobs only.
    *
-   * After `start()`, this includes every job hydrated from
-   * `AcpJobApi.getActiveJobs()` plus any sessions created live during the
-   * run. Sessions stay in the map across status transitions until `stop()`
-   * clears them — filter by `session.status` if you only want non-terminal
-   * jobs.
-   *
-   * Use this on startup to detect in-flight jobs that should be resumed
-   * rather than re-initiated:
+   * Use it on startup to resume in-flight jobs rather than re-initiate:
    *
    * ```ts
    * await agent.start();
@@ -615,11 +610,9 @@ export class AcpAgent {
 
   async createJob(chainId: number, params: CreateJobParams): Promise<JobId> {
     const client = this.getClient(chainId);
-    // On Solana, createJob precomputes the job PDA from acp_state.job_counter
-    // read at prepare time; a concurrent createJob can advance the counter
-    // first, failing the program's seeds constraint (ConstraintSeeds 2006).
-    // Re-prepare re-reads the counter; the delay lets a lagging read/sponsor
-    // node catch up so the re-read doesn't return the same stale value.
+    // On Solana createJob precomputes the job PDA from a counter read at
+    // prepare time; re-prepare re-reads it, after a delay so a lagging node
+    // does not return the same value.
     const result = await withReprepare<PreparedTx, string | string[]>(
       () => client.createJob(chainId, params),
       (prepared) => client.submitPrepared(chainId, [prepared]),
@@ -697,24 +690,15 @@ export class AcpAgent {
    *
    * The `opts.evaluatorAddress` choice picks one of three lifecycle shapes:
    *
-   *   • **Self-evaluation** — `{ evaluatorAddress: <buyer> }`.
-   *     The buyer is their own evaluator. They receive `job.submitted`
-   *     and must call `session.complete(...)` or `session.reject(...)`
-   *     themselves to release funds (or refund).
+   *   • **Self-evaluation** — `{ evaluatorAddress: <buyer> }`. The buyer
+   *     handles `job.submitted` and calls `complete`/`reject` themselves.
    *
    *   • **Third-party evaluation** — `{ evaluatorAddress: <other wallet> }`.
-   *     A separate agent on that wallet must call `complete`/`reject` on
-   *     `job.submitted`. The buyer only observes the terminal
-   *     `job.completed` / `job.rejected` events.
+   *     That agent calls `complete`/`reject`; the buyer only sees the
+   *     terminal events.
    *
-   *   • **Skip evaluation** — omit `evaluatorAddress` (defaults to the
-   *     chain's no-evaluator sentinel: the zero address on EVM, the
-   *     default pubkey `11111111111111111111111111111111` on Solana).
-   *     The contract treats this as "no evaluator required":
-   *     a successful `submit` auto-completes the job and releases funds.
-   *     `job.submitted` won't fire for anyone in this mode. Suitable for
-   *     trusted-provider flows where the buyer doesn't need a quality gate
-   *     before payment.
+   *   • **Skip evaluation** — omit `evaluatorAddress`. A successful `submit`
+   *     auto-completes and releases funds, and `job.submitted` never fires.
    *
    * @param chainId            Chain to create the job on.
    * @param offering           Offering to fulfill (selects price + SLA).
@@ -815,13 +799,8 @@ export class AcpAgent {
    * Convenience wrapper: looks up the provider, finds the offering by name,
    * and forwards to {@link createJobFromOffering}.
    *
-   * See `createJobFromOffering` for the three evaluation modes the
-   * `opts.evaluatorAddress` choice selects (self / third-party / skip).
-   * Notably, omitting `evaluatorAddress` defaults to the chain's
-   * no-evaluator sentinel, which puts the job in **skip-evaluation**
-   * mode (auto-completes on
-   * deliverable submission). Pass an explicit address if you want a
-   * quality gate before payment.
+   * See `createJobFromOffering` for the three evaluation modes
+   * `opts.evaluatorAddress` selects; omitting it means skip-evaluation.
    */
   async createJobByOfferingName(
     chainId: number,
@@ -872,12 +851,10 @@ export class AcpAgent {
     params: BatchConfigureHooksAgentParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    // On Solana, configure fired right after createJob can hit the sponsor's
-    // simulation node before it sees the new job account (router InvalidJob).
-    // The in-send guarded retry absorbs typical lag; this outer wrap
-    // re-prepares and resends with a delay if those attempts exhaust. The
-    // configure is idempotent on an Open job, and a sponsor-simulation
-    // rejection was never broadcast, so a resend cannot double-apply.
+    // On Solana a configure fired right after createJob can reach the
+    // sponsor's node before it sees the job account. Configure is idempotent
+    // on an Open job and the rejection was never broadcast, so a resend after
+    // the in-send retries exhaust cannot double-apply.
     return withReprepare<PreparedTx, string | string[]>(
       () =>
         client.batchConfigureHooks(chainId, {
@@ -1008,9 +985,8 @@ export class AcpAgent {
     params: SetBudgetParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    // setBudget with a fund-request proposal precomputes a Solana intent PDA
-    // from the hook's counter; re-prepare when a concurrent intent-creating
-    // transaction consumes it first (see withReprepare).
+    // setBudget with a fund-request proposal precomputes an intent PDA;
+    // re-prepare when a concurrent transaction consumes it first.
     return withReprepare<PreparedTx, string | string[]>(
       () =>
         client.setBudget(chainId, {
@@ -1056,12 +1032,9 @@ export class AcpAgent {
       return prepared;
     };
 
-    // Solana fund bakes the on-chain fund-request intent into opt_params and
-    // the account set at prepare time; a concurrent setBudget cancelling the
-    // proposal closes that intent PDA and the send fails AccountNotInitialized
-    // (3012) at the hook (E-H5 race). In-send blind retries absorb plain
-    // sponsor lag; this wrap rebuilds from fresh state when the race is real
-    // (see withReprepare).
+    // Solana fund bakes the fund-request intent into opt_params and the
+    // account set at prepare time; re-prepare when a concurrent setBudget
+    // closes that intent PDA (3012). See withReprepare.
     return withReprepare(
       prepare,
       (prepared) => client.submitPrepared(chainId, prepared),
@@ -1082,9 +1055,8 @@ export class AcpAgent {
       params.jobId.toString(),
       params.deliverable,
     );
-    // submit with an escrow proposal precomputes a Solana intent PDA from the
-    // hook's counter; re-prepare when a concurrent intent-creating
-    // transaction consumes it first (see withReprepare).
+    // submit with an escrow proposal precomputes an intent PDA; re-prepare
+    // when a concurrent transaction consumes it first.
     return withReprepare<PreparedTx, string | string[]>(
       () => client.submit(chainId, params),
       (prepared) => client.submitPrepared(chainId, [prepared]),
@@ -1098,10 +1070,9 @@ export class AcpAgent {
     params: CompleteParams,
   ): Promise<string | string[]> {
     const client = this.getClient(chainId);
-    // Solana complete reads the escrow intent (map + Intent account) at
-    // prepare time; a concurrent close changes the required account set and
-    // the send fails AccountNotInitialized (3012) — same race class as fund.
-    // A duplicate complete fails closed (core WrongStatus, not re-prepared).
+    // Solana complete reads the escrow intent at prepare time, so a
+    // concurrent close changes the required account set. A duplicate complete
+    // fails closed on WrongStatus rather than re-preparing.
     return withReprepare<PreparedTx, string | string[]>(
       () => client.complete(chainId, params),
       (prepared) => client.submitPrepared(chainId, [prepared]),
@@ -1112,20 +1083,20 @@ export class AcpAgent {
   }
 
   /**
-   * Complete a Solana subscription-activating job — multi-hook (router) or
-   * standalone subscription hook. Needs TWO signatures in one transaction:
-   * the agent's own wallet is the evaluator (the Complete caller), and
-   * `providerSigner` co-signs because the hook requires the provider to pay
-   * the sub_expiry rent and receive the proposed_terms refund. Sent via the
-   * sponsored multi-signer path, so neither wallet needs SOL.
-   * On EVM chains this simply delegates to the normal single-signer complete.
+   * Complete a Solana subscription-activating job — router or standalone
+   * subscription hook. Single-signer: the agent's wallet completes as
+   * evaluator. Sent eagerly through the sponsored path, so no wallet needs
+   * SOL. On EVM this delegates to the normal complete.
+   *
+   * `providerSigner` is accepted for backward compatibility and validated
+   * when supplied, but activation no longer requires a provider signature.
    */
   async completeSubscriptionJob(
     chainId: number,
     params: {
       jobId: JobId;
       reason: string;
-      providerSigner: SolanaSigner;
+      providerSigner?: SolanaSigner;
       clientAddress?: string;
     },
   ): Promise<string> {
@@ -1135,7 +1106,7 @@ export class AcpAgent {
         jobId: params.jobId,
         reason: params.reason,
         ...(params.clientAddress && { clientAddress: params.clientAddress }),
-        providerSigner: params.providerSigner,
+        ...(params.providerSigner && { providerSigner: params.providerSigner }),
       });
     }
     const result = await this.internalComplete(chainId, {
@@ -1235,9 +1206,8 @@ export class AcpAgent {
       return prepared;
     };
 
-    // On Solana the passed optParams are overwritten by the on-chain intent
-    // read inside client.fund, so the stale surface is identical to
-    // internalFund — re-prepare on the intent-close 3012 race (E-H5).
+    // On Solana client.fund overwrites optParams from the on-chain intent, so
+    // re-prepare on the intent-close 3012 race as internalFund does.
     return withReprepare(
       prepare,
       (prepared) => client.submitPrepared(chainId, prepared),
@@ -1429,13 +1399,10 @@ export class AcpAgent {
     const client = this.getClient(chainId);
 
     if (client instanceof SolanaAcpClient) {
-      // The Solana client derives every fan-out slice from on-chain state
-      // (proposed_terms + the fund-request intent) — echoing the intent IS
-      // the client's consent — so no optParams or allowances are needed.
-      // Those reads go stale under a concurrent proposal change (E-H5) —
-      // re-prepare on the 3012 race. fundViaRouter's eager ATA-create
-      // broadcast at prepare time is idempotent, so re-running prepare in
-      // this loop is safe (see the comment at that send site).
+      // The Solana client derives every fan-out slice from on-chain state, so
+      // no optParams or allowances are needed; re-prepare on the intent-close
+      // 3012 race. fundViaRouter's prepare-time ATA-create broadcast is
+      // idempotent, so re-running prepare here is safe.
       return withReprepare(
         () =>
           client.fund(chainId, {

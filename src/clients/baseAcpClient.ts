@@ -121,10 +121,9 @@ export abstract class BaseAcpClient<TTx> {
   ): Promise<string | string[]>;
 
   /**
-   * Whether a submitPrepared failure was caused by chain state that moved
-   * between prepare and inclusion, so rebuilding the transaction from fresh
-   * state may succeed. Chains without such prepare-time state dependencies
-   * (EVM) never report stale prepares.
+   * Whether a submitPrepared failure came from chain state that moved between
+   * prepare and inclusion, so a rebuild may succeed. Chains with no
+   * prepare-time state dependency never report one.
    */
   async isStalePrepareError(_chainId: number, _err: unknown): Promise<boolean> {
     return false;

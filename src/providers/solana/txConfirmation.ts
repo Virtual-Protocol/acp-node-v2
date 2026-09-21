@@ -1,16 +1,12 @@
 /**
  * Shared post-broadcast confirmation logic for Solana provider adapters.
  *
- * Confirmation is bounded by the transaction blockhash's lastValidBlockHeight
- * rather than a fixed wall-clock poll: once the chain's block height passes
- * it, the transaction can never be included, so "expired" is a definitive
- * dropped-transaction verdict instead of an ambiguous timeout. A wall-clock
- * safety cap remains only as a backstop against a stalled or lying RPC — that
- * is the sole path on which the outcome is genuinely unknown.
+ * Bounded by the blockhash's lastValidBlockHeight rather than a wall clock, so
+ * "expired" is a definitive dropped verdict. The wall-clock cap is only a
+ * backstop against a stalled RPC, and the one path where the outcome is
+ * genuinely unknown.
  *
- * All failures throw SolanaTransactionError carrying the signature, so
- * callers can link an explorer or re-poll the exact transaction instead of
- * parsing it out of the message string.
+ * All failures throw SolanaTransactionError carrying the signature.
  */
 
 export type ConfirmationPhase =

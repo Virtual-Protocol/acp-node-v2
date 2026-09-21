@@ -91,6 +91,16 @@ export type Job = {
   vaultBump: number;
   /** PDA bump seed for this job account. */
   bump: number;
+  /**
+   * Rent-destination shard chosen at creation, as an index into the sponsor
+   * set (0 = the `sponsor` scalar). Recorded rather than re-derived so the
+   * close paths can ENFORCE it: a caller cannot pick a different shard, and
+   * there is no rule for an SDK to drift from.
+   *
+   * Always 0 while `sponsor_shard_count <= 1`, so this is behaviour-neutral
+   * until sharding is switched on.
+   */
+  shardIndex: number;
 };
 
 export type JobArgs = {
@@ -124,6 +134,16 @@ export type JobArgs = {
   vaultBump: number;
   /** PDA bump seed for this job account. */
   bump: number;
+  /**
+   * Rent-destination shard chosen at creation, as an index into the sponsor
+   * set (0 = the `sponsor` scalar). Recorded rather than re-derived so the
+   * close paths can ENFORCE it: a caller cannot pick a different shard, and
+   * there is no rule for an SDK to drift from.
+   *
+   * Always 0 while `sponsor_shard_count <= 1`, so this is behaviour-neutral
+   * until sharding is switched on.
+   */
+  shardIndex: number;
 };
 
 /** Gets the encoder for {@link JobArgs} account data. */
@@ -141,6 +161,7 @@ export function getJobEncoder(): Encoder<JobArgs> {
       ["hookAddress", getOptionEncoder(getAddressEncoder())],
       ["vaultBump", getU8Encoder()],
       ["bump", getU8Encoder()],
+      ["shardIndex", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: JOB_DISCRIMINATOR }),
   );
@@ -160,6 +181,7 @@ export function getJobDecoder(): Decoder<Job> {
     ["hookAddress", getOptionDecoder(getAddressDecoder())],
     ["vaultBump", getU8Decoder()],
     ["bump", getU8Decoder()],
+    ["shardIndex", getU8Decoder()],
   ]);
 }
 

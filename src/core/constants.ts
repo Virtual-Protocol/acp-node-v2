@@ -27,11 +27,8 @@ export class UnknownChainIdError extends Error {
 }
 
 /**
- * Resolve a chain id to its family. Fails closed.
- *
- * This used to return "evm" for anything that was not Solana, so an
- * unregistered id silently reached the EVM client and failed later with an
- * unrelated-looking error rather than at the point of the mistake.
+ * Resolve a chain id to its family. Fails closed, so an unregistered id is
+ * rejected here rather than reaching a client that cannot serve it.
  */
 export function getChainFamily(chainId: number): ChainFamily {
   if (chainId in SOLANA_CHAIN_ID_CLUSTERS) return "solana";
@@ -65,9 +62,8 @@ export const JOB_CREATED_EVENT_DISC = new Uint8Array([
   48, 110, 162, 177, 67, 74, 159, 131,
 ]);
 
-// Address Lookup Table program — a fixed native program, identical on every
-// cluster (not chain-keyed). Used both when building ALT create/extend
-// instructions and to recognize ALT setup as a sponsorable ACP-adjacent action.
+// Address Lookup Table program — native and identical on every cluster, so
+// not chain-keyed.
 export const ALT_PROGRAM_ID = "AddressLookupTab1e1111111111111111111111111";
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
@@ -83,15 +79,10 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [robinhood.id]: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
 };
 
-// SPL fee-token mints for the Kora SPL-paid tier list. USDC lives in
-// USDC_ADDRESSES above. VIRTUAL and USDT Solana mints are not yet known and
-// MUST be filled before those tiers activate — empty entries are dropped by
-// defaultSplFeeTokens, so the list simply degrades to what's populated (the
-// plan Inputs cover supplying these). Do not guess mint addresses.
-// VIRTUAL is 9 decimals on BOTH clusters, while USDC/USDT are 6 — never share a
-// decimal constant across fee tokens. (The tier check compares the wallet's
-// balance against Kora's quote in the same token's base units, so no conversion
-// happens on that path.)
+// SPL fee-token mints for the Kora SPL-paid tier list; USDC lives in
+// USDC_ADDRESSES above. Empty entries are dropped by defaultSplFeeTokens, so
+// the list degrades to what is populated. Do not guess mint addresses.
+// VIRTUAL is 9 decimals, USDC/USDT 6 — never share a decimal constant here.
 export const SOLANA_VIRTUAL_MINTS: Record<number, string> = {
   [SOLANA_DEVNET_CHAIN_ID]: "FFyf9eN5aN26Sw3n4JhW3vrD1Jx1fFT9oRZ2nVukA6Pp",
   [SOLANA_MAINNET_CHAIN_ID]: "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",
@@ -104,8 +95,7 @@ export const SOLANA_USDT_MINTS: Record<number, string> = {
 
 /**
  * Default SPL fee-token priority for a Solana chain: VIRTUAL -> USDC -> USDT,
- * mirroring the EVM ERC-20 gas-token tiers. Falsy/missing mints are dropped, so
- * until VIRTUAL/USDT mints are supplied the list is effectively USDC-only.
+ * mirroring the EVM ERC-20 gas-token tiers. Missing mints are dropped.
  */
 export function defaultSplFeeTokens(chainId: number): string[] {
   return [
@@ -167,12 +157,8 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
 
 export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
   [SOLANA_DEVNET_CHAIN_ID]: "BXxVuLL76ue6ixDRanyYAmx2DLXdsaELj6eyPTZUMUwP",
-  // Rebuilt for the current mainnet program set. The superseded table
-  // (HvtMFzNA3xwvuXT55rPxJL4qYhSP6s1hhFnfijgV4b9D) still holds the OLD router,
-  // sub hook, fund hook and sub state at these same slots, so pointing at it
-  // would compress a router `complete` onto programs the job does not belong
-  // to — a failure that surfaces deep in the router as an opaque account
-  // mismatch rather than a clean version error.
+  // Must match the current mainnet program set — a superseded table holds the
+  // previous programs at these same slots.
   [SOLANA_MAINNET_CHAIN_ID]: "DAR5cGx7wn6AFBvaeYGYzmKJTKgp11zEjP7v9fEpTg9n",
 };
 

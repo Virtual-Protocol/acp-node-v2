@@ -1,11 +1,9 @@
 /**
- * Shared [u8; 32] field encoders for the Solana clients. Both the deliverable
- * and the completion/rejection reason occupy fixed 32-byte on-chain slots; the
- * encoding conventions here mirror the EVM client so the two chains (and the
- * backend, which reads the deliverable slot as `deliverableHash`) stay
- * byte-compatible. Every Solana code path that writes either slot must go
- * through this module — a second private copy is how the encodings drifted
- * apart before.
+ * Shared [u8; 32] field encoders for the Solana clients. The deliverable and
+ * the completion/rejection reason occupy fixed 32-byte on-chain slots, encoded
+ * to mirror the EVM client so both chains stay byte-compatible.
+ *
+ * Every Solana path writing either slot must go through this module.
  */
 import {
   fixEncoderSize,
@@ -15,14 +13,12 @@ import { hexToBytes, keccak256, toHex, type Hex } from "viem";
 
 /**
  * Encode a completion/rejection reason into the on-chain [u8; 32] slot,
- * mirroring the EVM client's `toBytes32` (evmAcpClient.ts):
+ * mirroring the EVM client's `toBytes32`:
  *   - an already-32-byte hex value passes through unchanged;
- *   - a reason whose UTF-8 fits in 32 bytes is stored as right-zero-padded
- *     text, so short reasons stay human-readable on-chain;
- *   - a longer reason is stored as its keccak256 commitment.
- * Unlike the deliverable (which is always hashed because the full text is kept
- * off-chain via postDeliverable), the reason has no off-chain copy, so short
- * reasons must remain readable rather than being hashed and lost.
+ *   - UTF-8 that fits in 32 bytes is stored right-zero-padded, so short
+ *     reasons stay readable on-chain;
+ *   - anything longer is stored as its keccak256 commitment.
+ * The reason has no off-chain copy, unlike the deliverable.
  */
 export function encodeReasonBytes(reason: string): Uint8Array {
   if (reason.startsWith("0x") && reason.length === 66) {

@@ -63,12 +63,9 @@ export interface IEvmProviderAdapter extends IProviderAdapter {
 
 export type SendInstructionsOptions = {
   /**
-   * Consulted by sponsored (fee-payer) retry logic for guarded errors such
-   * as WrongStatus: return true when the caller's own read RPC confirms the
-   * transaction's state precondition is met (sponsor-node lag — retry), false
-   * when the error is genuine (fail fast). See
-   * providers/solana/feePayerRetry.ts. Adapters without sponsored retry may
-   * ignore it.
+   * Consulted by sponsored retry logic for guarded errors: true when the
+   * caller's own read RPC confirms the state precondition, false when the
+   * error is genuine. Adapters without sponsored retry may ignore it.
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
   /**
@@ -76,54 +73,52 @@ export type SendInstructionsOptions = {
    * A failure matching one of them propagates immediately instead of being
    * treated as sponsor-node lag.
    *
-   * Without it, a guard case whose expected error happens to sit in the
-   * retryable list — BudgetMismatch (E-U3), AccountNotInitialized (ST-5) —
-   * burns the whole attempt budget proving a revert we asked for, ~26s per
-   * send, and inflates the run's sponsored-retry count with failures that
-   * have nothing to do with the sponsor. Matched case-insensitively against
-   * the flattened error chain. See providers/solana/feePayerRetry.ts.
+   * Matched case-insensitively against the flattened error chain.
+   * See providers/solana/feePayerRetry.ts.
    */
   expectedErrors?: string[];
+  /**
+   * The rent shard this transaction's job is pinned to. When set, the
+   * sponsored path names THIS wallet as fee payer rather than whichever payer
+   * the rotation last handed out, so the payer that prefunds a job is the
+   * shard that receives the rent back.
+   *
+   * Only valid for a member of the signer pool; use
+   * `sponsorForRecorded(acpState, job.shardIndex)`. Ignored on self-paid
+   * sends, and a no-op at one shard.
+   */
+  sponsorShard?: SolanaAddress;
   preflightCommitment?: Commitment;
   /**
-   * Additional required signers beyond the adapter's own signer (e.g. the
-   * provider co-signing a multi-hook complete). Presence forces the SELF-PAY
-   * path: the sponsored flow adds only this wallet's signature and cannot
-   * carry a second required signer, so the adapter's signer pays the fee.
+   * Required signers beyond the adapter's own. Presence forces the SELF-PAY
+   * path, since the sponsored flow adds only this wallet's signature.
    */
   extraSigners?: SolanaSigner[];
   /**
-   * Address lookup tables to compress the transaction against, keyed by
-   * table address with the table's ON-CHAIN address ordering as the value
-   * (see core/solana/lookupTable.ts — never compress against a local list).
-   * By default, presence forces the SELF-PAY path (see extraSigners); pass
-   * `sponsorLookupTables` to instead compress inside the sponsored flow.
+   * Lookup tables to compress against, keyed by table address with the table's
+   * ON-CHAIN ordering as the value — never a local list. Presence forces the
+   * SELF-PAY path unless `sponsorLookupTables` is set.
    */
   lookupTables?: Record<string, SolanaAddress[]>;
   /**
-   * Option B — sponsor a lookup-table-compressed and/or multi-signer
-   * transaction instead of self-paying it. When true, the sponsored path
-   * compresses against `lookupTables` before requesting the fee payer (Alchemy
-   * supports versioned v0 txs, so the ALT resolves during its simulation; the
-   * propagation lag is absorbed by the fee-payer retry), and each
-   * `extraSigners` entry partial-signs after Alchemy + Privy (Alchemy sponsors
-   * two-signer txs). Caller is responsible for having created and warmed any
+   * Sponsor a lookup-table-compressed and/or multi-signer transaction instead
+   * of self-paying it: the sponsored path compresses against `lookupTables`
+   * before requesting the fee payer, and each `extraSigners` entry
+   * partial-signs afterwards. The caller must have created and warmed any
    * table on-chain first.
    */
   sponsorLookupTables?: boolean;
   /**
-   * Hook-PDA rents for this action were pre-created in a direct sponsored
-   * transaction at CPI height 2 (see core/solana/preCreate.ts). A zero rent
-   * prefund on the main transaction is then the EXPECTED outcome, so adapters
-   * suppress the router zero-prefund warning.
+   * Hook-PDA rents for this action were pre-created in a direct transaction
+   * (see core/solana/preCreate.ts), making a zero rent prefund on the main
+   * transaction the expected outcome.
    */
   hookRentPreCreated?: boolean;
 };
 
-// Cluster-dependent methods take a chainId (500 = devnet, 501 = mainnet),
-// mirroring IEvmProviderAdapter — one adapter can serve several clusters.
-// getSigner/signMessage stay chainId-free: the signer is one keypair valid on
-// every cluster and Solana message signing has no chain binding.
+// Cluster-dependent methods take a chainId, so one adapter can serve several
+// clusters. getSigner/signMessage stay chainId-free: one keypair is valid
+// everywhere and Solana message signing has no chain binding.
 export interface ISolanaProviderAdapter extends IProviderAdapter {
   getAddress(): Promise<string>;
   getCluster(chainId: number): Promise<SolanaCluster>;

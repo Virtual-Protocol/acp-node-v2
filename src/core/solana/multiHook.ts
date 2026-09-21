@@ -2,12 +2,10 @@
  * Solana multi-hook-router + subscription-hook support: PDA derivations and
  * opt-params encoders in @solana/kit style.
  *
- * These are the building blocks the router CPI fan-out needs. The router routes
- * a job's lifecycle action (setBudget/fund/submit/complete/reject) to a
- * per-selector list of sub-hooks (fund-transfer-hook, subscription-hook); each
- * sub-hook's accounts are appended to the instruction's remainingAccounts in a
- * fixed order, prefixed by a multi-hook header that tells the router how many
- * accounts and what opt-params belong to each sub-hook.
+ * The router routes a job's lifecycle action to a per-selector list of
+ * sub-hooks. Each sub-hook's accounts are appended to remainingAccounts in a
+ * fixed order, prefixed by a header declaring how many accounts and what
+ * opt-params belong to each.
  */
 import {
   getProgramDerivedAddress,
@@ -37,11 +35,9 @@ async function pda(programAddress: Address, seeds: ReadonlyUint8Array[]): Promis
 // PDA derivations (program id is passed in per call)
 // ---------------------------------------------------------------------------
 
-// A job's identity IS its account address — the program derives that address
-// from ["job", client, seed] where `seed` is a caller-chosen u64 uniquifier,
-// not a re-usable identifier. Every OTHER PDA that used to be seeded by a u64
-// job id is now seeded by that address (`job_key` in the Rust structs) instead:
-// deriving one requires the job's address, never its seed value directly.
+// A job's identity IS its account address, derived from ["job", client, seed]
+// where `seed` is a caller-chosen uniquifier. Every other PDA is seeded by
+// that address (`job_key`), never by the seed value directly.
 export const acpStatePda = (acp: Address) => pda(acp, [utf8.encode("acp_state")]);
 export const jobPda = (acp: Address, client: Address, seed: bigint) =>
   pda(acp, [utf8.encode("job"), addr.encode(client), u64le(seed)]);
@@ -149,18 +145,15 @@ export function encodeEscrowProposal(token: Address, amount: bigint): Uint8Array
 // ---------------------------------------------------------------------------
 
 /**
- * Anchor discriminator for the subscription hook's ProposedTerms account:
- * sha256("account:ProposedTerms")[0..8]. The account type is not exposed in
- * the hook's IDL, so no Codama fetcher exists — this module reads it raw.
+ * sha256("account:ProposedTerms")[0..8]. The type is not in the hook's IDL, so
+ * there is no generated fetcher and this module reads the account raw.
  */
 const PROPOSED_TERMS_DISCRIMINATOR = new Uint8Array([
   0xf3, 0xa5, 0xca, 0x36, 0x04, 0x40, 0x3d, 0x6e,
 ]);
 
-// On-chain ProposedTerms layout: 8-byte discriminator,
-// job_key Pubkey, provider Pubkey, duration i64 LE, package_id u64 LE, bump u8.
-// job_key replaced a job_id:u64 first field when job identity became the
-// job account's own address rather than a counter value.
+// On-chain ProposedTerms layout: 8-byte discriminator, job_key Pubkey,
+// provider Pubkey, duration i64 LE, package_id u64 LE, bump u8.
 const PROPOSED_TERMS_SIZE = 8 + 32 + 32 + 8 + 8 + 1;
 
 export type ProposedTerms = {
@@ -172,11 +165,9 @@ export type ProposedTerms = {
 };
 
 /**
- * Read and decode the subscription hook's proposed_terms PDA for a job.
- * Returns null when the account does not exist, was closed, or does not
- * decode as ProposedTerms for this job (defensive: length, discriminator,
- * and job-key echo are all checked, so a layout drift in the on-chain program
- * surfaces as null rather than as garbage terms).
+ * Read and decode the subscription hook's proposed_terms PDA for a job. Null
+ * when the account is absent, closed, or fails the length / discriminator /
+ * job-key checks, so a layout drift surfaces as null rather than garbage.
  */
 export async function fetchProposedTerms(
   rpc: {
@@ -216,16 +207,9 @@ export async function fetchProposedTerms(
  * `fetchProposedTerms`, retried while it reads as absent.
  *
  * Use this — not the bare reader — whenever the result decides a HOOK ACCOUNT
- * SLICE. Only one wrong answer hurts: sending the skip slice with no terms
- * on-chain is a harmless no-op, but sending it once the PDA exists throws
- * IncompleteHookAccountSet (6019) — after_action requires remaining.len() >= 8
- * from that point on. 6019 is deliberately non-retryable (feePayerRetry):
- * resending identical bytes cannot add the missing accounts, so one lagging
- * read kills the job.
- *
- * A false "absent" is reachable: proposed_terms is created at setBudget and
- * read back at complete, often by a different party's node, and a node one
- * slot behind misses an account the transaction itself will see.
+ * SLICE. The two answers are not symmetric: the skip slice is a no-op when no
+ * terms exist, but is non-retryably wrong once the PDA does, so a read one
+ * slot behind is worth waiting out.
  */
 export async function fetchProposedTermsForSlice(
   rpc: Parameters<typeof fetchProposedTerms>[0],
@@ -251,29 +235,23 @@ export async function fetchProposedTermsForSlice(
 // ---------------------------------------------------------------------------
 
 /**
- * Anchor discriminator for the fund-transfer hook's FundRequestIntentId
- * account: sha256("account:FundRequestIntentId")[0..8]. `close_intent` — its
- * last typed (`Account<FundRequestIntentId>`) reference — was removed once
- * the on-chain guards it existed for became unreachable, which drops the type
- * from the IDL entirely and with it the generated fetcher. The account and its
- * layout are otherwise unchanged, so this reads it raw, mirroring
- * fetchProposedTerms above.
+ * sha256("account:FundRequestIntentId")[0..8]. No instruction takes the type
+ * typed any more, so it is absent from the IDL and has no generated fetcher;
+ * the layout is unchanged, so this reads it raw like fetchProposedTerms.
  */
 const FUND_REQUEST_INTENT_ID_DISCRIMINATOR = new Uint8Array([
   115, 10, 133, 59, 77, 84, 106, 104,
 ]);
 
-/** sha256("account:ProviderEscrowIntentId")[0..8]. Dropped from the IDL for
- *  the same reason as its fund-request sibling: no instruction takes it typed
- *  any more, so there is no generated fetcher. */
+/** sha256("account:ProviderEscrowIntentId")[0..8]. Absent from the IDL for the
+ *  same reason as its fund-request sibling. */
 const PROVIDER_ESCROW_INTENT_ID_DISCRIMINATOR = new Uint8Array([
   132, 9, 212, 245, 34, 170, 187, 104,
 ]);
 
 // On-chain layout, shared by both maps: 8-byte discriminator, job_key Pubkey,
-// has_live_intent bool, bump u8. The flag replaced a u64 intent_id when the
-// hook's global intent counter was removed -- the intent's PDA is now its
-// identity, so the map only has to record whether one is live.
+// has_live_intent bool, bump u8. An intent's PDA is its identity, so the map
+// only records whether one is live.
 const INTENT_ID_MAP_SIZE = 8 + 32 + 1 + 1;
 
 export type IntentIdMap = {
@@ -291,10 +269,8 @@ export type MaybeFundRequestIntentId =
 
 /**
  * Read and decode the fund-transfer hook's fund_request_intent_id PDA.
- * `exists: false` covers "never created", "closed", and "wrong discriminator
- * or length" alike — a layout drift in the on-chain program surfaces as
- * exists:false rather than as garbage data, matching the generated
- * fetchMaybe* convention this replaces.
+ * `exists: false` covers never-created, closed, and wrong discriminator or
+ * length alike, matching the generated fetchMaybe* convention it replaces.
  */
 export async function fetchMaybeFundRequestIntentId(
   rpc: IntentIdMapRpc,

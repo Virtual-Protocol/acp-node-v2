@@ -1,28 +1,13 @@
 // Retry support for sponsored ACP transactions.
 //
-// Alchemy's fee-payer service simulates the transaction on its own node, and
-// the broadcast RPC node can likewise lag the SDK's read RPC by a few slots
-// (common on devnet). When a transaction references state we confirmed moments
-// earlier, the sponsor-side simulation or the broadcast fails transiently even
-// though our node already sees it:
-//   - createJob -> setBudget: job PDA not yet visible  -> AccountNotInitialized (3012 / 0xbc4)
-//   - setBudget -> fund:      new budget not yet visible -> BudgetMismatch (6019 / 0x1783)
-//   - fund -> submit:         vault PDA not yet visible  -> AccountNotInitialized (3012 / 0xbc4)
-//   - broadcast:              sponsor fee-payer credit not yet visible
-//                             -> "found no record of a prior credit"
-//   - either path:            our blockhash not yet known -> Blockhash not found
-// All are safe to retry within blockhash validity (~60s) with a fresh
-// blockhash per attempt.
+// The sponsor simulates on its own node and the broadcast node can lag the
+// SDK's read RPC, so a transaction referencing state we confirmed moments
+// earlier fails transiently. Such errors are safe to retry within blockhash
+// validity (~60s) with a fresh blockhash per attempt.
 //
-// One edge is GUARDED rather than blindly retryable:
-//   - submit -> complete:     submit tx not yet visible -> WrongStatus (6015 / 0x177f)
-// WrongStatus is ambiguous: it is also the genuine error when a job is already
-// terminal (e.g. a duplicate evaluation event completing the same job twice).
-// Guarded errors are retried only when the caller-supplied `retryGuard`
-// confirms our own read RPC sees the state the transaction needs — i.e. the
-// sponsor's node is the stale one. One unconditional grace retry is granted
-// first so our own node also gets a moment to catch up before the guard's
-// verdict is trusted.
+// WrongStatus is GUARDED rather than blindly retryable: it is also the genuine
+// error on an already-terminal job, so it is retried only while the caller's
+// `retryGuard` confirms our own RPC sees the required state.
 
 import { SolanaTransactionError } from "./txConfirmation.js";
 
@@ -30,11 +15,8 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "accountnotinitialized",
   "0xbc4", // Anchor 3012 AccountNotInitialized as a custom program error
   "3012",
-  // BudgetMismatch is matched by NAME only. Its numeric code (6019 / 0x1783)
-  // collides with the hooks' IncompleteHookAccountSet (error index 19 in both
-  // programs), which is a deterministic account-set bug that must fail fast —
-  // matching the raw code would retry it to exhaustion. Anchor simulation logs
-  // always carry "Error Code: BudgetMismatch", so the name is sufficient.
+  // Matched by NAME only: the numeric code collides with the hooks'
+  // IncompleteHookAccountSet, which must fail fast.
   "budgetmismatch",
   "blockhash not found",
   "no record of a prior credit", // fee-payer credit not yet visible to broadcast node
@@ -45,53 +27,35 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "lookup table not found",
   "lookup table index out of bounds",
   "lookup table owner should be",
-  // Kora paths. The broadcast-lag patterns above are provider-agnostic and
-  // already cover Kora's broadcast retries; any Kora-specific transient strings
-  // (fee-payer node lag / simulation) are added here once captured on devnet.
-  // Do NOT add speculative strings — a wrong match would retry a genuinely
-  // failed transaction. Kora's insufficient-payment / policy rejections are
-  // terminal and must stay OUT of this list.
-  //
-  // Captured on devnet: Kora reads the agent's balance and runs its simulation
-  // as two separate calls, and refuses to sponsor when the node advanced a slot
-  // between them ("...at the same slot (1 apart); refusing to sponsor"). That is
-  // the node racing itself under load, not a defect in the transaction — the
-  // same class as every lag pattern above, and it resolves on a resend. Matched
-  // on the stable prefix; the "(N apart)" parenthetical varies by slot delta.
+  // Kora paths. Add only strings actually observed; a speculative match would
+  // retry a genuinely failed transaction, and payment/policy rejections are
+  // terminal. Below: balance read and simulation land on different slots.
+  // Matched on the stable prefix — the "(N apart)" suffix varies.
   "could not read the agent balance and the simulation at the same slot",
 ];
 
 // A transaction that ran out of compute units, in every shape the failure
-// surfaces: the runtime log line ("exceeded CUs meter at BPF instruction"),
-// the InstructionError variant ("ComputationalBudgetExceeded"), and the
-// transaction-level error name ("ComputeBudgetExceeded"). Matched on the
-// flattened error chain, so preflight log walls, broadcast rejections, and
-// confirmed on-chain failures all register.
+// surfaces. Matched on the flattened error chain so preflight, broadcast and
+// confirmed failures all register.
 const COMPUTE_BUDGET_EXCEEDED_PATTERNS = [
   "computebudgetexceeded",
   "computationalbudgetexceeded",
   "exceeded cus meter",
 ];
 
-// Deterministic failures that must fail FAST even when they appear in a
-// multi-instruction simulation log alongside retryable-looking lines. A wrong
-// hook account set cannot be fixed by resending the same transaction;
-// retrying only burns ~21s per send and masks the SDK bug. The hooks'
-// IncompleteHookAccountSet is 6019, colliding with core BudgetMismatch, so
-// the numeric code alone can never make an error retryable.
+// Deterministic failures that must fail FAST even when a simulation log also
+// carries retryable-looking lines. A numeric code alone never makes an error
+// retryable, because IncompleteHookAccountSet collides with BudgetMismatch.
 const NON_RETRYABLE_FEE_PAYER_PATTERNS = [
   "incompletehookaccountset",
-  // Compute exhaustion is deterministic for a given instruction set and
-  // limit: resending the same transaction consumes the same units. On the
-  // Kora-sponsored path the recovery is a NEW prepare with forceMaxCuLimit
-  // (see sendKoraSponsoredTransaction's backstop), not a resend.
+  // Deterministic for a given instruction set and limit. On the sponsored
+  // path the recovery is a new prepare with forceMaxCuLimit, not a resend.
   ...COMPUTE_BUDGET_EXCEEDED_PATTERNS,
 ];
 
 /**
  * True when the error is a compute-budget exhaustion, whichever phase raised
- * it (preflight, broadcast, or on-chain confirmation). Used by the
- * Kora-sponsored path to decide its one forceMaxCuLimit re-prepare.
+ * it. Drives the sponsored path's one forceMaxCuLimit re-prepare.
  */
 export function isComputeBudgetExceededError(err: unknown): boolean {
   const text = collectErrorText(err);
@@ -101,10 +65,8 @@ export function isComputeBudgetExceededError(err: unknown): boolean {
 }
 
 /**
- * Flattens an error and its `cause` chain into a single lowercased string.
- * Broadcast failures surface as a generic SolanaError ("Transaction
- * simulation failed") whose real reason lives in `.cause.message`, so matching
- * `error.message` alone would miss them.
+ * Flattens an error and its `cause` chain into one lowercased string; broadcast
+ * failures carry their real reason in `.cause.message`.
  */
 function collectErrorText(err: unknown): string {
   const parts: string[] = [];
@@ -120,12 +82,9 @@ function collectErrorText(err: unknown): string {
   return parts.join(" ").toLowerCase();
 }
 
-// A sponsor refusal that names no reason. Kora's `prepareSponsoredTransaction`
-// answers a transaction it could not simulate with a bare "Transaction fails
-// simulation." — no program id, no error code, no logs — so neither the retry
-// classifier below nor a caller inspecting the error can tell node lag from a
-// deterministic revert. The second half of the test is what keeps this narrow:
-// a refusal that DID carry a reason is not opaque and needs no recovery.
+// A sponsor refusal that names no reason — no program id, code, or logs — so
+// nothing downstream can tell node lag from a deterministic revert. The
+// detail-marker test keeps this narrow: a refusal WITH a reason is not opaque.
 const OPAQUE_SIMULATION_REFUSAL_PATTERNS = [
   "transaction fails simulation",
   "transaction failed simulation",
@@ -140,9 +99,8 @@ const SIMULATION_DETAIL_MARKERS = [
 ];
 
 /**
- * True when a sponsor refused the transaction at simulation WITHOUT saying
- * why. Callers that can simulate the same bytes themselves use this to decide
- * whether recovering the logs is worth an RPC round trip.
+ * True when a sponsor refused the transaction at simulation WITHOUT saying why,
+ * so a caller can decide whether re-simulating for logs is worth a round trip.
  */
 export function isOpaqueSimulationRefusal(err: unknown): boolean {
   const text = collectErrorText(err);
@@ -152,51 +110,51 @@ export function isOpaqueSimulationRefusal(err: unknown): boolean {
   );
 }
 
+/**
+ * The sponsor proxy's own `retryable` verdict, duck-typed so this module never
+ * imports the Kora client. Authoritative where present: its client messages are
+ * shared across unrelated causes, so only this flag separates them.
+ */
+function sponsorRetryVerdict(err: unknown): boolean | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const v = (err as { sponsorRetryable?: unknown }).sponsorRetryable;
+  return typeof v === "boolean" ? v : undefined;
+}
+
 export function isRetryableFeePayerError(err: unknown): boolean {
-  // An expired transaction is provably dropped (blockhash validity ended
-  // without inclusion), so retrying cannot double-apply. Whether a retry can
-  // SUCCEED depends on the caller: attempts that rebuild with a fresh
-  // blockhash recover; fixed-bytes senders cannot and must opt out via
-  // FeePayerRetryOptions.retryExpired = false. The "timeout" phase (stalled
-  // RPC, outcome unknown) is deliberately NOT retryable.
+  // An expired transaction is provably dropped, so a retry cannot double-apply.
+  // Fixed-bytes senders opt out via retryExpired = false. The "timeout" phase
+  // (outcome unknown) is deliberately NOT retryable.
   if (err instanceof SolanaTransactionError && err.phase === "expired") {
     return true;
   }
-  // Guarded errors stay guarded — an incidental retryable substring in the
-  // same simulation log must not bypass the retryGuard's fail-fast verdict.
+  // Checked BEFORE the sponsor's verdict: the guard answers whether a retry is
+  // SAFE, which outranks whether it could succeed.
   if (isGuardedFeePayerError(err)) return false;
+  // Structured beats textual wherever the proxy answered.
+  const verdict = sponsorRetryVerdict(err);
+  if (verdict !== undefined) return verdict;
   const text = collectErrorText(err);
-  // Deterministic bugs fail fast — checked before the retryable list so an
-  // incidental match elsewhere in the log cannot sweep them into a retry loop.
+  // Checked before the retryable list so an incidental match elsewhere in the
+  // log cannot sweep a deterministic failure into a retry loop.
   if (NON_RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern))) {
     return false;
   }
   return RETRYABLE_FEE_PAYER_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
-// Errors that are retryable ONLY when the caller's retryGuard confirms the
-// failure is sponsor-node lag. Anchor always logs the error name, so match on
-// it rather than the numeric code (6015 / 0x177f), which collides with other
-// programs' error spaces (e.g. multi-hook-router AccountSliceOutOfBounds).
+// Retryable ONLY when the caller's retryGuard confirms sponsor-node lag.
+// Matched on the error NAME; the numeric code collides across programs.
 const GUARDED_FEE_PAYER_PATTERNS = [
   "wrongstatus",
   "wrong job status",
   "error code: unauthorized.",
 ];
 
-// Guarded compound patterns: every substring in a group must appear. Used
-// where a single marker is too broad. InvalidJob (6000) alone must stay
-// unguarded — the fund hook throws it for stale intent PDAs, which need a
-// re-prepare (withReprepare), not a same-bytes resend. But on the router's
-// BatchConfigureHooks the job is an UncheckedAccount, so a job the sponsor's
-// node has not seen yet fails the owner check with InvalidJob; the retryGuard
-// disambiguates lag (job Open on our RPC → retry) from a genuinely wrong job.
-// CleanupProposedTerms gates on job.state == Expired (subscription-hook
-// cleanup_proposed_terms) — a pure state read with no clock check. A
-// JobNotExpired right after claim_refund flipped Open -> Expired is therefore
-// the sponsor's node not having seen that write yet, indistinguishable from
-// the genuine error on a still-live job. Guarded, not blindly retryable: the
-// retryGuard confirms on our own RPC that the job really is Expired.
+// Compound patterns: every substring in a group must appear. Used where a
+// single marker is too broad — InvalidJob and JobNotExpired are each genuine
+// errors on their own, and only the instruction context makes node lag the
+// likelier reading, which the retryGuard then confirms on our own RPC.
 const GUARDED_FEE_PAYER_PATTERN_GROUPS: string[][] = [
   ["instruction: batchconfigurehooks", "error code: invalidjob."],
   ["instruction: cleanupproposedterms", "error code: jobnotexpired."],
@@ -204,15 +162,11 @@ const GUARDED_FEE_PAYER_PATTERN_GROUPS: string[][] = [
 
 /**
  * True when the error is one the caller declared it EXPECTS (negative test).
+ * Outranks every other classification: a revert the caller asked for is
+ * deterministic, so a retry can only burn the attempt budget.
  *
- * This outranks every other classification. A revert the caller asked for is
- * deterministic by construction: resending the same transaction reproduces it,
- * so retrying can only burn the attempt budget and the wall clock. It also
- * keeps such sends out of the sponsored-retry count, which otherwise reports
- * guard cases as sponsor-node lag.
- *
- * Matched case-insensitively as substrings of the flattened error chain, so a
- * caller may pass an Anchor error name, a decimal code, or a hex code.
+ * Matched case-insensitively against the flattened error chain, so an Anchor
+ * error name, a decimal code, or a hex code all work.
  */
 export function isExpectedFeePayerError(
   err: unknown,
@@ -249,36 +203,27 @@ export interface FeePayerRetryOptions {
     error?: unknown,
   ) => void;
   /**
-   * Consulted for guarded errors (see GUARDED_FEE_PAYER_PATTERNS). Return
-   * true when our own read RPC confirms the transaction's state precondition
-   * is met — i.e. the sponsor simulated against a stale node and the error is
-   * safe to retry. Return false when our node agrees the transaction cannot
-   * succeed, so the error is genuine and should propagate. A guard that
-   * throws is treated as inconclusive (retry) so a transient RPC hiccup
-   * cannot abort an otherwise recoverable send.
+   * Consulted for guarded errors. Return true when our own read RPC confirms
+   * the transaction's state precondition is met, false when it agrees the
+   * transaction cannot succeed. A guard that throws counts as inconclusive
+   * (retry).
    */
   retryGuard?: (error: unknown) => Promise<boolean> | boolean;
   /**
-   * Error names/codes the CALLER expects this send to fail with. A matching
-   * failure is terminal by definition — the caller asked for it — so it
-   * propagates on the first attempt, ahead of both the retryable and the
-   * guarded lists. See isExpectedFeePayerError.
+   * Error names/codes the CALLER expects this send to fail with. A match
+   * propagates on the first attempt, ahead of the retryable and guarded lists.
    */
   expectedErrors?: string[];
   /**
-   * Set false when every attempt rebroadcasts the SAME transaction bytes
-   * (fixed blockhash): an "expired" confirmation is then terminal — the
-   * blockhash's validity window has provably closed, so no retry can land it.
-   * Default true, which is only correct for attempts that rebuild the
-   * transaction with a fresh blockhash (the instruction-based sponsored path).
+   * Set false when every attempt rebroadcasts the SAME transaction bytes, where
+   * an "expired" confirmation is terminal. Default true, correct only for
+   * attempts that rebuild with a fresh blockhash.
    */
   retryExpired?: boolean;
 }
 
 /**
- * Per-attempt delay: capped exponential with +/-25% jitter. The sponsor node
- * typically catches up within 1-2 slots (~400-800ms), so the first retry
- * fires fast; the cap keeps later waits bounded and the jitter de-correlates
+ * Per-attempt delay: capped exponential with +/-25% jitter, which de-correlates
  * concurrent senders retrying against the same lagging node.
  * `random` is injectable for tests (0 -> -25%, 0.5 -> exact, 1 -> +25%).
  */
@@ -294,14 +239,11 @@ export function computeRetryDelayMs(
 }
 
 /**
- * Runs `fn`, retrying with capped exponential backoff plus jitter (see
- * computeRetryDelayMs) when it throws an error matching a retryable
- * sponsor-simulation / broadcast-lag pattern. Guarded errors (WrongStatus)
- * are granted one unconditional grace retry, then retried only while
- * `retryGuard` confirms sponsor lag; without a retryGuard they propagate
- * immediately. Errors the caller listed in `expectedErrors` propagate on the
- * first attempt, ahead of both lists. Non-retryable errors and the final
- * attempt's error propagate unchanged.
+ * Runs `fn`, retrying with capped exponential backoff plus jitter on retryable
+ * sponsor-simulation / broadcast-lag errors. Guarded errors get one grace
+ * retry, then are retried only while `retryGuard` confirms lag; without a
+ * retryGuard they propagate immediately. `expectedErrors` propagate on attempt
+ * one. Everything else propagates unchanged.
  */
 export async function withFeePayerRetry<T>(
   fn: () => Promise<T>,
@@ -318,9 +260,7 @@ export async function withFeePayerRetry<T>(
       return await fn();
     } catch (err) {
       lastError = err;
-      // A failure the caller declared it expects is terminal on attempt 1,
-      // ahead of every other rule: it is the ANSWER the send was made to
-      // obtain, not a symptom of a stale sponsor node.
+      // Terminal on attempt 1, ahead of every other rule.
       if (isExpectedFeePayerError(err, options.expectedErrors)) throw err;
       let retryable = isRetryableFeePayerError(err);
       if (
@@ -334,9 +274,8 @@ export async function withFeePayerRetry<T>(
       if (!retryable && options.retryGuard && isGuardedFeePayerError(err)) {
         guardedFailures++;
         if (guardedFailures === 1) {
-          // Grace retry: our own read RPC may be as stale as the sponsor's
-          // for a moment after a socket event; give it one backoff period
-          // before trusting the guard's comparison against it.
+          // Grace retry: our own read RPC may itself be stale for a moment
+          // after a socket event.
           retryable = true;
         } else {
           try {

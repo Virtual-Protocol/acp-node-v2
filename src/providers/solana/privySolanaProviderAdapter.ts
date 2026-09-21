@@ -15,6 +15,7 @@ import {
   signTransactionMessageWithSigners,
   getBase64EncodedWireTransaction,
   getTransactionDecoder,
+  getCompiledTransactionMessageDecoder,
   type Address,
   type Rpc,
   type Signature,
@@ -75,43 +76,31 @@ import {
 } from "../../core/solana/wallet.js";
 
 // Sponsorship covers ACP actions: batches touching the cluster's ACP program,
-// fund-transfer hook, or multi-hook router (batchConfigureHooks targets the
-// router program directly). The Associated Token Account program is included
-// so a STANDALONE ATA-creation tx is sponsored too — router fund splits ATA
-// creation into its own tx to keep the fund tx small (see fundViaRouter), and
-// Alchemy's gas policy sponsors ATA-only txs (confirmed via devnet spike).
-// Derived per chainId so devnet and mainnet each recognize their own
-// deployments; the ATA program id is the same on every cluster.
+// fund-transfer hook, or multi-hook router. The Associated Token Account
+// program is included so a standalone ATA-creation tx is sponsored too, since
+// router fund splits that into its own tx. Derived per chainId; the ATA
+// program id is the same on every cluster.
 //
 // The Address Lookup Table program is deliberately NOT sponsorable: sponsoring
-// an ALT create/extend covers only the tx fee, not the ALT account RENT
-// (~0.0084 SOL), which Alchemy's prefundRent doesn't reimburse — so it saves
-// nothing and adds a create→extend sponsor-lag. Router completes avoid the
-// issue entirely by compressing against the persistent complete ALT, created
-// once by the upgrade authority.
+// a create/extend covers the fee but not the account rent, so it saves nothing
+// and adds a create-to-extend lag. Router completes compress against the
+// persistent complete ALT instead.
 const ATA_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const sponsorableCache = new Map<number, ReadonlySet<string>>();
 
 const COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111";
 const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111";
 
-// There is deliberately NO prefund logic in this file. The rent prefund — a
-// System transfer from the sponsor into the acting wallet — is sized and
-// INSERTED by the ACP server (`prepareSponsoredTransaction` on the sponsor
-// proxy): the SDK submits a transaction carrying only ACP instructions and
-// Privy-signs whatever comes back. Probe constants, sizing simulation, and
-// System instruction encoding all live server-side, where the caller is
-// authenticated and the checks cannot be skipped.
+// There is deliberately NO prefund logic in this file. The rent prefund is
+// sized and inserted server-side; the SDK submits a transaction carrying only
+// ACP instructions and signs whatever comes back.
 
-// Never compress these out of the static keys. An instruction's program must
-// have a STATIC account index — the runtime bounds program_id_index by the
-// static key list — so the inserted System transfer needs System static. Once
-// compression has moved System into table space it has to be put back, and the
-// same pubkey reachable both ways is AccountLoadedTwice at lock validation.
+// Never compress these out of the static keys. An instruction's program needs
+// a STATIC account index, so the inserted System transfer needs System static,
+// and a pubkey reachable both ways is AccountLoadedTwice at lock validation.
 //
-// System is eligible for compression because it reaches the compressor as an
-// ACCOUNT, never as an invoked program: `ro(SYSTEM_PROGRAM_ID)` in the router
-// fan-out on complete/submit/reject, and the bundled ATA create on fund.
+// System is eligible for compression at all because it reaches the compressor
+// as an ACCOUNT in the router fan-out, never as an invoked program.
 const NEVER_COMPRESS: ReadonlySet<string> = new Set([
   SYSTEM_PROGRAM_ID,
   // Zero-cost today (cuLimitIx has `accounts: []` and is the message's own
@@ -119,20 +108,17 @@ const NEVER_COMPRESS: ReadonlySet<string> = new Set([
   COMPUTE_BUDGET_PROGRAM_ID,
 ]);
 
-// Substituted for a masked entry so the map keeps its LENGTH and ORDER: the
-// on-wire index is the address's POSITION in this array, resolved against an
-// already-deployed table, so dropping an entry repoints every later account.
-// Never passed as an account by any ACP instruction, so it is never matched.
+// Substituted for a masked entry so the map keeps its LENGTH and ORDER — the
+// on-wire index is a position in this array, so dropping an entry repoints
+// every later account. Never passed as an account by any ACP instruction.
 const ALT_MASK_PLACEHOLDER = "AddressLookupTab1e1111111111111111111111111";
 
 /**
  * Compresses against the caller's lookup tables, keeping NEVER_COMPRESS
- * addresses static. Costs +31 bytes per masked address present (System only in
- * practice) — one 32-byte static key for one 1-byte index.
+ * addresses static at +31 bytes each.
  *
  * Applied on every path, not just sponsored ones: keeping System static is
- * always safe, and a `lookupTables` send falls through to self-pay whenever
- * sponsorship is unavailable.
+ * always safe, and a `lookupTables` send can fall through to self-pay.
  */
 export function compressPreservingSponsorStatics<T>(
   message: T,
@@ -156,10 +142,8 @@ export function compressPreservingSponsorStatics<T>(
 
 /**
  * Applies the caller's lookup tables and extra signers to a message.
- *
- * Compression must happen before any size check: a router `complete` fits only
- * once compressed, and measuring it uncompressed would reject a transaction
- * that is actually fine.
+ * Compression must happen before any size check, since a router `complete`
+ * fits only once compressed.
  */
 function applySendOptions<T>(
   message: T,
@@ -228,22 +212,17 @@ export interface PrivySolanaConfig {
   privyAppId?: string;
   sponsored?: boolean;
   /**
-   * Commitment every send's preflight simulation runs at, overridable per call
-   * via SendInstructionsOptions. Defaults to ACP_COMMITMENT ("confirmed") to
-   * match the level ACP reads run at, so preflight simulates against the same
-   * state the transaction was built on. The RPC's own default ("finalized")
-   * trails by ~32 slots and fails steps that depend on the previous one.
+   * Commitment every send's preflight simulation runs at, overridable per
+   * call. Defaults to ACP_COMMITMENT so preflight simulates against the same
+   * state the transaction was built on; the RPC's own default trails it.
    */
   preflightCommitment?: Commitment;
   /**
-   * Called when a sponsored send is retried due to sponsor-node lag.
-   * When provided, replaces the default one-line console notice. `slot` is
-   * the read RPC's slot at blockhash fetch, `requiredSlot` is the slot in
-   * which the required account state was created (the slot the sponsor node
-   * must reach), `nodeSlot` is the lagging node's own slot on the rare error
-   * that exposes it (a -32016 minimum-context-slot error; sponsor simulation
-   * failures leave it null), and `rawError` carries the underlying
-   * simulation failure for debugging.
+   * Called when a sponsored send is retried due to sponsor-node lag, replacing
+   * the default console notice. `slot` is the read RPC's slot at blockhash
+   * fetch, `requiredSlot` the slot the sponsor node must reach, `nodeSlot` the
+   * lagging node's own slot when an error exposes it, and `rawError` the
+   * underlying failure.
    */
   onSponsoredRetry?: (info: {
     attempt: number;
@@ -254,37 +233,29 @@ export interface PrivySolanaConfig {
     rawError: string;
   }) => void;
   /**
-   * Kora paymaster JSON-RPC URL per chainId (reached through the ACP server
-   * proxy). When set for a chain, non-ACP transactions on that chain are paid
-   * in SPL via Kora instead of self-paying SOL. Defaults to
-   * `${serverUrl}/wallets/solana-kora-rpc/${chainId}` for every proxied chain;
-   * pass `{}` or omit a chain to disable Kora there (falls back to self-pay).
+   * Kora paymaster JSON-RPC URL per chainId, reached through the ACP server
+   * proxy. When set for a chain, non-ACP transactions there are paid in SPL
+   * rather than self-paying SOL. Pass `{}` or omit a chain to disable it.
    */
   koraRpcUrls?: Record<number, string>;
   /**
-   * Who pays for ACP actions.
-   *
-   * "alchemy" (default) — alchemy_requestFeePayer rewrites the fee payer and
-   * prefunds rent. "kora" — the Kora sponsor node co-signs and the prefund is
-   * written here, because Kora never modifies a transaction.
+   * Who pays for ACP actions: "alchemy" (default) rewrites the fee payer and
+   * prefunds rent; "kora" co-signs instead, never modifying the transaction.
    */
   acpSponsorship?: "alchemy" | "kora";
   /** Sponsor-node URL per chain. Defaults to the backend's sponsor proxy. */
   koraSponsorRpcUrls?: Record<number, string>;
   /**
-   * SPL fee-token mints to try, in priority order, for Kora-paid transactions
-   * on a chain. Defaults to `defaultSplFeeTokens(chainId)` (VIRTUAL -> USDC ->
-   * USDT). The first tier the wallet can cover wins.
+   * SPL fee-token mints to try, in priority order, for Kora-paid transactions.
+   * Defaults to `defaultSplFeeTokens(chainId)`; the first tier the wallet can
+   * cover wins.
    */
   splFeeTokens?: Record<number, string[]>;
 }
 
-// Extracts the responding node's slot from an error chain, when the error
-// carries one (as `contextSlot` on the SolanaError context). Only a -32016
-// "minimum context slot not reached" error does; we no longer send a
-// minContextSlot ourselves, so this is populated only when the RPC provider
-// applies its own min-context constraint. Alchemy's sponsorship simulation
-// errors report no slot.
+// Extracts the responding node's slot from an error chain, when one is
+// carried as `contextSlot`. Only a minimum-context-slot error does, and we no
+// longer send minContextSlot ourselves, so this is usually null.
 export function extractNodeContextSlot(err: unknown): bigint | null {
   let current: unknown = err;
   for (let depth = 0; current != null && depth < 6; depth++) {
@@ -300,14 +271,10 @@ export function extractNodeContextSlot(err: unknown): bigint | null {
 
 /**
  * Resolves the two slots reported when a sponsored attempt is retried:
- *   - `nodeSlot`: the responding node's slot, present only when the error
- *     carries one (see extractNodeContextSlot) — usually null.
- *   - `requiredSlot`: the slot the failing step needed to reach. Both the
- *     sponsor's simulation and the broadcast node fail with a plain error
- *     carrying no slot, so this is the last confirmed slot — the slot in
- *     which the state the transaction depends on was created — falling back
- *     to our read RPC's blockhash slot, by which that state is likewise
- *     visible, so it remains a valid sync target.
+ *   - `nodeSlot`: the responding node's slot, usually null.
+ *   - `requiredSlot`: the slot the failing step needed to reach. Sponsor and
+ *     broadcast failures carry no slot, so this is the last confirmed slot,
+ *     falling back to the read RPC's blockhash slot.
  */
 export function resolveSponsoredRetrySlots(
   error: unknown,
@@ -324,8 +291,7 @@ export function resolveSponsoredRetrySlots(
 
 /**
  * Human-readable warning for a sponsored-transaction retry. Slots are named
- * only when a -32016 broadcast error revealed both; a sponsor-simulation
- * failure carries no slot information, so no slot is invented for it.
+ * only when the error revealed both; none is invented otherwise.
  */
 export function formatSponsoredRetryWarning(
   requiredSlot: bigint | null,
@@ -471,6 +437,31 @@ function buildUnsignedWireBytes(
   return wire;
 }
 
+/**
+ * The fee payer a compiled transaction names, as base58 — always static
+ * account 0. Used to pin `signer_key` on every Kora signTransaction, since a
+ * rotating signer pool can otherwise sign with a payer the transaction never
+ * named.
+ *
+ * Reading it back off the TRANSACTION is what makes this structural: whoever
+ * the bytes name is who must sign, however the payer was chosen.
+ */
+function feePayerOf(serializedTransaction: string): string | undefined {
+  try {
+    const tx = getTransactionDecoder().decode(
+      Buffer.from(serializedTransaction, "base64"),
+    );
+    const compiled = getCompiledTransactionMessageDecoder().decode(
+      tx.messageBytes,
+    );
+    const payer = compiled.staticAccounts[0];
+    return payer ? String(payer) : undefined;
+  } catch {
+    // Never block a send on this: unpinned is correct on a single-signer node.
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Remote Solana signer (delegates to Privy via ACP server)
 // ---------------------------------------------------------------------------
@@ -586,8 +577,7 @@ function createPrivySolanaSigner(params: {
 
 /**
  * Thrown when the Kora SPL-paid path has no fee token the wallet can cover.
- * Deliberately NOT caught as a fallback — the wallet has no SOL to self-pay
- * either, so silently spending SOL would be wrong. Mirrors the EVM error.
+ * Deliberately NOT caught as a fallback. Mirrors the EVM error.
  */
 export class InsufficientFeeTokenError extends Error {
   constructor(message: string) {
@@ -597,12 +587,9 @@ export class InsufficientFeeTokenError extends Error {
 }
 
 /**
- * Warning for a sponsored router action whose prefund came back empty.
- * A sponsor's rent estimator may not cover account creations made deep in the
- * CPI stack: router actions create hook PDAs several calls down, so a zero
- * prefund there can mean the signer wallet pays those rents. Surface it up
- * front instead of letting the transaction die on-chain with a bare
- * "insufficient lamports". Returns null when there is nothing to warn about.
+ * Warning for a sponsored router action whose prefund came back empty, which
+ * can mean the signer wallet pays the hook PDA rents. Surfaced up front rather
+ * than left to fail on-chain. Null when there is nothing to warn about.
  */
 export function routerPrefundWarning(
   chainId: number,
@@ -610,8 +597,8 @@ export function routerPrefundWarning(
   prefundLamports: bigint | null,
   hookRentPreCreated = false,
 ): string | null {
-  // Hook-PDA rents were pre-created at CPI height 2 in their own sponsored
-  // tx — a zero prefund on the main tx is the expected success signal.
+  // Hook-PDA rents were pre-created in their own tx, so a zero prefund here
+  // is the expected success signal.
   if (hookRentPreCreated) return null;
   if (prefundLamports != null && prefundLamports > 0n) return null;
   const router = MULTI_HOOK_ROUTER_ADDRESSES[chainId];
@@ -630,13 +617,9 @@ export function routerPrefundWarning(
 }
 
 /**
- * Rewraps a sendTransaction rejection that carries simulation logs so the
- * ACTUAL tx-level failure reason survives, not just the (often all-success)
- * preflight logs: a broadcast can fail post-execution — InsufficientFundsForRent
- * after every instruction succeeded, BlockhashNotFound, an unmet
- * minContextSlot — and without the reason the error reads as a bare
- * "simulation failed" over a wall of success lines. Returns null when the
- * error has no logs (network, auth, server errors pass through unchanged).
+ * Rewraps a sendTransaction rejection carrying simulation logs so the actual
+ * tx-level failure reason survives, not just the often all-success preflight
+ * logs. Null when the error has no logs.
  */
 export function formatPreflightFailure(err: unknown): Error | null {
   const errObj = err as Record<string, unknown>;
@@ -668,24 +651,21 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _serverUrl: string;
   private readonly _privyAppId: string;
 
-  // Gas sponsorship (policy injected server-side). Chains served through the
-  // ACP server proxy have an entry in _rpcProxyUrls; explicit-rpcUrl chains
-  // do not and are never sponsored.
+  // Gas sponsorship (policy injected server-side). Only chains with an entry
+  // in _rpcProxyUrls are sponsored.
   private readonly _rpcProxyUrls: Map<number, string>;
   private _getAuthToken: (() => Promise<string>) | null = null;
   private readonly _sponsored: boolean;
   private readonly _onSponsoredRetry: PrivySolanaConfig["onSponsoredRetry"];
   private readonly _preflightCommitment: Commitment;
   // Slot of the most recently confirmed transaction per chain — the slot the
-  // sponsor node must reach to see account state created by the previous
-  // step (e.g. createJob before setBudget). Per-chain because devnet and
-  // mainnet slot numbers are unrelated streams.
+  // sponsor node must reach to see the previous step's account state.
+  // Per-chain because clusters are unrelated slot streams.
   private readonly _lastConfirmedSlot = new Map<number, bigint>();
 
-  // Kora SPL-paid path. A chain has a KoraClient only when a Kora URL was
-  // configured for it; non-ACP transactions on such chains are paid in SPL
-  // rather than self-paying SOL. _splFeeTokens is the per-chain tier list; the
-  // resolved Kora payer is cached per chain (stable per node).
+  // Kora SPL-paid path, registered per chain only where a Kora URL was
+  // configured. _splFeeTokens is the per-chain tier list; the resolved payer
+  // is cached per chain.
   private readonly _koraClients: Map<number, KoraClient>;
   /** Sponsor node per chain. Empty unless acpSponsorship === "kora". */
   private readonly _koraSponsorClients: Map<number, KoraClient>;
@@ -694,9 +674,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   private readonly _splFeeTokens: Map<number, string[]>;
   private readonly _koraPayer = new Map<number, KoraPayer>();
   private readonly _feeTokenDecimals = new Map<string, number>();
-  // chainId -> the mints the node accepts as fee payment (getSupportedTokens).
-  // Cached for the process lifetime: allowed_spl_paid_tokens is baked into the
-  // Kora image, so it cannot change while this adapter lives.
+  // chainId -> the mints the node accepts as fee payment. Cached for the
+  // process lifetime, since the node's allowed list is static per deployment.
   private readonly _nodeFeeTokens = new Map<number, string[]>();
 
   private constructor(params: {
@@ -755,13 +734,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         throw new Error(`Unsupported Solana chainId: ${chainId}`);
       }
     }
-    // The app id is not cosmetic: generatePrivyAuthSig signs over
-    // `headers: { "privy-app-id": privyAppId }`, and the ACP server replays that
-    // request under ITS OWN app id. Sign with the mainnet id against a testnet
-    // server and Privy rejects the signature — surfacing as a 500 from
-    // /wallets/solana/sign-message, which the adapter then swallows into a
-    // silent self-pay fallback. Defaulting by cluster keeps the two ends
-    // agreeing without every devnet caller having to remember the override.
+    // The app id is signed over and replayed by the server under its own, so
+    // a mismatch is rejected and degrades to a silent self-pay fallback.
+    // Defaulting by cluster keeps both ends agreeing without an override.
     const privyAppId =
       params.privyAppId ??
       (SOLANA_CHAIN_ID_CLUSTERS[chainIds[0]!] === "devnet"
@@ -827,19 +802,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       rpcProxyUrls.set(chainId, proxyUrl);
       const token = ensureToken();
 
-      // Kora SPL-paid path for this proxied chain. `koraRpcUrls` undefined =>
-      // default the URL on for every proxied chain; a provided map opts in
-      // per chain (absent chain => disabled). Only register when at least one
-      // fee-token mint is configured, so `_koraClients.has(chainId)` means
-      // "Kora is usable here"; otherwise the send path falls back to self-pay.
+      // Kora SPL-paid path. An undefined `koraRpcUrls` defaults the URL on for
+      // every proxied chain; a provided map opts in per chain. Registered only
+      // with a fee-token mint configured, so `has(chainId)` means usable.
       const koraUrl =
         params.koraRpcUrls === undefined
           ? `${serverUrl}/wallets/solana-kora-rpc/${chainId}`
           : params.koraRpcUrls[chainId];
-      // The SPONSOR node is a different node from the microgas one: price type
-      // is a per-node setting, so one is margin-priced and the other free.
-      // Registered only when ACP sponsorship is switched to Kora, so the
-      // default build has no sponsor client at all.
+      // The SPONSOR node is a different node from the microgas one, since
+      // price type is per-node. Registered only when ACP sponsorship is Kora.
       if (params.acpSponsorship === "kora") {
         const sponsorUrl =
           params.koraSponsorRpcUrls === undefined
@@ -927,18 +898,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * The microgas Kora client for a chain, or undefined when kora is not
-   * configured for it.
+   * The microgas Kora client for a chain, or undefined when Kora is not
+   * configured there. Exposed so callers can ask the node about its own fee
+   * payer and payment address rather than configuring those separately.
    *
-   * Exposed so callers can ask the node about itself — its fee payer and
-   * payment address — rather than configuring those values separately and
-   * letting them drift from the node actually charging. The client is already
-   * authenticated and already points at the deployed route, which is the whole
-   * reason to hand it out instead of letting each caller rebuild the URL and
-   * re-derive an agent token.
-   *
-   * This is the MARGIN-PRICED microgas node, not the sponsor node: fees it
-   * collects land in `getPayerSigner().paymentAddress`.
+   * This is the MARGIN-PRICED microgas node, not the sponsor node.
    */
   getKoraClient(chainId: number): KoraClient | undefined {
     return this._koraClients.get(chainId);
@@ -986,9 +950,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         `alchemy_requestFeePayer failed: ${json.error.message ?? JSON.stringify(json.error)}`,
       );
     }
-    // prefundLamports is returned when prefundRent is true — the amount
-    // Alchemy's rent-prefunding estimator decided to front (absent when no
-    // simulation ran).
+    // prefundLamports is returned when prefundRent is true, and absent when
+    // no simulation ran.
     const rawPrefund = json.result.prefundLamports;
     return {
       serializedTransaction: json.result.serializedTransaction,
@@ -1036,21 +999,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // Lookup-table and multi-signer sends self-pay by default, UNLESS the
-    // caller opts into Option B (sponsorLookupTables): then the sponsored path
-    // compresses against the table (Alchemy resolves it — v0 support) AND
-    // carries extra required signers (each partial-signs after Alchemy + Privy;
-    // Alchemy sponsors two-signer txs — confirmed via devnet spike). See
-    // SendInstructionsOptions.
+    // Lookup-table and multi-signer sends self-pay by default, unless the
+    // caller opts in via sponsorLookupTables. See SendInstructionsOptions.
     const hasExtraSigners = (options?.extraSigners?.length ?? 0) > 0;
     const hasLookupTables =
       Object.keys(options?.lookupTables ?? {}).length > 0;
     const needsSelfPay =
       !options?.sponsorLookupTables && (hasExtraSigners || hasLookupTables);
 
-    // Sponsorship applies only to ACP actions (batches touching this chain's
-    // ACP program or hook). Everything else — generic transfers, unrelated
-    // instructions — is self-paid.
+    // Sponsorship applies only to ACP actions; everything else is self-paid.
     const sponsorable = sponsorableProgramIds(chainId);
     const isAcpAction = instructions.some((ix) =>
       sponsorable.has(ix.programAddress as string),
@@ -1063,15 +1020,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       isAcpAction;
 
     if (useSponsorship) {
-      // Same ACP traffic, a different sponsor. Kora cannot rewrite the fee
-      // payer the way Alchemy does — see sendKoraSponsoredTransaction.
+      // Same ACP traffic, a different sponsor — see
+      // sendKoraSponsoredTransaction.
       if (this._koraSponsorClients.has(chainId)) {
         return this.sendKoraSponsoredTransaction(chainId, instructions, options);
       }
-      // The sponsored path does not size its own limit (the server does, on
-      // the unsigned bytes) — so the bump's re-measurement happens here, in
-      // the closure, before the retry is submitted. A re-measurement that
-      // fails leaves the ceiling withCuBump authored.
+      // The sponsored path does not size its own limit, so the bump's
+      // re-measurement happens here before the retry is submitted; a failed
+      // one leaves the ceiling withCuBump authored.
       return this.withCuBump(instructions, async (ixs, bump) => {
         const send = bump
           ? await this.resizeForBump(chainId, ixs, options)
@@ -1080,12 +1036,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       });
     }
 
-    // Non-ACP action. If Kora is configured for this chain, pay fees in SPL.
-    // The probe is getPayerSigner (cached): if it fails, the Kora endpoint is
-    // absent or unhealthy (e.g. not yet deployed) and we fall back to self-pay
-    // — this happens before anything is built/signed/broadcast, so there is no
-    // double-send risk. A no-balance failure inside sendSplPaidTransaction is
-    // NOT a fallback: it throws, because the wallet has no SOL to spend either.
+    // Non-ACP action: pay fees in SPL where Kora is configured. The cached
+    // getPayerSigner probe runs before anything is built or signed, so falling
+    // back to self-pay carries no double-send risk. A no-balance failure
+    // inside sendSplPaidTransaction throws rather than falling back.
     if (this._koraClients.has(chainId)) {
       const koraPayer = await this.resolveKoraPayer(chainId).catch((err) => {
         console.warn(
@@ -1096,17 +1050,16 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         return null;
       });
       if (koraPayer) {
-        // This attempt re-quotes the fee token before signing, so a bump is
-        // the costliest of the three. Headroom matters most here.
+        // This attempt re-quotes the fee token before signing, so headroom
+        // matters most here.
         return this.withCuBump(instructions, (ixs, bump) =>
           this.sendSplPaidTransaction(chainId, ixs, koraPayer, options, bump),
         );
       }
     }
 
-    // The blockhash is fetched INSIDE the attempt: a retry that follows an
-    // on-chain failure has already spent the confirmation wait, so reusing
-    // the first attempt's blockhash risks resending against an expired one.
+    // The blockhash is fetched INSIDE the attempt, since a retry following an
+    // on-chain failure has already spent the confirmation wait.
     return this.withCuBump(instructions, async (ixs, bump) => {
       const { value: latestBlockhash } = await this.getRpc(chainId)
         .getLatestBlockhash()
@@ -1125,30 +1078,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   /**
    * The instruction list with its compute limit set from a simulation.
    *
-   * The standard recipe: probe at the ceiling so the simulation is not itself
-   * capped by the runtime's 200k-per-instruction default, read the units the
-   * run actually consumed, and re-declare that plus headroom. Solana charges
-   * the REQUESTED limit against each writable account's per-block budget, so
-   * a limit measured this way is worth the round trip on any path whose fee
-   * payer is shared.
+   * Probe at the ceiling so the simulation is not itself capped, read the
+   * units consumed, and re-declare that plus headroom.
    *
-   * `trailingInstructions` are MEASURED but not returned. Callers that append
-   * further instructions after this list (the SPL-paid path appends its fee
-   * payment) must pass them, or the limit under-declares by their consumption
-   * and every send bumps.
+   * `trailingInstructions` are MEASURED but not returned. Callers appending
+   * further instructions must pass them, or the limit under-declares.
    *
-   * FAILS OPEN. Every failure path returns the input untouched, leaving
-   * ROUTER_CU_DEFAULT in place — a sizing problem must never cost a caller
-   * their send. A simulation that ERRORS is treated as unmeasured rather than
-   * as a measurement, because a run that aborted partway under-reports what a
-   * complete run consumes. Below this sits withCuBump, which catches a sized
-   * limit that still proved too small.
+   * FAILS OPEN: every failure path returns the input untouched. A simulation
+   * that ERRORS counts as unmeasured, not as a measurement.
    *
-   * `bump` marks the sizing that runs on withCuBump's retry: the standard
-   * margin already failed once, so the fresh measurement is declared with
-   * BUMP_CU_HEADROOM instead. The fail-open contract is unchanged — on the
-   * retry the input arrives carrying the ceiling, so returning it untouched
-   * IS the fall-back-to-ceiling.
+   * `bump` marks the sizing on withCuBump's retry, declared with
+   * BUMP_CU_HEADROOM. The input then carries the ceiling, so returning it
+   * untouched IS the fall-back-to-ceiling.
    */
   private async sizeCuLimit(params: {
     chainId: number;
@@ -1203,17 +1144,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * The bump re-measurement for a path that has no sizing of its own — the
-   * sponsored send, whose limit is normally authored server-side on the
-   * unsigned bytes.
+   * The bump re-measurement for the sponsored send, whose limit is normally
+   * authored server-side.
    *
    * Called with the ceiling-authored retry list from withCuBump. Fetches its
-   * own blockhash (the simulation replaces it anyway; compiling the probe
-   * needs one) and sizes with the bump headroom. Everything that can go wrong
-   * falls open onto the input, which carries the ceiling — the retry is never
-   * lost to a sizing problem. The fee payer is the same placeholder the
-   * sponsored build uses; the sponsor rewrites it after our measurement, and
-   * a fee-payer swap does not change the instructions' consumption.
+   * own blockhash and sizes with the bump headroom, failing open onto the
+   * input. The fee payer is the sponsored build's placeholder; a fee-payer
+   * swap does not change consumption.
    */
   private async resizeForBump(
     chainId: number,
@@ -1240,30 +1177,17 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   /**
    * Runs a send, and on compute exhaustion re-runs it exactly ONCE.
    *
-   * Legs declare ROUTER_CU_DEFAULT rather than the maximum, because Solana
-   * charges the REQUESTED limit against each writable account's per-block
-   * budget. That trades a certain waste for a rare correction, and this is
-   * the correction.
-   *
-   * The retry hands the attempt the CEILING plus `bump = true`. The ceiling
-   * is the fallback, not the goal: paths that size their own limit re-measure
-   * against the drifted state inside the retry (sizeCuLimit with `bump`,
-   * declaring BUMP_CU_HEADROOM over the fresh measurement), and their
-   * fail-open on a broken re-measurement returns the input untouched — which
-   * here carries the ceiling, the one value that can never be too small. The
-   * exhaustion that triggered the bump proves the drift outran the standard
-   * margin, so retrying at the same margin would be a coin flip on the same
-   * failure; retrying blind at the ceiling would spend block budget the leg
-   * never uses.
+   * The retry hands the attempt the CEILING plus `bump = true`. The ceiling is
+   * the fallback, not the goal: paths that size their own limit re-measure
+   * against the drifted state inside the retry, and fail open onto the input,
+   * which here carries the ceiling.
    *
    * A bump is a REBUILD, never a resend: raising the limit rewrites the
-   * message bytes, which voids every signature over them. That is also why
-   * compute exhaustion sits in NON_RETRYABLE_FEE_PAYER_PATTERNS — resending
-   * the identical transaction consumes the identical units.
+   * message bytes and voids every signature over them. That is also why
+   * compute exhaustion is non-retryable in the fee-payer classifier.
    *
-   * Safe to run after an on-chain failure. Compute exhaustion is
-   * deterministic and terminal, so the first attempt cannot land late and
-   * double-execute alongside the retry.
+   * Safe to run after an on-chain failure: compute exhaustion is
+   * deterministic and terminal.
    */
   private async withCuBump(
     instructions: SolanaInstructionLike[],
@@ -1280,7 +1204,13 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     }
   }
 
-  /** Cached Kora fee payer for a chain (stable per node). */
+  /**
+   * Cached Kora fee payer for the SPL-PAID chain (stable per node).
+   *
+   * Deliberately NOT shard-pinned: this payer is reimbursed by the agent's SPL
+   * fee, not by rent coming back, so a pin would couple it to a shard it never
+   * receives from. The pin belongs on the sponsored path.
+   */
   private async resolveKoraPayer(chainId: number): Promise<KoraPayer> {
     const cached = this._koraPayer.get(chainId);
     if (cached) return cached;
@@ -1362,19 +1292,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * Fee-token decimals, cached per (chain, mint). Needed by TransferChecked,
-   * which verifies the value against the mint and rejects a mismatch.
+   * Fee-token decimals, cached per (chain, mint), for TransferChecked.
    *
-   * Read from the MINT, not from the wallet's balance. Decimals are a property
-   * of the mint, and the balance helper returns a hardcoded `0` when both of
-   * its reads fail — but `0` is itself a legitimate decimals value, so that
-   * sentinel cannot be told apart from a real answer. Cached, it would make
-   * every later payment in this token fail a decimals check for the lifetime of
-   * the process, reporting a mismatch rather than the RPC failure that caused
-   * it.
-   *
-   * So a failed read throws instead of resolving to a guess, and only a
-   * successful read is cached — the next send retries.
+   * Read from the MINT, not the wallet's balance: the balance helper's failure
+   * sentinel is itself a legitimate decimals value and cannot be told apart
+   * from a real answer. A failed read throws rather than resolving to a guess,
+   * and only a successful read is cached.
    */
   private async feeTokenDecimals(
     chainId: number,
@@ -1394,27 +1317,17 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   /**
    * The fee-token tiers to actually try on this chain.
    *
-   * Two lists have to agree and are maintained in different repos: the SDK's
-   * configured tier list (priority order — which token an agent is charged in
-   * first) and the node's `allowed_spl_paid_tokens` (which mints it accepts at
-   * all). Left independent they drift both ways: a mint added to kora.toml is
-   * unusable until someone edits the SDK, and a mint the SDK lists but the node
-   * rejects burns a round trip per transaction and surfaces as an opaque
-   * upstream error.
-   *
-   * So the node is asked once per chain and treated as authoritative on
-   * ACCEPTANCE, while the configured list stays authoritative on ORDER:
+   * The node is asked once per chain and is authoritative on ACCEPTANCE, while
+   * the configured list stays authoritative on ORDER:
    *
    *   1. configured tiers the node accepts, in configured order;
    *   2. then any mint the node accepts that the SDK has no opinion about.
    *
-   * Step 2 is what lets a token added to kora.toml be used without an SDK
-   * release. It goes last because the configured order encodes a deliberate
-   * revenue decision and an unknown mint has no place inside it.
+   * Step 2 lets a newly accepted token be used without an SDK release, and
+   * goes last because the configured order is a deliberate decision.
    *
-   * Any failure — node unreachable, method disabled, empty list — falls back to
-   * the configured tiers. This whole path is an optimization over self-pay, so
-   * a discovery failure must not remove fee tokens that already worked.
+   * Any failure falls back to the configured tiers: this path is an
+   * optimization over self-pay and must not remove tokens that already worked.
    */
   private async resolveFeeTokens(chainId: number): Promise<string[]> {
     const configured = this._splFeeTokens.get(chainId) ?? [];
@@ -1433,10 +1346,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
       }
       this._nodeFeeTokens.set(chainId, accepted);
 
-      // Surfaced once per chain, at discovery. A silently dropped tier is the
-      // failure this method exists to prevent, so it should not be invisible.
-      // Skipped when the node reported nothing: that is a discovery failure
-      // (handled below), not a statement that every configured mint is bad.
+      // Surfaced once per chain, at discovery. Skipped when the node reported
+      // nothing, which is a discovery failure rather than a rejection.
       const rejected =
         accepted.length > 0
           ? configured.filter((mint) => !accepted!.includes(mint))
@@ -1467,17 +1378,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * no tier is affordable.
    *
    * **Each tier is quoted with its own payment instruction included**, via
-   * `encodeWithPayment`. Quoting the caller's instructions alone understates the
-   * fee by one ATA rent — the payment always carries a `CreateIdempotent` for
-   * Kora's fee account, and Kora prices the instruction list rather than what it
-   * does. A wallet holding a balance between the two figures used to pass this
-   * check, fail to fund the payment, and abort the send with no fallback to the
-   * next tier.
+   * `encodeWithPayment`: Kora prices the instruction list rather than what it
+   * does, so quoting the caller's instructions alone understates the fee.
    *
-   * The returned quote is therefore the amount Kora will actually charge, and
-   * the caller pays it directly rather than re-quoting. `TransferChecked` data
-   * is fixed-width, so the placeholder payment compiles to the same size as the
-   * final one and the two quotes cannot diverge.
+   * The returned quote is the amount Kora will charge, and the caller pays it
+   * directly rather than re-quoting. `TransferChecked` data is fixed-width, so
+   * the placeholder payment compiles to the same size as the final one.
    */
   private async selectFeeToken(
     chainId: number,
@@ -1500,16 +1406,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     for (let i = 0; i < tiers.length; i++) {
       if (balances[i]! <= 0n) continue;
       const feeToken = tiers[i]!;
-      // Real decimals, not a placeholder. Only the compiled SIZE affects the
-      // fee, but Kora SIMULATES the transaction before pricing it, so a
-      // TransferChecked whose decimals disagree with the mint aborts the quote
-      // with MintDecimalsMismatch (custom program error 0x12) instead of
-      // returning a number. A `0` placeholder therefore fails against every
-      // mint that is not 0-decimal — i.e. all of them in practice.
+      // Real decimals, not a placeholder: only the compiled SIZE affects the
+      // fee, but Kora simulates before pricing, so mismatched decimals abort
+      // the quote instead of returning a number.
       //
       // A tier whose decimals cannot be read is skipped rather than allowed to
-      // throw: feeTokenDecimals refuses to cache a guess, and one unreadable
-      // mint must not abort selection for the tiers behind it.
+      // throw, so one unreadable mint does not abort the tiers behind it.
       let probeDecimals: number;
       try {
         probeDecimals = await this.feeTokenDecimals(chainId, feeToken);
@@ -1537,17 +1439,12 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * wallet to Kora's payment address, preceded by a `CreateIdempotent` for the
    * destination ATA.
    *
-   * Kora exposes no `getPaymentInstruction` RPC (confirmed against
-   * `getConfig.enabled_methods` on 2.2.x), so the client builds this and Kora
-   * validates it inside `signTransaction` before co-signing.
+   * Kora exposes no payment-instruction RPC, so the client builds this and
+   * Kora validates it inside `signTransaction` before co-signing.
    *
    * DO NOT "optimize" the create away when the fee account is known to exist.
    * Kora prices the instruction list rather than what the transaction does, so
-   * that create is what the platform's per-transaction fee is charged through —
-   * omitting it drops revenue on a repeat transfer by ~99.8%. This was
-   * implemented once and reverted for exactly that reason. See
-   * `deploy/kora/CHANGES.md` in agentic-commerce-be, "ATA creation is the
-   * billing mechanism".
+   * the create is what the per-transaction fee is charged through.
    */
   private buildKoraPaymentInstructions(params: {
     koraPayer: KoraPayer;
@@ -1576,10 +1473,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
    * 4. Privy signs (user sig); Kora co-signs as fee payer.
    * 5. Broadcast + confirm.
    *
-   * A fresh blockhash per attempt means retries never reuse a stale one. Unlike
-   * the Alchemy path there is no simulationSlot, so minContextSlot falls back to
-   * our last confirmed slot — sufficient because a self-hosted Kora reads from
-   * the same RPC we do.
+   * A fresh blockhash per attempt means retries never reuse a stale one. There
+   * is no simulationSlot here, so minContextSlot falls back to our last
+   * confirmed slot.
    */
   private async sendSplPaidTransaction(
     chainId: number,
@@ -1599,9 +1495,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         lastSeenSlot = context.slot;
 
         // Build with Kora's payer as fee payer, then compile to unsigned bytes
-        // for the fee quote + payment instruction. Parameterised by the
-        // instruction list so the same shape can be rebuilt once the compute
-        // limit has been sized below.
+        // for the quote. Parameterised by the instruction list so the shape can
+        // be rebuilt once the compute limit is sized below.
         const baseMessageOf = (ixs: SolanaInstructionLike[]) =>
           pipe(
             createTransactionMessage({ version: 0 }),
@@ -1652,15 +1547,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           decimals,
         });
 
-        // Sized AFTER the payment instructions exist, and measured WITH them:
-        // they are appended after the caller's list and consume real compute,
-        // so a limit measured without them under-declares and every send
-        // bumps.
-        //
-        // Safe to resize after quoting. Kora re-derives the fee it requires
-        // from the transaction it is handed, and that fee is the base fee
-        // plus price x limit — with no SetComputeUnitPrice attached the limit
-        // contributes nothing, so the quoted payment still covers it.
+        // Sized AFTER the payment instructions exist and measured WITH them,
+        // since they consume real compute. Safe to resize after quoting: with
+        // no SetComputeUnitPrice attached the limit does not affect the fee.
         const sizedInstructions = await this.sizeCuLimit({
           chainId,
           instructions,
@@ -1685,7 +1574,11 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         ).toString("base64");
 
         const userSigned = await this.signTransactionViaPrivy(finalBase64);
-        const fullySigned = await client.signTransaction(userSigned);
+        const payerKey = feePayerOf(userSigned);
+        const fullySigned = await client.signTransaction(
+          userSigned,
+          payerKey ? { signerKey: payerKey } : undefined,
+        );
 
         return this.broadcastAndConfirm(
           chainId,
@@ -1729,52 +1622,25 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * Sponsored flow (per attempt, all inside withFeePayerRetry):
-   * 1. Fetch a fresh blockhash and build tx with Alchemy placeholder fee payer
-   * 2. alchemy_requestFeePayer → Alchemy replaces payer & adds its sig
-   * 3. Privy signs the sponsored tx (adds user sig)
-   * 4. Broadcast
-   *
-   * The whole sequence is retried — not just requestFeePayer — because the
-   * sponsor's simulation node AND the broadcast node can each lag our read RPC
-   * by a few slots, so state we just confirmed (a new job PDA, an updated
-   * budget, the sponsor's own fee-payer credit) may not be visible yet. A
-   * fresh blockhash is fetched on every attempt so retries never reuse a
-   * stale/expired one.
-   *
-   * Neither side's lag is pinned to a slot: alchemy_requestFeePayer accepts no
-   * minContextSlot (its simulation is the sponsorship policy gate), and we
-   * send none on broadcast either — preflight runs at "confirmed" instead (see
-   * broadcastAndConfirm). A lagging node therefore surfaces as an ordinary
-   * retryable simulation failure, which this retry loop rides out with a fresh
-   * blockhash per attempt.
-   */
-  /**
    * ACP action sponsored by the Kora SPONSOR node.
    *
-   * The shape differs from the Alchemy path in one decisive way. Alchemy takes
-   * the transaction, REWRITES the fee payer, prefunds rent, and hands it back
-   * for the user to sign. Kora cannot: it only ever appends a signature, so the
-   * transaction has to be correct before it arrives. That means we choose the
-   * fee payer up front AND write the rent prefund ourselves.
+   * Differs from the Alchemy path in one decisive way: Kora only ever appends
+   * a signature, never rewriting the transaction, so the fee payer is chosen
+   * up front and the rent prefund is written before it arrives.
    *
-   * The prefund exists because no ACP instruction takes a payer account — rent
-   * for every PDA is welded to the acting wallet (createJob's only writable
-   * signer is `client`), and that wallet holds 0 SOL by design.
+   * The prefund exists because no ACP instruction takes a payer account, so
+   * PDA rent falls on the acting wallet.
    *
-   * Sizing is by simulation, not by inspecting instructions: a static estimator
-   * can miss account creations made deep in the CPI stack, whereas measuring the
-   * shortfall is depth-independent — it does not care how deep the account was
-   * created.
+   * Sizing is by simulation rather than by inspecting instructions, which
+   * makes it depth-independent in the CPI stack.
    */
   private async sendKoraSponsoredTransaction(
     chainId: number,
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // This path does not author its own compute-unit limit: it submits with
-    // no ComputeBudget content at all and signs whatever comes back. The
-    // cuLimitIx the clients attach for the other flows is dropped here.
+    // Submits with no ComputeBudget content and signs whatever comes back, so
+    // the cuLimitIx the clients attach for other flows is dropped here.
     const bareInstructions = instructions.filter(
       (ix) => (ix.programAddress as string) !== COMPUTE_BUDGET_PROGRAM_ID,
     );
@@ -1786,10 +1652,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         false,
       );
     } catch (err) {
-      // Backstop for a compute limit that proved too small: exactly one
-      // re-run of the whole flow, this time requesting the maximum limit.
-      // Non-compute failures (blockhash expiry, insufficient funds, policy
-      // rejections) rethrow — they already had their retry path.
+      // Backstop for a compute limit that proved too small: one re-run at the
+      // maximum limit. Non-compute failures rethrow.
       if (!isComputeBudgetExceededError(err)) throw err;
       return this.sendKoraSponsoredAttempt(
         chainId,
@@ -1815,7 +1679,10 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
 
     return withFeePayerRetry(
       async () => {
-        const payer = await this.resolveKoraSponsorPayer(chainId);
+        const payer = await this.resolveKoraSponsorPayer(
+          chainId,
+          options?.sponsorShard,
+        );
         const { context, value: latestBlockhash } = await rpc
           .getLatestBlockhash()
           .send();
@@ -1842,11 +1709,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         ).toString("base64");
 
         // The SDK submits unfunded bytes and never authors a transfer out of
-        // the sponsor itself. Upstream rejections — oversized wire payloads,
-        // transactions that cannot execute — surface here verbatim.
-        // The returned bytes are signed EXACTLY as received: no blockhash
-        // refresh, no instruction changes — any retry re-runs this call
-        // instead of rebuilding locally.
+        // the sponsor. The returned bytes are signed EXACTLY as received, so
+        // any retry re-runs this call rather than rebuilding locally.
         let finalBase64: string;
         try {
           ({ transaction: finalBase64 } =
@@ -1863,13 +1727,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         }
 
         const userSigned = await this.signTransactionViaPrivy(finalBase64);
+        // Read off the PREPARED bytes: the rewrite that happens by here is
+        // where the fee payer is set at all on this path.
+        const payerKey = feePayerOf(userSigned);
         let fullySigned: string;
         try {
-          fullySigned = await client.signTransaction(userSigned);
+          fullySigned = await client.signTransaction(
+            userSigned,
+            payerKey ? { signerKey: payerKey } : undefined,
+          );
         } catch (err) {
-          // `userSigned`, not `unfundedBase64`: by this point Kora has rewritten
-          // the transaction (rent prefund, compute budget), and re-simulating
-          // the pre-prepare bytes would explain a transaction nobody sent.
+          // `userSigned`, not `unfundedBase64`: re-simulating the pre-prepare
+          // bytes would explain a transaction nobody sent.
           throw await this.explainOpaqueSimulationRefusal(
             chainId,
             userSigned,
@@ -1912,26 +1781,15 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   /**
    * Re-attaches the program logs a sponsor swallowed.
    *
-   * Kora refuses a transaction it cannot simulate with a bare "Transaction
-   * fails simulation." — no program, no error code, no logs. Every caller
-   * downstream that reasons about WHY a send failed is then blind: the
-   * fee-payer retry classifier cannot tell sponsor-node lag from a
-   * deterministic revert, and a negative test cannot tell which guard fired.
-   * Alchemy returns the simulation logs, so the same code reads the error
-   * correctly there and not here — one sponsor's response shape silently
-   * changing the SDK's behavior.
+   * A sponsor may refuse with no program, error code, or logs, leaving every
+   * downstream caller blind to WHY the send failed. The transaction is ours,
+   * so our own RPC simulates it: `sigVerify: false` because the bytes are
+   * unsigned here, `replaceRecentBlockhash: true` because the blockhash may
+   * have moved on.
    *
-   * The logs are not the sponsor's to give: the transaction is ours and our
-   * own RPC will simulate it. `sigVerify: false` because the bytes are
-   * deliberately unsigned at this point, `replaceRecentBlockhash: true`
-   * because the blockhash may already have moved on.
-   *
-   * FAILS OPEN in both directions. A refusal that already carries a reason is
-   * returned untouched (no extra RPC round trip), and a simulation that
-   * errors, times out, or returns no logs returns the original error
-   * unchanged — recovering context must never turn one failure into another.
-   * The returned error keeps the original as its `cause`, so nothing that
-   * matches on the original message stops matching.
+   * FAILS OPEN in both directions. A refusal already carrying a reason is
+   * returned untouched, and a failed simulation returns the original error
+   * unchanged, keeping it as `cause` so existing matches still fire.
    */
   private async explainOpaqueSimulationRefusal(
     chainId: number,
@@ -1954,7 +1812,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         `${original}\nlocal simulation logs (sponsor returned none):\n${logs.join("\n")}`,
       );
       // Assigned rather than passed to the constructor: `cause` as a
-      // constructor option needs lib ES2022, and this file targets lower.
+      // constructor option needs a higher lib target than this file uses.
       (explained as { cause?: unknown }).cause = err;
       return explained;
     } catch {
@@ -1963,7 +1821,31 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /** The sponsor node has one signer, so its payer is stable and cacheable. */
-  private async resolveKoraSponsorPayer(chainId: number): Promise<KoraPayer> {
+  /**
+   * Kora fee payer for the SPONSORED path.
+   *
+   * `preferred` pins it to the job's rent shard, so the wallet that prefunds a
+   * job's accounts is the one its rent returns to. Without it the payer is
+   * whichever wallet the rotation last handed out.
+   *
+   * The pinned value is not cached, since the cache holds one entry per chain
+   * and per-job picks would only thrash it.
+   *
+   * `paymentAddress` follows the signer when Kora reports no distinct one;
+   * carrying the rotation's value across would name a different wallet.
+   */
+  private async resolveKoraSponsorPayer(
+    chainId: number,
+    preferred?: Address,
+  ): Promise<KoraPayer> {
+    if (preferred) {
+      const rotation = await this.resolveKoraSponsorPayer(chainId);
+      const paymentAddress =
+        rotation.paymentAddress === rotation.signerAddress
+          ? preferred
+          : rotation.paymentAddress;
+      return { signerAddress: preferred, paymentAddress };
+    }
     const cached = this._koraSponsorPayer.get(chainId);
     if (cached) return cached;
     const client = this._koraSponsorClients.get(chainId);
@@ -1976,11 +1858,9 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   }
 
   /**
-   * NO sizeCuLimit here, deliberately. This path submits UNSIGNED bytes, so
-   * the compute limit is sized upstream, one network leg closer to the RPC
-   * than this client is — and sized there for every SDK version, not only
-   * this one. The legs that sign before anything else sees them (SPL-paid,
-   * self-pay) have no such option and size themselves.
+   * NO sizeCuLimit here, deliberately: this path submits UNSIGNED bytes, so
+   * the limit is sized upstream for every SDK version. The legs that sign
+   * first (SPL-paid, self-pay) have no such option and size themselves.
    *
    * withCuBump still wraps this call: an upstream that declines to size, or
    * sizes too low, is caught by the same backstop as everywhere else. The
@@ -1994,9 +1874,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     instructions: SolanaInstructionLike[],
     options?: SendInstructionsOptions,
   ): Promise<string> {
-    // Slot our read RPC was at when the current attempt's blockhash was
-    // fetched — the state the sponsor's simulation node has not caught up
-    // to yet when a retryable lag error occurs.
+    // Slot our read RPC was at when this attempt's blockhash was fetched.
     let lastSeenSlot: bigint | null = null;
 
     return withFeePayerRetry(
@@ -2016,9 +1894,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
           (msg) => appendTransactionMessageInstructions(instructions, msg),
         );
 
-        // Option B: compress against the caller's lookup table before the
-        // fee-payer request. Alchemy simulates versioned txs and resolves the
-        // ALT; its propagation lag is absorbed by the fee-payer retry.
+        // Compress against the caller's lookup table before the fee-payer
+        // request; table propagation lag is absorbed by the retry.
         if (
           options?.sponsorLookupTables &&
           options.lookupTables &&
@@ -2050,11 +1927,8 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         // 3. Sign with Privy (user's signature).
         let signedBase64 = await this.signTransactionViaPrivy(sponsoredBase64);
 
-        // 3b. Option B multi-signer: each extra required signer (e.g. the
-        //     provider co-signing a subscription complete) partial-signs the
-        //     already-signed tx. Signatures are independent — Alchemy's
-        //     fee-payer sig and Privy's user sig are preserved; each signer
-        //     fills only its own slot. Decode → sign → merge → re-encode.
+        // 3b. Multi-signer: each extra required signer partial-signs the
+        //     already-signed tx, filling only its own slot.
         if ((options?.extraSigners?.length ?? 0) > 0) {
           let tx: any = getTransactionDecoder().decode(
             new Uint8Array(Buffer.from(signedBase64, "base64")),
@@ -2113,32 +1987,20 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
   // -------------------------------------------------------------------------
 
   /**
-   * Sponsor + sign + broadcast a transaction the CALLER already built. This is
-   * the Solana analog of the EVM adapter attaching the Alchemy paymaster on
-   * sendCalls: the caller (the trading planner) builds the swap tx with the
-   * user as a PLACEHOLDER fee payer and a fresh blockhash, and here we swap
-   * Alchemy in as the fee payer (alchemy_requestFeePayer — its sig + CPI-rent
-   * prefund), add the user's Privy signature, and broadcast. A zero-SOL wallet
-   * trades gasless; the CLI is a pure signer/submitter, the planner never
-   * touches sponsorship.
+   * Sponsor + sign + broadcast a transaction the CALLER already built with a
+   * placeholder fee payer and a fresh blockhash. The sponsor is swapped in as
+   * fee payer, the user's signature added, and the result broadcast.
    *
-   * SPONSORSHIP-ONLY: there is no self-pay fallback. If the proxy/policy is
-   * absent or the sponsor refuses after retries, this throws — the caller
-   * re-quotes rather than silently billing the user's SOL.
+   * SPONSORSHIP-ONLY: no self-pay fallback. If the sponsor refuses after
+   * retries this throws, so the caller re-quotes rather than billing SOL.
    *
-   * Unlike sendSponsoredTransaction(instructions), the tx is prebuilt so its
-   * blockhash is fixed: a retry re-runs requestFeePayer→sign→broadcast on the
-   * SAME bytes (valid within the blockhash's ~60s window) to ride out sponsor
-   * simulation / broadcast slot lag. Because no retry can refresh the
-   * blockhash, an "expired" confirmation is terminal (retryExpired: false) —
-   * the caller rebuilds the tx instead.
+   * The tx is prebuilt, so its blockhash is fixed and a retry re-runs on the
+   * SAME bytes. No retry can refresh the blockhash, so an "expired"
+   * confirmation is terminal (retryExpired: false).
    *
-   * options.lastValidBlockHeight is the expiry height of the blockhash baked
-   * into the tx — pass it whenever the builder has it. When omitted, expiry
-   * polling is bounded by the validity window of the CURRENT tip at the first
-   * attempt: a strict upper bound (the tx's blockhash is older than the tip),
-   * so "expired" stays definitive, at the cost of over-polling a dropped tx
-   * by roughly the tx's pre-submission age.
+   * Pass `options.lastValidBlockHeight` whenever the builder has it. Omitted,
+   * expiry polling is bounded by the current tip's window — a strict upper
+   * bound, so "expired" stays definitive at the cost of over-polling.
    */
   public async sendSponsoredSignedTransaction(
     chainId: number,
@@ -2156,17 +2018,14 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
     }
 
     let lastSeenSlot: bigint | null = null;
-    // Confirmation bound for the tx's FIXED blockhash — resolved once and
-    // held across retries. Re-reading the tip's lastValidBlockHeight on every
-    // attempt would slide the expiry window forward each retry and keep
-    // polling a transaction that is already provably dropped.
+    // Confirmation bound for the tx's FIXED blockhash, resolved once and held
+    // across retries so the expiry window cannot slide forward.
     let confirmUntilHeight: bigint | undefined = options?.lastValidBlockHeight;
 
     return withFeePayerRetry(
       async () => {
-        // One read: our RPC's current slot (to diagnose a sponsor/broadcast lag
-        // error) + the first-attempt fallback confirmation bound. The tx
-        // carries its OWN blockhash — we do not rebuild it here.
+        // One read: our RPC's current slot plus the first-attempt fallback
+        // confirmation bound. The tx carries its OWN blockhash.
         const { context, value: latest } = await this.getRpc(chainId)
           .getLatestBlockhash()
           .send();
@@ -2177,8 +2036,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         const { serializedTransaction: sponsoredBase64 } =
           await this.requestFeePayer(chainId, serializedTransaction);
 
-        // 2. Privy co-signs — the tx now carries the Alchemy fee-payer sig AND
-        //    the user's sig (two required signers, distinct slots).
+        // 2. Privy co-signs, filling the second required signer slot.
         const signedBase64 =
           await this.signTransactionViaPrivy(sponsoredBase64);
 

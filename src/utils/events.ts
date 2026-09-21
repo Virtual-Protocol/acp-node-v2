@@ -40,12 +40,9 @@ function matchesFilter(
 }
 
 /**
- * Extracts a `jobId` from a transaction receipt by decoding `JobCreated` event
- * logs emitted by the ACP contract.
- *
- * When multiple `JobCreated` events exist in a single receipt (batched calls),
- * pass a `filter` with the original `CreateJobParams` values to match the
- * correct event.
+ * Extracts a `jobId` from a transaction receipt by decoding `JobCreated` logs.
+ * Pass a `filter` with the original `CreateJobParams` to pick the right event
+ * when a receipt carries several.
  */
 export function parseJobIdFromReceipt(
   receipt: TransactionReceipt,

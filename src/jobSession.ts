@@ -549,12 +549,9 @@ export class JobSession {
     if (router && hook === router) {
       let hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
       if (!hookConfigs || hookConfigs.length === 0) {
-        // The cached job is off-chain state and can lag the configure: the
-        // fund selector is populated by batchConfigureHooks, which may land —
-        // or be indexed by the backend — after this session last fetched the
-        // job. An empty read is far more often a stale local copy than a
-        // genuinely unconfigured router (sibling jobs in the same flow show
-        // configure does arrive). Refresh a few times before failing closed.
+        // The cached job is off-chain state and can lag the configure, so an
+        // empty read is usually a stale local copy rather than an
+        // unconfigured router. Refresh a few times before failing closed.
         hookConfigs = await this.refreshFundHookConfigs();
         if (!hookConfigs || hookConfigs.length === 0) {
           throw new Error(
@@ -648,13 +645,9 @@ export class JobSession {
 
   /**
    * Re-fetches the job until the router's fund selector reports configured
-   * sub-hooks, or the bounded attempts run out. `fund()` calls this only when
-   * its cached copy shows an empty fund config — the config is written by
-   * batchConfigureHooks and can be indexed after this session last fetched the
-   * job, so a stale local copy (not a genuinely unconfigured router) is the
-   * common cause of an empty read. `fetchJob` refreshes `_job` in place, so the
-   * downstream reads in `fund()` see the same fresh state. Bounded and only on
-   * the empty path, so it adds no latency to the common case.
+   * sub-hooks, or the bounded attempts run out. `fetchJob` refreshes `_job` in
+   * place, so downstream reads in `fund()` see the same fresh state. Bounded
+   * and only on the empty path, so the common case is unaffected.
    */
   private async refreshFundHookConfigs(
     attempts = 3,
@@ -695,19 +688,30 @@ export class JobSession {
     }
   }
 
+  /** True for a Solana job whose complete activates a subscription. */
+  private isSubscriptionActivating(): boolean {
+    if (getChainFamily(this.chainId) !== "solana") return false;
+    const hook = this._job?.hookAddress?.toLowerCase();
+    if (!hook) return false;
+    return (
+      hook === MULTI_HOOK_ROUTER_ADDRESSES[this.chainId]?.toLowerCase() ||
+      hook === SUBSCRIPTION_HOOK_ADDRESSES[this.chainId]?.toLowerCase()
+    );
+  }
+
   async complete(
     reason: string,
     opts?: { providerSigner?: SolanaSigner },
   ): Promise<void> {
     // Solana subscription-activating jobs (router or standalone sub hook)
-    // need the provider's co-signature; a single-process orchestrator
-    // holding both signers passes it here. Without it, such a job fails with
-    // the client's instructive error pointing at completeSubscriptionJob.
-    if (opts?.providerSigner) {
+    // cannot go through the prepared path — they need runtime lookup-table
+    // and retry-guard setup — so route them on the job's hook, not on
+    // whether a caller happened to supply a signer.
+    if (this.isSubscriptionActivating()) {
       await this.agent.completeSubscriptionJob(this.chainId, {
         jobId: this.onChainId,
         reason,
-        providerSigner: opts.providerSigner,
+        ...(opts?.providerSigner && { providerSigner: opts.providerSigner }),
         ...(this._job && { clientAddress: this._job.clientAddress }),
       });
       return;

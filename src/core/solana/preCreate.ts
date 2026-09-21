@@ -1,25 +1,18 @@
 /**
  * Pre-creation of hook-rent PDAs at CPI stack height 2.
  *
- * Alchemy's `prefundRent` only detects inner `createAccount`s up to CPI stack
- * height 3. Router-mediated hook PDA creation (core -> router -> hook ->
- * system) sits at height 4, and sub_expiry activation (core -> [router ->]
- * subHook -> subState -> system) at height 4-5 — both invisible to the
- * paymaster, so their rent silently fell on the provider wallet. The on-chain
- * programs expose pre_create_* instructions that allocate the same PDAs with a
- * zero payload in a DIRECT transaction (height 2), where the prefund sees
- * them; the lifecycle handlers then accept the pre-created accounts via their
- * is_unset check and overwrite the full payload.
+ * Rent prefunding only reaches inner `createAccount`s a few CPI levels deep,
+ * and router-mediated hook PDA creation sits below that. The pre_create_*
+ * instructions allocate the same PDAs with a zero payload in a DIRECT
+ * transaction, where the prefund sees them; the lifecycle handlers then accept
+ * the pre-created accounts and overwrite the payload.
  *
- * All pre-creates are idempotent on-chain (no-op when the account already
- * holds data), payer MUST be the job's provider, and the job must already
- * exist (handlers deserialize it).
+ * All pre-creates are idempotent, payer MUST be the job's provider, and the
+ * job must already exist.
  *
- * This module is pure instruction-building so it can be unit-tested offline.
- * IMPORTANT: always the sync builder variants with an explicit
- * `programAddress` — the generated default program addresses are empty
- * strings for acp/fund-transfer-hook and the async variants derive PDAs from
- * those defaults.
+ * Pure instruction-building, so it unit-tests offline. IMPORTANT: always the
+ * sync builder variants with an explicit `programAddress` — the generated
+ * defaults are empty strings and the async variants derive PDAs from them.
  */
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
 

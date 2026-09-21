@@ -15,6 +15,7 @@ import {
 } from "@solana/kit";
 import {
   type ParsedAcceptAuthorityInstruction,
+  type ParsedAcceptTreasuryAuthorityInstruction,
   type ParsedAddHookWhitelistInstruction,
   type ParsedClaimRefundInstruction,
   type ParsedCompleteInstruction,
@@ -24,6 +25,7 @@ import {
   type ParsedInitializeInstruction,
   type ParsedMigrateStateInstruction,
   type ParsedNominateAuthorityInstruction,
+  type ParsedNominateTreasuryAuthorityInstruction,
   type ParsedRejectInstruction,
   type ParsedRemoveHookWhitelistInstruction,
   type ParsedSetBudgetInstruction,
@@ -33,7 +35,10 @@ import {
   type ParsedSetPlatformFeeInstruction,
   type ParsedSetProviderInstruction,
   type ParsedSetSponsorInstruction,
+  type ParsedSetSponsorShardsInstruction,
+  type ParsedSetTreasuryShardsInstruction,
   type ParsedSubmitInstruction,
+  type ParsedSweepTreasuryInstruction,
 } from "../instructions/index.js";
 
 export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS = "" as Address<"">;
@@ -88,6 +93,7 @@ export function identifyAgenticCommerceV3Account(
 
 export enum AgenticCommerceV3Instruction {
   AcceptAuthority,
+  AcceptTreasuryAuthority,
   AddHookWhitelist,
   ClaimRefund,
   Complete,
@@ -97,6 +103,7 @@ export enum AgenticCommerceV3Instruction {
   Initialize,
   MigrateState,
   NominateAuthority,
+  NominateTreasuryAuthority,
   Reject,
   RemoveHookWhitelist,
   SetBudget,
@@ -106,7 +113,10 @@ export enum AgenticCommerceV3Instruction {
   SetPlatformFee,
   SetProvider,
   SetSponsor,
+  SetSponsorShards,
+  SetTreasuryShards,
   Submit,
+  SweepTreasury,
 }
 
 export function identifyAgenticCommerceV3Instruction(
@@ -123,6 +133,17 @@ export function identifyAgenticCommerceV3Instruction(
     )
   ) {
     return AgenticCommerceV3Instruction.AcceptAuthority;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([219, 6, 23, 82, 89, 189, 96, 67]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.AcceptTreasuryAuthority;
   }
   if (
     containsBytes(
@@ -227,6 +248,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([45, 45, 96, 248, 151, 166, 39, 133]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.NominateTreasuryAuthority;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([135, 7, 63, 85, 131, 114, 111, 224]),
       ),
       0,
@@ -326,12 +358,45 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([189, 148, 160, 57, 93, 97, 60, 7]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetSponsorShards;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([171, 66, 139, 123, 214, 4, 55, 199]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetTreasuryShards;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([88, 166, 102, 181, 162, 127, 170, 48]),
       ),
       0,
     )
   ) {
     return AgenticCommerceV3Instruction.Submit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([125, 203, 4, 4, 87, 34, 238, 169]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SweepTreasury;
   }
   throw new Error(
     "The provided instruction could not be identified as a agenticCommerceV3 instruction.",
@@ -342,6 +407,9 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.AcceptTreasuryAuthority;
+    } & ParsedAcceptTreasuryAuthorityInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.AddHookWhitelist;
     } & ParsedAddHookWhitelistInstruction<TProgram>)
@@ -370,6 +438,9 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
       instructionType: AgenticCommerceV3Instruction.NominateAuthority;
     } & ParsedNominateAuthorityInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.NominateTreasuryAuthority;
+    } & ParsedNominateTreasuryAuthorityInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.Reject;
     } & ParsedRejectInstruction<TProgram>)
   | ({
@@ -397,5 +468,14 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
       instructionType: AgenticCommerceV3Instruction.SetSponsor;
     } & ParsedSetSponsorInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.SetSponsorShards;
+    } & ParsedSetSponsorShardsInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SetTreasuryShards;
+    } & ParsedSetTreasuryShardsInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.Submit;
-    } & ParsedSubmitInstruction<TProgram>);
+    } & ParsedSubmitInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SweepTreasury;
+    } & ParsedSweepTreasuryInstruction<TProgram>);

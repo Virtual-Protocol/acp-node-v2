@@ -107,13 +107,10 @@ export function encodeFundTransferSetBudgetOptParams(
   destination: string
 ): Hex {
   if (getChainFamily(chainId) === "solana") {
-    // The Solana hook decodes the fund-request proposal from opt_params
-    // exactly like the EVM hook — [token (32)] [amount u64 LE (8)]
-    // [destination (32)] = 72 bytes. Empty opt_params proposes nothing;
-    // token = the default pubkey (all zeros / system program address) cancels
-    // a live proposal. Budget-mint amounts may exceed the job budget —
-    // fund() authorizes over-budget intents with a client-signed
-    // Approve/Revoke bracket (hook_delegate omitted from the core ix).
+    // Same layout as the EVM hook: [token 32][amount u64 LE 8][destination 32]
+    // = 72 bytes. Empty opt_params proposes nothing; the default pubkey as
+    // token cancels a live proposal. Budget-mint amounts may exceed the job
+    // budget, which fund() authorizes with a client-signed Approve/Revoke.
     return encodeSolanaBorsh([
       { type: "pubkey", value: token },
       { type: "u64", value: amount },
@@ -127,11 +124,9 @@ export function encodeFundTransferSetBudgetOptParams(
 export type SolanaEscrowOptParams = { token: string; amount: bigint };
 
 /**
- * Decode the Solana submit escrow opt_params layout
- * ([token (32)] [amount u64 LE (8)] = 40 bytes) so the client can derive the
- * escrow vault, the provider's source token account, and the delegate
- * approval amount from a caller-supplied proposal. Returns null for empty or
- * short payloads (empty = no escrow proposed).
+ * Decode the Solana submit escrow opt_params layout ([token 32][amount u64 LE
+ * 8] = 40 bytes), from which the client derives the escrow vault, the source
+ * token account, and the approval amount. Null for empty or short payloads.
  */
 export function decodeSolanaEscrowOptParams(
   bytes: Uint8Array

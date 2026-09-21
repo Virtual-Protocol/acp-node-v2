@@ -1,21 +1,13 @@
 /**
- * Boundary validation for Solana addresses.
+ * Boundary validation for Solana addresses. `as Address` is a compile-time
+ * cast, so these turn a malformed string into a named failure at the point it
+ * enters Solana code rather than an encoder error deep in `@solana/kit`.
  *
- * `as Address` is a compile-time cast with no runtime check, so a malformed
- * string survives until something deep inside `@solana/kit` tries to base58
- * decode it — by which point the error names an encoder, not the field the
- * caller got wrong. These helpers turn that into a named failure at the point
- * the string enters Solana code.
+ * `isAddress` also requires 32-44 characters decoding to exactly 32 bytes,
+ * which is what separates a pubkey from an EVM-shaped value.
  *
- * `isAddress` is stricter than "is base58": it also requires 32-44 characters
- * that decode to exactly 32 bytes. That length check is what separates a
- * pubkey from an EVM-shaped value, because base58 alone does not — a decimal
- * EVM job id like "610" is valid base58 and would pass an alphabet-only test.
- *
- * Use these only on values from outside this process: backend responses and
- * caller-supplied parameters. Hardcoded program IDs, PDAs returned by
- * `getProgramDerivedAddress`, and values decoded off an account are already
- * 32-byte addresses by construction and do not need re-checking.
+ * Use only on values from outside this process. Hardcoded program IDs, derived
+ * PDAs, and values decoded off an account are addresses by construction.
  */
 import { isAddress, type Address } from "@solana/kit";
 

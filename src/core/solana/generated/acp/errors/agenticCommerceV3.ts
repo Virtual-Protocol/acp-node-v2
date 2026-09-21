@@ -94,6 +94,12 @@ export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1795; // 6037
 export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1796; // 6038
 /** ProtocolPaused: Protocol is paused */
 export const AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED = 0x1797; // 6039
+/** TooManyShards: Too many shards: at most 3 additional shards per set */
+export const AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS = 0x1798; // 6040
+/** DuplicateShard: Duplicate shard address */
+export const AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD = 0x1799; // 6041
+/** ShardSlotImmutable: A retained sponsor slot may not change address: shrink from the tail first */
+export const AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE = 0x179a; // 6042
 
 export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__AMOUNT_MUST_BE_GREATER_THAN_ZERO
@@ -102,6 +108,7 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__BUDGET_MISMATCH
   | typeof AGENTIC_COMMERCE_V3_ERROR__BUDGET_NOT_SET
   | typeof AGENTIC_COMMERCE_V3_ERROR__DESCRIPTION_TOO_LONG
+  | typeof AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD
   | typeof AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_PROVIDER
   | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE
@@ -128,7 +135,9 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET
+  | typeof AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE
   | typeof AGENTIC_COMMERCE_V3_ERROR__SPONSOR_CANNOT_BE_TREASURY
+  | typeof AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS
   | typeof AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED
   | typeof AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY
   | typeof AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS
@@ -148,6 +157,7 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__BUDGET_MISMATCH]: `Budget mismatch`,
     [AGENTIC_COMMERCE_V3_ERROR__BUDGET_NOT_SET]: `Budget not set`,
     [AGENTIC_COMMERCE_V3_ERROR__DESCRIPTION_TOO_LONG]: `Description too long`,
+    [AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD]: `Duplicate shard address`,
     [AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_CLIENT]: `Evaluator cannot be the client`,
     [AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_PROVIDER]: `Evaluator cannot be the provider`,
     [AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE]: `ExpiredAt must be in the future`,
@@ -174,7 +184,9 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED]: `Protocol is paused`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT]: `Provider cannot be the client`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET]: `Provider not set`,
+    [AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE]: `A retained sponsor slot may not change address: shrink from the tail first`,
     [AGENTIC_COMMERCE_V3_ERROR__SPONSOR_CANNOT_BE_TREASURY]: `Sponsor and platform treasury must be different addresses`,
+    [AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS]: `Too many shards: at most 3 additional shards per set`,
     [AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED]: `Unauthorized`,
     [AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY]: `Hook program upgrade authority must be None or the ACP authority`,
     [AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS]: `Wrong job status`,

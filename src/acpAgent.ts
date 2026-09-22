@@ -154,11 +154,9 @@ export type SetBudgetWithSubscriptionAndFundRequestParams = {
 export type FundViaRouterParams = {
   jobId: bigint;
   amount: AssetToken;
-  hookConfigs: string[];
   subscriptionTerms?: { duration: bigint; packageId: bigint };
   transferAmount?: AssetToken;
   destination?: string;
-  fundHookAddress?: string;
 };
 
 export type BatchConfigureHooksAgentParams = {
@@ -171,6 +169,36 @@ export type BatchConfigureHooksAgentParams = {
 // ---------------------------------------------------------------------------
 // AcpAgent
 // ---------------------------------------------------------------------------
+
+
+/**
+ * The optParams slice a single router sub-hook expects at `submit`.
+ *
+ * Hooks that take no data at this selector get an empty slice: the router hands
+ * each hook its own slot regardless, so omitting one would shift every later
+ * hook's data onto the wrong hook.
+ */
+function buildSubmitSliceFor(
+  chainId: number,
+  hook: string,
+  token: Address,
+  amount: bigint,
+): Hex {
+  const normalized = hook.toLowerCase();
+  const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[chainId]?.toLowerCase();
+  const subHook = SUBSCRIPTION_HOOK_ADDRESSES[chainId]?.toLowerCase();
+
+  if (fundHook && normalized === fundHook) {
+    return encodeFundTransferSubmitOptParams(chainId, token, amount);
+  }
+  if (subHook && normalized === subHook) {
+    return "0x";
+  }
+  throw new Error(
+    `Unknown sub-hook configured on router at ${hook}. The SDK can only build ` +
+      `submit optParams slices for SubscriptionHook and FundTransferHook.`,
+  );
+}
 
 export class AcpAgent {
   private readonly clients: Map<ChainFamily, AcpClient>;
@@ -1418,6 +1446,7 @@ export class AcpAgent {
     return result as Address[];
   }
 
+
   /** @internal */
   async internalFundViaRouter(
     chainId: number,
@@ -1446,6 +1475,18 @@ export class AcpAgent {
       );
     }
 
+    // Read per action: the list stays reconfigurable while the job is Open.
+    const hookConfigs = await this.getRouterHooks(
+      chainId,
+      params.jobId,
+      ACP_SELECTORS.fund,
+    );
+    if (hookConfigs.length === 0) {
+      throw new Error(
+        "MultiHookRouter is attached but no sub-hooks are configured for the fund selector",
+      );
+    }
+
     const prepared = [];
 
     if (client.getCapabilities().supportsAllowance) {
@@ -1465,7 +1506,7 @@ export class AcpAgent {
 
     const slices: Hex[] = [];
 
-    for (const hook of params.hookConfigs) {
+    for (const hook of hookConfigs) {
       const normalizedHook = hook.toLowerCase();
       if (subHookAddr && normalizedHook === subHookAddr) {
         if (!params.subscriptionTerms) {
@@ -1533,12 +1574,35 @@ export class AcpAgent {
       params.deliverable,
     );
 
+    // Router slices are EVM-only; the Solana client builds its own payload.
+    const routerAddr = MULTI_HOOK_ROUTER_ADDRESSES[chainId]?.toLowerCase();
+    const hookConfigs =
+      !(client instanceof SolanaAcpClient) &&
+      routerAddr &&
+      params.hookAddress?.toLowerCase() === routerAddr
+        ? await this.getRouterHooks(chainId, params.jobId, ACP_SELECTORS.submit)
+        : undefined;
+    if (hookConfigs && hookConfigs.length === 0) {
+      throw new Error(
+        "MultiHookRouter is attached but no sub-hooks are configured for the submit selector",
+      );
+    }
+
     const prepare = async () => {
       const prepared = [];
 
       if (client.getCapabilities().supportsAllowance) {
+        // Approve the hook that moves the tokens, not the router.
+        const fundSubHook = hookConfigs?.find(
+          (h) =>
+            h.toLowerCase() ===
+            FUND_TRANSFER_HOOK_ADDRESSES[chainId]?.toLowerCase(),
+        );
+        const fallbackHook =
+          hookConfigs === undefined ? params.hookAddress : undefined;
         const hookAddr =
-          params.hookAddress ??
+          fundSubHook ??
+          fallbackHook ??
           getAddressForChain(
             FUND_TRANSFER_HOOK_ADDRESSES,
             chainId,
@@ -1553,11 +1617,23 @@ export class AcpAgent {
         );
       }
 
-      const optParams: Hex = encodeFundTransferSubmitOptParams(
-        chainId,
-        params.transferAmount.address,
-        params.transferAmount.rawAmount,
-      );
+      // One slice per sub-hook, in the router's order, wrapped as `bytes[]`.
+      const optParams: Hex = hookConfigs?.length
+        ? encodeRouterOptParams(
+            hookConfigs.map((hook) =>
+              buildSubmitSliceFor(
+                chainId,
+                hook,
+                params.transferAmount.address as Address,
+                params.transferAmount.rawAmount,
+              ),
+            ),
+          )
+        : encodeFundTransferSubmitOptParams(
+            chainId,
+            params.transferAmount.address,
+            params.transferAmount.rawAmount,
+          );
 
       prepared.push(
         await client.submit(chainId, {

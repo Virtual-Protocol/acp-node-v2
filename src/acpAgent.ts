@@ -154,6 +154,7 @@ export type SetBudgetWithSubscriptionAndFundRequestParams = {
 export type FundViaRouterParams = {
   jobId: bigint;
   amount: AssetToken;
+  hookConfigs?: string[];
   subscriptionTerms?: { duration: bigint; packageId: bigint };
   transferAmount?: AssetToken;
   destination?: string;
@@ -1476,11 +1477,11 @@ export class AcpAgent {
     }
 
     // Read per action: the list stays reconfigurable while the job is Open.
-    const hookConfigs = await this.getRouterHooks(
-      chainId,
-      params.jobId,
-      ACP_SELECTORS.fund,
-    );
+    // A caller that already read it passes it down, so the slices match the set
+    // it branched on.
+    const hookConfigs =
+      params.hookConfigs ??
+      (await this.getRouterHooks(chainId, params.jobId, ACP_SELECTORS.fund));
     if (hookConfigs.length === 0) {
       throw new Error(
         "MultiHookRouter is attached but no sub-hooks are configured for the fund selector",
@@ -1591,33 +1592,9 @@ export class AcpAgent {
     const prepare = async () => {
       const prepared = [];
 
-      if (client.getCapabilities().supportsAllowance) {
-        // Approve the hook that moves the tokens, not the router.
-        const fundSubHook = hookConfigs?.find(
-          (h) =>
-            h.toLowerCase() ===
-            FUND_TRANSFER_HOOK_ADDRESSES[chainId]?.toLowerCase(),
-        );
-        const fallbackHook =
-          hookConfigs === undefined ? params.hookAddress : undefined;
-        const hookAddr =
-          fundSubHook ??
-          fallbackHook ??
-          getAddressForChain(
-            FUND_TRANSFER_HOOK_ADDRESSES,
-            chainId,
-            "FundTransferHook",
-          );
-        prepared.push(
-          await client.approveAllowance(chainId, {
-            tokenAddress: params.transferAmount.address,
-            spenderAddress: hookAddr,
-            amount: params.transferAmount.rawAmount,
-          }),
-        );
-      }
-
       // One slice per sub-hook, in the router's order, wrapped as `bytes[]`.
+      // Built first: an unsupported sub-hook invalidates the whole set, and
+      // that diagnostic is more useful than the allowance one below.
       const optParams: Hex = hookConfigs?.length
         ? encodeRouterOptParams(
             hookConfigs.map((hook) =>
@@ -1634,6 +1611,38 @@ export class AcpAgent {
             params.transferAmount.address,
             params.transferAmount.rawAmount,
           );
+
+      if (client.getCapabilities().supportsAllowance) {
+        // Only the FundTransferHook pulls at submit, so only it may hold the
+        // allowance. Approving anything else grants a spender that never pulls
+        // and leaves the transfer silently undone.
+        const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[chainId]?.toLowerCase();
+        let puller: string | undefined;
+        if (hookConfigs) {
+          puller = hookConfigs.find((h) => h.toLowerCase() === fundHook);
+        } else if (params.hookAddress === undefined) {
+          puller = getAddressForChain(
+            FUND_TRANSFER_HOOK_ADDRESSES,
+            chainId,
+            "FundTransferHook",
+          );
+        } else if (params.hookAddress.toLowerCase() === fundHook) {
+          puller = params.hookAddress;
+        }
+        if (!puller) {
+          throw new Error(
+            "transferAmount was provided but FundTransferHook is not configured " +
+              "for the submit selector — nothing would move the tokens.",
+          );
+        }
+        prepared.push(
+          await client.approveAllowance(chainId, {
+            tokenAddress: params.transferAmount.address,
+            spenderAddress: puller,
+            amount: params.transferAmount.rawAmount,
+          }),
+        );
+      }
 
       prepared.push(
         await client.submit(chainId, {

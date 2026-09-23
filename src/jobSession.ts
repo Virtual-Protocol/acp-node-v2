@@ -353,6 +353,7 @@ export class JobSession {
   private async detectConfiguredHooks(selector: Hex): Promise<{
     hasSub: boolean;
     hasFund: boolean;
+    hooks: string[] | null;
   }> {
     if (!this._job) throw new Error("Job not loaded");
 
@@ -372,12 +373,14 @@ export class JobSession {
       return {
         hasSub: lower.includes(subHook ?? ""),
         hasFund: lower.includes(fundHook ?? ""),
+        hooks: configured,
       };
     }
 
     return {
       hasSub: hook === subHook,
       hasFund: hook === fundHook,
+      hooks: null,
     };
   }
 
@@ -519,7 +522,7 @@ export class JobSession {
     ).toLowerCase();
 
     if (router && hook === router) {
-      const { hasSub, hasFund } = await this.detectConfiguredHooks(
+      const { hasSub, hasFund, hooks } = await this.detectConfiguredHooks(
         ACP_SELECTORS.fund
       );
 
@@ -555,6 +558,7 @@ export class JobSession {
       await this.agent.internalFundViaRouter(this.chainId, {
         jobId: jobId,
         amount: effectiveAmount,
+        ...(hooks ? { hookConfigs: hooks } : {}),
         ...(subscriptionTerms ? { subscriptionTerms } : {}),
         ...(transferAmount ? { transferAmount } : {}),
         ...(destination ? { destination } : {}),

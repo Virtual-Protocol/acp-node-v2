@@ -350,10 +350,11 @@ export class JobSession {
     );
   }
 
-  private detectConfiguredHooks(selector: Hex): {
+  private async detectConfiguredHooks(selector: Hex): Promise<{
     hasSub: boolean;
     hasFund: boolean;
-  } {
+    hooks: string[] | null;
+  }> {
     if (!this._job) throw new Error("Job not loaded");
 
     const hook = this._job.hookAddress.toLowerCase();
@@ -362,22 +363,29 @@ export class JobSession {
     const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
 
     if (hook === router) {
-      const configured = (this._job.hookConfigs ?? {})[selector];
-      const lower = configured?.map((h) => h.toLowerCase()) ?? [];
+      // Read per call: the list stays reconfigurable while the job is Open.
+      const configured = await this.agent.getRouterHooks(
+        this.chainId,
+        BigInt(this.jobId),
+        selector,
+      );
+      const lower = configured.map((h) => h.toLowerCase());
       return {
         hasSub: lower.includes(subHook ?? ""),
         hasFund: lower.includes(fundHook ?? ""),
+        hooks: configured,
       };
     }
 
     return {
       hasSub: hook === subHook,
       hasFund: hook === fundHook,
+      hooks: null,
     };
   }
 
   async setBudget(amount: AssetToken): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -411,7 +419,7 @@ export class JobSession {
     transferAmount: AssetToken,
     destination: string
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -443,7 +451,7 @@ export class JobSession {
     duration: bigint,
     packageId: bigint
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -474,7 +482,7 @@ export class JobSession {
     transferAmount: AssetToken,
     destination: string
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -514,13 +522,7 @@ export class JobSession {
     ).toLowerCase();
 
     if (router && hook === router) {
-      const hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
-      if (!hookConfigs || hookConfigs.length === 0) {
-        throw new Error(
-          "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
-        );
-      }
-      const { hasSub, hasFund } = this.detectConfiguredHooks(
+      const { hasSub, hasFund, hooks } = await this.detectConfiguredHooks(
         ACP_SELECTORS.fund
       );
 
@@ -556,7 +558,7 @@ export class JobSession {
       await this.agent.internalFundViaRouter(this.chainId, {
         jobId: jobId,
         amount: effectiveAmount,
-        hookConfigs,
+        ...(hooks ? { hookConfigs: hooks } : {}),
         ...(subscriptionTerms ? { subscriptionTerms } : {}),
         ...(transferAmount ? { transferAmount } : {}),
         ...(destination ? { destination } : {}),
@@ -564,7 +566,7 @@ export class JobSession {
       return;
     }
 
-    const { hasSub, hasFund } = this.detectConfiguredHooks(ACP_SELECTORS.fund);
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(ACP_SELECTORS.fund);
 
     if (hasSub) {
       const terms = await this.agent.getProposedSubscriptionTerms(
@@ -616,6 +618,7 @@ export class JobSession {
         deliverable,
         transferAmount,
         clientAddress: this._job.clientAddress,
+        hookAddress: this._job.hookAddress,
       });
     } else {
       await this.agent.internalSubmit(this.chainId, {

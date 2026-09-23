@@ -95,7 +95,7 @@ function promptYesNo(question: string, defaultYes: boolean): Promise<boolean> {
 
 async function main(): Promise<void> {
   const buyer = await AcpAgent.create({
-    provider: await PrivyAlchemyEvmProviderAdapter.create({
+    evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress: requireEnv("BUYER_WALLET_ADDRESS") as `0x${string}`,
       walletId: requireEnv("BUYER_WALLET_ID"),
       signerPrivateKey: requireEnv("BUYER_SIGNER_PRIVATE_KEY"),

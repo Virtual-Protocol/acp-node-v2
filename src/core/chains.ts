@@ -1,5 +1,6 @@
 import {
   arbitrum,
+  arcTestnet,
   base,
   baseSepolia,
   bsc,
@@ -76,6 +77,7 @@ export const EVM_TESTNET_CHAINS: Chain[] = [
   baseSepolia,
   bscTestnet,
   robinhoodTestnet,
+  arcTestnet,
 ] as const;
 
 export const ERC20_SPONSORED_CHAINS: Chain[] = [
@@ -97,6 +99,7 @@ export const ERC20_SPONSORED_CHAINS: Chain[] = [
   // Membership is what makes that path WORK AT ALL, not merely sponsored.
   // (This is what broke 4663 sells before 0.1.7: same list, same omission.)
   arc,
+  arcTestnet,
 ] as const;
 
 export const EVM_CHAINS = [

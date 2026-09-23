@@ -359,10 +359,11 @@ export class JobSession {
     );
   }
 
-  private detectConfiguredHooks(selector: Hex): {
+  private async detectConfiguredHooks(selector: Hex): Promise<{
     hasSub: boolean;
     hasFund: boolean;
-  } {
+    hooks: string[] | null;
+  }> {
     if (!this._job) throw new Error("Job not loaded");
 
     const hook = this._job.hookAddress.toLowerCase();
@@ -371,22 +372,29 @@ export class JobSession {
     const fundHook = FUND_TRANSFER_HOOK_ADDRESSES[this.chainId]?.toLowerCase();
 
     if (hook === router) {
-      const configured = (this._job.hookConfigs ?? {})[selector];
-      const lower = configured?.map((h) => h.toLowerCase()) ?? [];
+      // Read per call: the list stays reconfigurable while the job is Open.
+      const configured = await this.agent.getRouterHooks(
+        this.chainId,
+        BigInt(this.jobId),
+        selector,
+      );
+      const lower = configured.map((h) => h.toLowerCase());
       return {
         hasSub: lower.includes(subHook ?? ""),
         hasFund: lower.includes(fundHook ?? ""),
+        hooks: configured,
       };
     }
 
     return {
       hasSub: hook === subHook,
       hasFund: hook === fundHook,
+      hooks: null,
     };
   }
 
   async setBudget(amount: AssetToken): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -420,7 +428,7 @@ export class JobSession {
     transferAmount: AssetToken,
     destination: string
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -472,7 +480,7 @@ export class JobSession {
     duration: bigint,
     packageId: bigint
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -505,7 +513,7 @@ export class JobSession {
     transferAmount: AssetToken,
     destination: string
   ): Promise<void> {
-    const { hasSub, hasFund } = this.detectConfiguredHooks(
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(
       ACP_SELECTORS.setBudget
     );
 
@@ -547,19 +555,7 @@ export class JobSession {
     ).toLowerCase();
 
     if (router && hook === router) {
-      let hookConfigs = (this._job.hookConfigs ?? {})[ACP_SELECTORS.fund];
-      if (!hookConfigs || hookConfigs.length === 0) {
-        // The cached job is off-chain state and can lag the configure, so an
-        // empty read is usually a stale local copy rather than an
-        // unconfigured router. Refresh a few times before failing closed.
-        hookConfigs = await this.refreshFundHookConfigs();
-        if (!hookConfigs || hookConfigs.length === 0) {
-          throw new Error(
-            "MultiHookRouter is attached but no sub-hooks are configured for the fund selector"
-          );
-        }
-      }
-      const { hasSub, hasFund } = this.detectConfiguredHooks(
+      const { hasSub, hasFund, hooks } = await this.detectConfiguredHooks(
         ACP_SELECTORS.fund
       );
 
@@ -595,7 +591,7 @@ export class JobSession {
       await this.agent.internalFundViaRouter(this.chainId, {
         jobId: jobId,
         amount: effectiveAmount,
-        hookConfigs,
+        ...(hooks ? { hookConfigs: hooks } : {}),
         ...(subscriptionTerms ? { subscriptionTerms } : {}),
         ...(transferAmount ? { transferAmount } : {}),
         ...(destination ? { destination } : {}),
@@ -603,7 +599,7 @@ export class JobSession {
       return;
     }
 
-    const { hasSub, hasFund } = this.detectConfiguredHooks(ACP_SELECTORS.fund);
+    const { hasSub, hasFund } = await this.detectConfiguredHooks(ACP_SELECTORS.fund);
 
     if (hasSub) {
       const terms = await this.agent.getProposedSubscriptionTerms(
@@ -643,29 +639,6 @@ export class JobSession {
     });
   }
 
-  /**
-   * Re-fetches the job until the router's fund selector reports configured
-   * sub-hooks, or the bounded attempts run out. `fetchJob` refreshes `_job` in
-   * place, so downstream reads in `fund()` see the same fresh state. Bounded
-   * and only on the empty path, so the common case is unaffected.
-   */
-  private async refreshFundHookConfigs(
-    attempts = 3,
-    delayMs = 800
-  ): Promise<string[] | undefined> {
-    for (let i = 0; i < attempts; i++) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      try {
-        await this.fetchJob();
-      } catch {
-        continue;
-      }
-      const cfg = (this._job?.hookConfigs ?? {})[ACP_SELECTORS.fund];
-      if (cfg && cfg.length > 0) return cfg;
-    }
-    return (this._job?.hookConfigs ?? {})[ACP_SELECTORS.fund];
-  }
-
   async submit(
     deliverable: string,
     transferAmount?: AssetToken
@@ -678,6 +651,7 @@ export class JobSession {
         deliverable,
         transferAmount,
         clientAddress: this._job.clientAddress,
+        hookAddress: this._job.hookAddress,
       });
     } else {
       await this.agent.internalSubmit(this.chainId, {

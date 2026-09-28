@@ -1772,7 +1772,18 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
               nodeSlot,
               rawError: message,
             });
+            return;
           }
+          // Same line the other sponsored legs print, so a run's retry count
+          // is measurable here too instead of reading zero by construction.
+          console.warn(
+            formatSponsoredRetryWarning(
+              requiredSlot,
+              nodeSlot,
+              attempt,
+              maxAttempts,
+            ),
+          );
         },
       },
     );

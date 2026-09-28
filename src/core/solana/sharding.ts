@@ -120,6 +120,10 @@ export function treasuryOwnerFor(state: ShardedState, jobKey: Address): Address 
  * The fee payer to PIN for a sponsored send, or `undefined` when the sponsor
  * set is scalar-only.
  *
+ * Every sponsored send that ALLOCATES rent must carry this pin: the payer at
+ * index 0 prefunds that rent, and every close path returns it to the job's
+ * recorded shard.
+ *
  * Pinning the job's rent shard is meaningful only where the signer pool is
  * aligned to the sponsor set; at one shard every index resolves to the scalar,
  * so gating on a live fan-out costs no behaviour.

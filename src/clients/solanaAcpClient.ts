@@ -461,6 +461,15 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
     const mintAddress = acpState.data.paymentToken;
 
+    // One pin for every leg below, including the hook helpers and their
+    // pre-create sends. setBudget is where hook rent is allocated, and that
+    // rent returns to the job's RECORDED shard; the payer prefunding it must
+    // be that shard or the float drifts between wallets with no on-chain error.
+    const sponsorPin = pinIfSharded(
+      acpState.data,
+      sponsorForRecorded(acpState.data, job.data.shardIndex)
+    );
+
     const hookAddress =
       job.data.hookAddress.__option === "Some"
         ? job.data.hookAddress.value
@@ -484,6 +493,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         providerAddress: job.data.provider,
         mintAddress,
         fundRequestParams: setBudgetOptParams,
+        sponsorPin,
       });
     }
     if (hookAddress && isSubscriptionHook(chainId, hookAddress)) {
@@ -494,6 +504,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         providerAddress: job.data.provider,
         mintAddress,
         rawOptParams: setBudgetOptParams,
+        sponsorPin,
       });
     }
 
@@ -564,7 +575,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       // The recorded index, matching every other pin. The job already exists
       // here, so the derivation has nothing to add and can only disagree with
       // what settlement will enforce.
-    ], pinIfSharded(acpState.data, sponsorForRecorded(acpState.data, job.data.shardIndex)));
+    ], sponsorPin);
   }
 
   override async approveAllowance(
@@ -595,6 +606,13 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
     const mintAddress = acpState.data.paymentToken;
 
+    // One pin for every leg below, hook helpers included: fund allocates the
+    // vault, whose rent returns to the job's RECORDED shard on close.
+    const sponsorPin = pinIfSharded(
+      acpState.data,
+      sponsorForRecorded(acpState.data, job.data.shardIndex)
+    );
+
     const vaultPda = await this.deriveVaultPda(chainId, jobPda);
     const clientAta = await this.deriveAta(signer.address, mintAddress);
 
@@ -620,6 +638,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         clientAta,
         vaultAuthorityPda,
         createClientAtaIx,
+        sponsorPin,
       });
     }
     if (hookAddress && isSubscriptionHook(chainId, hookAddress)) {
@@ -632,6 +651,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         clientAta,
         vaultAuthorityPda,
         createClientAtaIx,
+        sponsorPin,
       });
     }
 
@@ -789,7 +809,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         data: ix.data as Uint8Array,
       },
       ...hookPostIxs,
-    ], pinIfSharded(acpState.data, sponsorForRecorded(acpState.data, job.data.shardIndex)));
+    ], sponsorPin);
   }
 
   override async submit(
@@ -1752,6 +1772,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
     // The configurer must be the job's client (OnlyJobClient on-chain), so
     // the job PDA resolves against the signer when no cache entry exists.
     const jobPda = await this.resolveJobPda(chainId, params.jobId);
+    // The router allocates this job's hook_router PDA here, and its close
+    // returns the rent to the job's RECORDED shard. Pin the prefunding payer
+    // to that shard so the float closes on itself; see pinIfSharded.
+    const sponsorPin = await this.recordedSponsorPin(chainId, jobPda);
     const ix = await getBatchConfigureHooksInstructionAsync(
       {
         client: signer,
@@ -1785,7 +1809,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ],
         data: ix.data as Uint8Array,
       },
-    ]);
+    ], sponsorPin);
   }
 
   /**
@@ -2162,6 +2186,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       mintAddress: Address;
       /** Caller-encoded 16-byte terms, used when subscriptionTerms is absent. */
       rawOptParams: Uint8Array;
+      /** Fee-payer pin to the job's recorded rent shard; see pinIfSharded. */
+      sponsorPin: Address | undefined;
     }
   ): Promise<PreparedSolanaTx> {
     const sctx = subscriptionContext(chainId);
@@ -2193,6 +2219,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         escrowIntent: false,
         proposedTerms: false,
         subExpiryPackageId,
+        sponsorPin: s.sponsorPin,
       }
     );
 
@@ -2222,7 +2249,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         accounts: [...ix.accounts, ...extraAccounts],
         data: ix.data as Uint8Array,
       },
-    ]);
+    ], s.sponsorPin);
     if (hookRentPreCreated) {
       prepared.sendOptions = { ...prepared.sendOptions, hookRentPreCreated: true };
     }
@@ -2241,6 +2268,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       clientAta: Address;
       vaultAuthorityPda: Address;
       createClientAtaIx: SolanaInstructionLike;
+      /** Fee-payer pin to the job's recorded rent shard; see pinIfSharded. */
+      sponsorPin: Address | undefined;
     }
   ): Promise<PreparedSolanaTx> {
     const sctx = subscriptionContext(chainId);
@@ -2293,7 +2322,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         ],
         data: ix.data as Uint8Array,
       },
-    ]);
+    ], s.sponsorPin);
   }
 
   /**
@@ -2413,6 +2442,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
               escrowIntent: false,
               proposedTerms: false,
               subExpiryPackageId: terms.packageId,
+              sponsorPin: pinIfSharded(
+                acpState.data,
+                sponsorForRecorded(acpState.data, job.data.shardIndex)
+              ),
             }
           );
         }
@@ -2667,6 +2700,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       providerAddress: Address;
       mintAddress: Address;
       fundRequestParams: Uint8Array;
+      /** Fee-payer pin to the job's recorded rent shard; see pinIfSharded. */
+      sponsorPin: Address | undefined;
     }
   ): Promise<PreparedSolanaTx> {
     const ctx = routerContext(chainId);
@@ -2692,6 +2727,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         escrowIntent: true,
         proposedTerms: hasRealSubTerms,
         subExpiryPackageId: hasRealSubTerms ? params.subscriptionTerms!.packageId : null,
+        sponsorPin: s.sponsorPin,
       }
     );
 
@@ -2729,7 +2765,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         accounts: [...ix.accounts, ...fanOut.extraAccounts],
         data: ix.data as Uint8Array,
       },
-    ]);
+    ], s.sponsorPin);
     if (hookRentPreCreated) {
       prepared.sendOptions = { ...prepared.sendOptions, hookRentPreCreated: true };
     }
@@ -2748,6 +2784,8 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       clientAta: Address;
       vaultAuthorityPda: Address;
       createClientAtaIx: SolanaInstructionLike;
+      /** Fee-payer pin to the job's recorded rent shard; see pinIfSharded. */
+      sponsorPin: Address | undefined;
     }
   ): Promise<PreparedSolanaTx> {
     const ctx = routerContext(chainId);
@@ -2897,7 +2935,7 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         data: ix.data as Uint8Array,
       },
       ...hookPostIxs,
-    ]);
+    ], s.sponsorPin);
 
     // post_fund's account list never includes SYSTEM_PROGRAM_ID (see
     // buildFundFanOut) — unlike setBudget/submit/complete, it only writes to
@@ -3112,6 +3150,10 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
             escrowIntent: true,
             proposedTerms: false,
             subExpiryPackageId: null,
+            sponsorPin: pinIfSharded(
+              acpState.data,
+              sponsorForRecorded(acpState.data, job.data.shardIndex)
+            ),
           }
         );
       }
@@ -3348,6 +3390,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       escrowIntent: boolean;
       proposedTerms: boolean;
       subExpiryPackageId: bigint | null;
+      /**
+       * Fee-payer pin to the job's recorded rent shard. The PDAs created here
+       * close to that shard, so the wallet prefunding them must be it.
+       */
+      sponsorPin: Address | undefined;
     }
   ): Promise<boolean> {
     // The on-chain pre_create_* handlers hard-require payer == job.provider, and
@@ -3434,7 +3481,11 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
         subExpiryPackageId,
       });
       if (ixs.length === 0) return anyPreexisting;
-      await this.execute(chainId, ixs);
+      await this.execute(
+        chainId,
+        ixs,
+        args.sponsorPin ? { sponsorShard: args.sponsorPin } : undefined
+      );
       return true;
     } catch (e) {
       console.warn(
@@ -3443,6 +3494,27 @@ export class SolanaAcpClient extends BaseAcpClient<SolanaInstructionLike[]> {
       );
       return false;
     }
+  }
+
+  /**
+   * Fee-payer pin for a sponsored send that allocates rent the close paths
+   * return to the job's RECORDED shard, for callers holding neither acp_state
+   * nor the job. Skips the job read at one shard, where every index is the
+   * scalar and the pin is a no-op (see pinIfSharded).
+   */
+  private async recordedSponsorPin(
+    chainId: number,
+    jobPda: Address
+  ): Promise<Address | undefined> {
+    const rpc = this.provider.getRpc(chainId);
+    const acpStatePda = await this.deriveAcpStatePda(chainId);
+    const acpState = await fetchAcpState(rpc, acpStatePda, { commitment: ACP_COMMITMENT });
+    if (acpState.data.sponsorShardCount <= 1) return undefined;
+    const job = await fetchJob(rpc, jobPda, { commitment: ACP_COMMITMENT });
+    return pinIfSharded(
+      acpState.data,
+      sponsorForRecorded(acpState.data, job.data.shardIndex)
+    );
   }
 
   private wrapMany(

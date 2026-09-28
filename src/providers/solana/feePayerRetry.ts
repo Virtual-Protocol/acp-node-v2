@@ -27,11 +27,8 @@ const RETRYABLE_FEE_PAYER_PATTERNS = [
   "lookup table not found",
   "lookup table index out of bounds",
   "lookup table owner should be",
-  // Kora paths. Add only strings actually observed; a speculative match would
-  // retry a genuinely failed transaction, and payment/policy rejections are
-  // terminal. Below: balance read and simulation land on different slots.
-  // Matched on the stable prefix — the "(N apart)" suffix varies.
   "could not read the agent balance and the simulation at the same slot",
+  "failed to fetch lookup table",
 ];
 
 // A transaction that ran out of compute units, in every shape the failure

@@ -28,6 +28,7 @@ import type {
   SolanaSigner,
 } from "../types.js";
 import { SolanaProviderAdapter } from "./solanaProviderAdapter.js";
+import { createProxyRpcTransport } from "./proxyRpcTransport.js";
 import {
   formatRequestForAuthorizationSignature,
   generateAuthorizationSignature,
@@ -833,17 +834,7 @@ export class PrivySolanaProviderAdapter extends SolanaProviderAdapter {
         }
       }
 
-      const transport = async (config: { payload: unknown }): Promise<any> => {
-        const res = await fetch(proxyUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${await token()}`,
-          },
-          body: JSON.stringify(config.payload),
-        });
-        return await res.json();
-      };
+      const transport = createProxyRpcTransport(proxyUrl, token);
       rpcs.set(
         chainId,
         createSolanaRpcFromTransport(transport as any) as Rpc<SolanaRpcApi>,

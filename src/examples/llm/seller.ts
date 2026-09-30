@@ -261,7 +261,7 @@ async function main(): Promise<void> {
     if (messages.length === 0) return;
 
     const response = await anthropic.messages.create({
-      model: "gemini-3.1-flash-lite-preview",
+      model: "claude-opus-5",
       max_tokens: 1024,
       system: systemPrompt,
       messages,

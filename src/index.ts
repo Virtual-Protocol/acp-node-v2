@@ -40,6 +40,7 @@ export type { JobStateDiagnosis } from "./core/solana/jobStateRetryGuard.js";
 export { AcpHttpClient } from "./events/acpHttpClient.js";
 export { AcpApiClient } from "./events/acpApiClient.js";
 export { SseTransport, STREAMS } from "./events/sseTransport.js";
+export { entryKey } from "./events/entryKey.js";
 
 // Public enums
 export { AcpJobStatus } from "./events/types.js";

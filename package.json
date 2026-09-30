@@ -5,8 +5,11 @@
   "main": "dist/index.js",
   "scripts": {
     "prepare": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "for f in tests/*.test.ts; do tsx \"$f\" || exit 1; done",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js"
   },
@@ -29,6 +32,7 @@
     "viem": "^2.47.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "@codama/nodes-from-anchor": "^1.4.0",
     "@codama/renderers-js": "^1.6.2",
     "@types/node": "^25.3.3",

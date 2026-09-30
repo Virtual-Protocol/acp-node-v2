@@ -240,7 +240,7 @@ export interface BrowseAgentParams {
 }
 
 export interface AcpJobApi {
-  getActiveJobs(): Promise<{ chainId: number; onChainJobId: string }[]>;
+  getActiveJobs(): Promise<OffChainJob[]>;
   getJob(chainId: number, jobId: string): Promise<OffChainJob | null>;
   postDeliverable(
     chainId: number,

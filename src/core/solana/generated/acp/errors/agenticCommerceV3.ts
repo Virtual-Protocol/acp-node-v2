@@ -56,38 +56,50 @@ export const AGENTIC_COMMERCE_V3_ERROR__BUDGET_NOT_SET = 0x1782; // 6018
 export const AGENTIC_COMMERCE_V3_ERROR__BUDGET_MISMATCH = 0x1783; // 6019
 /** ProviderNotSet: Provider not set */
 export const AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET = 0x1784; // 6020
+/** ZeroBudgetVaultNotAllowed: Vault not allowed on a zero-budget job */
+export const AGENTIC_COMMERCE_V3_ERROR__ZERO_BUDGET_VAULT_NOT_ALLOWED = 0x1785; // 6021
 /** ExpiryTooShort: Expiry too short */
-export const AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT = 0x1785; // 6021
+export const AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT = 0x1786; // 6022
+/** ExpiryTooLong: Expiry too long */
+export const AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_LONG = 0x1787; // 6023
 /** ExpiredAtMustBeInTheFuture: ExpiredAt must be in the future */
-export const AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE = 0x1786; // 6022
+export const AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE = 0x1788; // 6024
 /** PlatformFeeTooHigh: Platform fee too high */
-export const AGENTIC_COMMERCE_V3_ERROR__PLATFORM_FEE_TOO_HIGH = 0x1787; // 6023
+export const AGENTIC_COMMERCE_V3_ERROR__PLATFORM_FEE_TOO_HIGH = 0x1789; // 6025
 /** FeesTooHigh: Combined fees too high */
-export const AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH = 0x1788; // 6024
+export const AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH = 0x178a; // 6026
+/** SponsorCannotBeTreasury: Sponsor and platform treasury must be different addresses */
+export const AGENTIC_COMMERCE_V3_ERROR__SPONSOR_CANNOT_BE_TREASURY = 0x178b; // 6027
 /** InvalidDestination: Invalid destination account */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION = 0x1789; // 6025
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_DESTINATION = 0x178c; // 6028
 /** InvalidVaultAuthority: Invalid vault authority */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY = 0x178a; // 6026
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_AUTHORITY = 0x178d; // 6029
 /** InvalidVaultOwner: Invalid vault owner */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_OWNER = 0x178b; // 6027
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_OWNER = 0x178e; // 6030
 /** InvalidVaultMint: Invalid vault mint */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT = 0x178c; // 6028
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_VAULT_MINT = 0x178f; // 6031
 /** BudgetMintNotSet: Budget mint must be set when budget amount is nonzero */
-export const AGENTIC_COMMERCE_V3_ERROR__BUDGET_MINT_NOT_SET = 0x178d; // 6029
+export const AGENTIC_COMMERCE_V3_ERROR__BUDGET_MINT_NOT_SET = 0x1790; // 6032
 /** InsufficientVaultBalance: Insufficient vault balance */
-export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x178e; // 6030
+export const AGENTIC_COMMERCE_V3_ERROR__INSUFFICIENT_VAULT_BALANCE = 0x1791; // 6033
 /** MissingRequiredAccount: Missing required account for funded job */
-export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x178f; // 6031
+export const AGENTIC_COMMERCE_V3_ERROR__MISSING_REQUIRED_ACCOUNT = 0x1792; // 6034
 /** ArithmeticOverflow: Arithmetic overflow */
-export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1790; // 6032
+export const AGENTIC_COMMERCE_V3_ERROR__ARITHMETIC_OVERFLOW = 0x1793; // 6035
 /** UntrustedHookUpgradeAuthority: Hook program upgrade authority must be None or the ACP authority */
-export const AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY = 0x1791; // 6033
+export const AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY = 0x1794; // 6036
 /** MissingHookProgram: Missing hook program account: job declares a hook but hook_program was not supplied */
-export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1792; // 6034
+export const AGENTIC_COMMERCE_V3_ERROR__MISSING_HOOK_PROGRAM = 0x1795; // 6037
 /** InvalidAutoCompleteParams: Invalid complete_opt_params: must be empty (legacy mode) or [u16 submit_count][...] with submit_count <= remaining_accounts.len() */
-export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1793; // 6035
+export const AGENTIC_COMMERCE_V3_ERROR__INVALID_AUTO_COMPLETE_PARAMS = 0x1796; // 6038
 /** ProtocolPaused: Protocol is paused */
-export const AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED = 0x1794; // 6036
+export const AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED = 0x1797; // 6039
+/** TooManyShards: Too many shards: at most 3 additional shards per set */
+export const AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS = 0x1798; // 6040
+/** DuplicateShard: Duplicate shard address */
+export const AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD = 0x1799; // 6041
+/** ShardSlotImmutable: A retained sponsor slot may not change address: shrink from the tail first */
+export const AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE = 0x179a; // 6042
 
 export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__AMOUNT_MUST_BE_GREATER_THAN_ZERO
@@ -96,9 +108,11 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__BUDGET_MISMATCH
   | typeof AGENTIC_COMMERCE_V3_ERROR__BUDGET_NOT_SET
   | typeof AGENTIC_COMMERCE_V3_ERROR__DESCRIPTION_TOO_LONG
+  | typeof AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD
   | typeof AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_PROVIDER
   | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE
+  | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_LONG
   | typeof AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT
   | typeof AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH
   | typeof AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED
@@ -121,12 +135,16 @@ export type AgenticCommerceV3Error =
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT
   | typeof AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET
+  | typeof AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE
+  | typeof AGENTIC_COMMERCE_V3_ERROR__SPONSOR_CANNOT_BE_TREASURY
+  | typeof AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS
   | typeof AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED
   | typeof AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY
   | typeof AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS
   | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS
   | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_EVALUATOR
-  | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_PROVIDER;
+  | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_PROVIDER
+  | typeof AGENTIC_COMMERCE_V3_ERROR__ZERO_BUDGET_VAULT_NOT_ALLOWED;
 
 let agenticCommerceV3ErrorMessages:
   | Record<AgenticCommerceV3Error, string>
@@ -139,9 +157,11 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__BUDGET_MISMATCH]: `Budget mismatch`,
     [AGENTIC_COMMERCE_V3_ERROR__BUDGET_NOT_SET]: `Budget not set`,
     [AGENTIC_COMMERCE_V3_ERROR__DESCRIPTION_TOO_LONG]: `Description too long`,
+    [AGENTIC_COMMERCE_V3_ERROR__DUPLICATE_SHARD]: `Duplicate shard address`,
     [AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_CLIENT]: `Evaluator cannot be the client`,
     [AGENTIC_COMMERCE_V3_ERROR__EVALUATOR_CANNOT_BE_PROVIDER]: `Evaluator cannot be the provider`,
     [AGENTIC_COMMERCE_V3_ERROR__EXPIRED_AT_MUST_BE_IN_THE_FUTURE]: `ExpiredAt must be in the future`,
+    [AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_LONG]: `Expiry too long`,
     [AGENTIC_COMMERCE_V3_ERROR__EXPIRY_TOO_SHORT]: `Expiry too short`,
     [AGENTIC_COMMERCE_V3_ERROR__FEES_TOO_HIGH]: `Combined fees too high`,
     [AGENTIC_COMMERCE_V3_ERROR__HOOK_NOT_WHITELISTED]: `Hook not whitelisted`,
@@ -164,12 +184,16 @@ if (process.env.NODE_ENV !== "production") {
     [AGENTIC_COMMERCE_V3_ERROR__PROTOCOL_PAUSED]: `Protocol is paused`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_CANNOT_BE_CLIENT]: `Provider cannot be the client`,
     [AGENTIC_COMMERCE_V3_ERROR__PROVIDER_NOT_SET]: `Provider not set`,
+    [AGENTIC_COMMERCE_V3_ERROR__SHARD_SLOT_IMMUTABLE]: `A retained sponsor slot may not change address: shrink from the tail first`,
+    [AGENTIC_COMMERCE_V3_ERROR__SPONSOR_CANNOT_BE_TREASURY]: `Sponsor and platform treasury must be different addresses`,
+    [AGENTIC_COMMERCE_V3_ERROR__TOO_MANY_SHARDS]: `Too many shards: at most 3 additional shards per set`,
     [AGENTIC_COMMERCE_V3_ERROR__UNAUTHORIZED]: `Unauthorized`,
     [AGENTIC_COMMERCE_V3_ERROR__UNTRUSTED_HOOK_UPGRADE_AUTHORITY]: `Hook program upgrade authority must be None or the ACP authority`,
     [AGENTIC_COMMERCE_V3_ERROR__WRONG_STATUS]: `Wrong job status`,
     [AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS]: `ZeroAddress`,
     [AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_EVALUATOR]: `ZeroAddressEvaluator`,
     [AGENTIC_COMMERCE_V3_ERROR__ZERO_ADDRESS_PROVIDER]: `ZeroAddressProvider`,
+    [AGENTIC_COMMERCE_V3_ERROR__ZERO_BUDGET_VAULT_NOT_ALLOWED]: `Vault not allowed on a zero-budget job`,
   };
 }
 

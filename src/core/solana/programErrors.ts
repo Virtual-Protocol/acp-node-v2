@@ -25,11 +25,10 @@ export class AcpSendError extends Error {
 }
 
 /**
- * Extracts the custom program error code from a raw on-chain transaction
- * error (`{ InstructionError: [index, { Custom: code }] }`). Returns null for
- * any other shape. The code is program-relative: 6000 from the fund-transfer
- * hook is InvalidJob, while 6000 from the ACP core is Unauthorized — callers
- * that need to disambiguate must check the transaction logs.
+ * Extracts the custom program error code from a raw on-chain transaction error
+ * (`{ InstructionError: [index, { Custom: code }] }`); null for any other
+ * shape. The code is program-relative, so callers that need to disambiguate
+ * must check the transaction logs.
  */
 export function extractInstructionCustomCode(txErr: unknown): number | null {
   if (typeof txErr !== "object" || txErr === null) return null;
@@ -65,9 +64,8 @@ export function collectErrorText(err: unknown): string {
 }
 
 /**
- * Extracts the node-facing error from the raw text and reformats it: the
- * headline (with the alchemy_requestFeePayer prefix when present), then one
- * simulation log per line. Null when the text has no node error to show.
+ * Extracts the node-facing error from the raw text and reformats it: headline
+ * first, then one simulation log per line. Null when there is none to show.
  */
 export function formatNodeError(err: unknown): string | null {
   const text = collectErrorText(err);
@@ -92,11 +90,9 @@ export function formatNodeError(err: unknown): string | null {
 }
 
 /**
- * Rewraps a raw sponsored-send error as AcpSendError: message is the node's
- * own error reformatted one simulation log per line, with the retry guard's
- * diagnosis attached when it confirmed the failure. Errors without simulation
- * logs (network, auth, server) pass through unchanged. The original error is
- * always preserved as `cause`.
+ * Rewraps a raw sponsored-send error as AcpSendError, one simulation log per
+ * line, with the retry guard's diagnosis when it confirmed the failure. Errors
+ * without simulation logs pass through unchanged; `cause` is always preserved.
  */
 export function decorateSendError(
   err: unknown,

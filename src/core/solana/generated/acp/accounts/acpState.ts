@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBooleanDecoder,
   getBooleanEncoder,
   getBytesDecoder,
@@ -61,17 +63,12 @@ export type AcpState = {
   pendingAuthority: Option<Address>;
   /** SPL mint accepted for job budgets. */
   paymentToken: Address;
-  /** Wallet that receives platform fees and reclaimed vault rent. */
+  /** Wallet that receives platform fees. Rent goes to `sponsor` instead. */
   platformTreasury: Address;
   /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: bigint;
-  /**
-   * Monotonically increasing counter storing the LAST issued job ID
-   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
-   */
-  jobCounter: bigint;
   /** PDA bump seed. */
   bump: number;
   /**
@@ -79,6 +76,56 @@ export type AcpState = {
    * Appended after `bump` so the existing on-chain layout only grows by one byte.
    */
   paused: boolean;
+  /**
+   * Receives reclaimed native rent from every account close. Separate from
+   * `platform_treasury`, which receives SPL fees: under gas sponsorship the
+   * rent was never the user's money nor protocol revenue, it is the sponsor's
+   * float coming back. Appended after `paused` so the layout only grows at
+   * the tail; `migrate_state` backfills it from an explicit argument when
+   * zero, since it must differ from `platform_treasury` and so cannot be
+   * inferred from existing state.
+   */
+  sponsor: Address;
+  /**
+   * Additional rent destinations. `sponsor` above is shard 0; these are
+   * shards 1..=3. Slots at or past `sponsor_shard_count - 1` are never read,
+   * so a zero-filled realloc tail is already a valid "one shard" state.
+   */
+  sponsorShards: Array<Address>;
+  /** Live rent destinations INCLUDING `sponsor`. 0 and 1 both mean scalar-only. */
+  sponsorShardCount: number;
+  /**
+   * Additional platform-fee OWNER WALLETS. `platform_treasury` is shard 0.
+   *
+   * These are wallets, not token accounts: the fee lands in
+   * `ATA(shard_i, vault_mint)`, so any caller can derive a valid destination
+   * from state it already reads. Storing token accounts instead would pin
+   * them to one mint and force the list to travel out-of-band to every
+   * third-party agent that calls `submit` or `complete`.
+   */
+  treasuryShards: Array<Address>;
+  /**
+   * Live fee destinations INCLUDING `platform_treasury`. 0 and 1 both mean
+   * scalar-only.
+   */
+  treasuryShardCount: number;
+  /**
+   * May sweep collected fees out of a program-owned treasury. Deliberately
+   * NOT `authority`: fee ROUTING is configuration and stays with the admin,
+   * while moving an accumulated balance is custody. Before treasuries could
+   * be PDAs the split was implicit — nothing in this program transferred out
+   * of a treasury, so only the treasury wallet's own key could — and
+   * `sweep_treasury` would have folded custody into the admin role without
+   * that ever being decided. Backfilled to `authority` on migration, so
+   * adopting the split is a deliberate transfer rather than a flag day.
+   */
+  treasuryAuthority: Address;
+  /**
+   * Nominated successor for `treasury_authority` (two-step, mirroring
+   * `pending_authority`). Rotated by the treasury authority ITSELF and never
+   * by `authority`; otherwise the separation is one instruction deep.
+   */
+  pendingTreasuryAuthority: Option<Address>;
 };
 
 export type AcpStateArgs = {
@@ -88,17 +135,12 @@ export type AcpStateArgs = {
   pendingAuthority: OptionOrNullable<Address>;
   /** SPL mint accepted for job budgets. */
   paymentToken: Address;
-  /** Wallet that receives platform fees and reclaimed vault rent. */
+  /** Wallet that receives platform fees. Rent goes to `sponsor` instead. */
   platformTreasury: Address;
   /** Platform fee in basis points (0-10000). Applied to vault balance on completion. */
   platformFeeBp: number | bigint;
   /** Evaluator fee in basis points (0-10000). Applied on evaluator-confirmed completions. */
   evaluatorFeeBp: number | bigint;
-  /**
-   * Monotonically increasing counter storing the LAST issued job ID
-   * The next job receives `job_counter + 1`; 0 means no jobs issued yet.
-   */
-  jobCounter: number | bigint;
   /** PDA bump seed. */
   bump: number;
   /**
@@ -106,6 +148,56 @@ export type AcpStateArgs = {
    * Appended after `bump` so the existing on-chain layout only grows by one byte.
    */
   paused: boolean;
+  /**
+   * Receives reclaimed native rent from every account close. Separate from
+   * `platform_treasury`, which receives SPL fees: under gas sponsorship the
+   * rent was never the user's money nor protocol revenue, it is the sponsor's
+   * float coming back. Appended after `paused` so the layout only grows at
+   * the tail; `migrate_state` backfills it from an explicit argument when
+   * zero, since it must differ from `platform_treasury` and so cannot be
+   * inferred from existing state.
+   */
+  sponsor: Address;
+  /**
+   * Additional rent destinations. `sponsor` above is shard 0; these are
+   * shards 1..=3. Slots at or past `sponsor_shard_count - 1` are never read,
+   * so a zero-filled realloc tail is already a valid "one shard" state.
+   */
+  sponsorShards: Array<Address>;
+  /** Live rent destinations INCLUDING `sponsor`. 0 and 1 both mean scalar-only. */
+  sponsorShardCount: number;
+  /**
+   * Additional platform-fee OWNER WALLETS. `platform_treasury` is shard 0.
+   *
+   * These are wallets, not token accounts: the fee lands in
+   * `ATA(shard_i, vault_mint)`, so any caller can derive a valid destination
+   * from state it already reads. Storing token accounts instead would pin
+   * them to one mint and force the list to travel out-of-band to every
+   * third-party agent that calls `submit` or `complete`.
+   */
+  treasuryShards: Array<Address>;
+  /**
+   * Live fee destinations INCLUDING `platform_treasury`. 0 and 1 both mean
+   * scalar-only.
+   */
+  treasuryShardCount: number;
+  /**
+   * May sweep collected fees out of a program-owned treasury. Deliberately
+   * NOT `authority`: fee ROUTING is configuration and stays with the admin,
+   * while moving an accumulated balance is custody. Before treasuries could
+   * be PDAs the split was implicit — nothing in this program transferred out
+   * of a treasury, so only the treasury wallet's own key could — and
+   * `sweep_treasury` would have folded custody into the admin role without
+   * that ever being decided. Backfilled to `authority` on migration, so
+   * adopting the split is a deliberate transfer rather than a flag day.
+   */
+  treasuryAuthority: Address;
+  /**
+   * Nominated successor for `treasury_authority` (two-step, mirroring
+   * `pending_authority`). Rotated by the treasury authority ITSELF and never
+   * by `authority`; otherwise the separation is one instruction deep.
+   */
+  pendingTreasuryAuthority: OptionOrNullable<Address>;
 };
 
 /** Gets the encoder for {@link AcpStateArgs} account data. */
@@ -119,9 +211,15 @@ export function getAcpStateEncoder(): Encoder<AcpStateArgs> {
       ["platformTreasury", getAddressEncoder()],
       ["platformFeeBp", getU64Encoder()],
       ["evaluatorFeeBp", getU64Encoder()],
-      ["jobCounter", getU64Encoder()],
       ["bump", getU8Encoder()],
       ["paused", getBooleanEncoder()],
+      ["sponsor", getAddressEncoder()],
+      ["sponsorShards", getArrayEncoder(getAddressEncoder(), { size: 3 })],
+      ["sponsorShardCount", getU8Encoder()],
+      ["treasuryShards", getArrayEncoder(getAddressEncoder(), { size: 3 })],
+      ["treasuryShardCount", getU8Encoder()],
+      ["treasuryAuthority", getAddressEncoder()],
+      ["pendingTreasuryAuthority", getOptionEncoder(getAddressEncoder())],
     ]),
     (value) => ({ ...value, discriminator: ACP_STATE_DISCRIMINATOR }),
   );
@@ -137,9 +235,15 @@ export function getAcpStateDecoder(): Decoder<AcpState> {
     ["platformTreasury", getAddressDecoder()],
     ["platformFeeBp", getU64Decoder()],
     ["evaluatorFeeBp", getU64Decoder()],
-    ["jobCounter", getU64Decoder()],
     ["bump", getU8Decoder()],
     ["paused", getBooleanDecoder()],
+    ["sponsor", getAddressDecoder()],
+    ["sponsorShards", getArrayDecoder(getAddressDecoder(), { size: 3 })],
+    ["sponsorShardCount", getU8Decoder()],
+    ["treasuryShards", getArrayDecoder(getAddressDecoder(), { size: 3 })],
+    ["treasuryShardCount", getU8Decoder()],
+    ["treasuryAuthority", getAddressDecoder()],
+    ["pendingTreasuryAuthority", getOptionDecoder(getAddressDecoder())],
   ]);
 }
 

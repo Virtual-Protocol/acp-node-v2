@@ -7,6 +7,7 @@
  */
 
 export * from "./acceptAuthority.js";
+export * from "./acceptTreasuryAuthority.js";
 export * from "./addHookWhitelist.js";
 export * from "./claimRefund.js";
 export * from "./complete.js";
@@ -16,11 +17,17 @@ export * from "./fund.js";
 export * from "./initialize.js";
 export * from "./migrateState.js";
 export * from "./nominateAuthority.js";
+export * from "./nominateTreasuryAuthority.js";
 export * from "./reject.js";
 export * from "./removeHookWhitelist.js";
 export * from "./setBudget.js";
 export * from "./setEvaluatorFee.js";
 export * from "./setPause.js";
+export * from "./setPaymentToken.js";
 export * from "./setPlatformFee.js";
 export * from "./setProvider.js";
+export * from "./setSponsor.js";
+export * from "./setSponsorShards.js";
+export * from "./setTreasuryShards.js";
 export * from "./submit.js";
+export * from "./sweepTreasury.js";

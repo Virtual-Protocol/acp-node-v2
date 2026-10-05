@@ -8,25 +8,27 @@
 
 import {
   combineCodec,
+  getAddressDecoder,
+  getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
+  type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type JobExpired = { jobId: bigint };
+/** Emitted when an expired job is claimed via `claim_refund`. */
+export type JobExpired = { job: Address };
 
-export type JobExpiredArgs = { jobId: number | bigint };
+export type JobExpiredArgs = JobExpired;
 
 export function getJobExpiredEncoder(): FixedSizeEncoder<JobExpiredArgs> {
-  return getStructEncoder([["jobId", getU64Encoder()]]);
+  return getStructEncoder([["job", getAddressEncoder()]]);
 }
 
 export function getJobExpiredDecoder(): FixedSizeDecoder<JobExpired> {
-  return getStructDecoder([["jobId", getU64Decoder()]]);
+  return getStructDecoder([["job", getAddressDecoder()]]);
 }
 
 export function getJobExpiredCodec(): FixedSizeCodec<

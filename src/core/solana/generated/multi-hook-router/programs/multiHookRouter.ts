@@ -7,29 +7,18 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAddHookInstruction,
-  parseAfterActionInstruction,
-  parseBatchConfigureHooksInstruction,
-  parseBeforeActionInstruction,
-  parseConfigureHooksInstruction,
-  parseInitializeInstruction,
-  parseRemoveHookInstruction,
-  parseReorderHooksInstruction,
-  parseSetMaxHooksPerJobInstruction,
   type ParsedAddHookInstruction,
   type ParsedAfterActionInstruction,
   type ParsedBatchConfigureHooksInstruction,
   type ParsedBeforeActionInstruction,
+  type ParsedCloseHookRouterInstruction,
   type ParsedConfigureHooksInstruction,
   type ParsedInitializeInstruction,
   type ParsedRemoveHookInstruction,
@@ -92,6 +81,7 @@ export enum MultiHookRouterInstruction {
   AfterAction,
   BatchConfigureHooks,
   BeforeAction,
+  CloseHookRouter,
   ConfigureHooks,
   Initialize,
   RemoveHook,
@@ -146,6 +136,17 @@ export function identifyMultiHookRouterInstruction(
     )
   ) {
     return MultiHookRouterInstruction.BeforeAction;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([204, 155, 217, 12, 192, 12, 49, 65]),
+      ),
+      0,
+    )
+  ) {
+    return MultiHookRouterInstruction.CloseHookRouter;
   }
   if (
     containsBytes(
@@ -221,6 +222,9 @@ export type ParsedMultiHookRouterInstruction<TProgram extends string = ""> =
       instructionType: MultiHookRouterInstruction.BeforeAction;
     } & ParsedBeforeActionInstruction<TProgram>)
   | ({
+      instructionType: MultiHookRouterInstruction.CloseHookRouter;
+    } & ParsedCloseHookRouterInstruction<TProgram>)
+  | ({
       instructionType: MultiHookRouterInstruction.ConfigureHooks;
     } & ParsedConfigureHooksInstruction<TProgram>)
   | ({
@@ -235,78 +239,3 @@ export type ParsedMultiHookRouterInstruction<TProgram extends string = ""> =
   | ({
       instructionType: MultiHookRouterInstruction.SetMaxHooksPerJob;
     } & ParsedSetMaxHooksPerJobInstruction<TProgram>);
-
-export function parseMultiHookRouterInstruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedMultiHookRouterInstruction<TProgram> {
-  const instructionType = identifyMultiHookRouterInstruction(instruction);
-  switch (instructionType) {
-    case MultiHookRouterInstruction.AddHook: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.AddHook,
-        ...parseAddHookInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.AfterAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.AfterAction,
-        ...parseAfterActionInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.BatchConfigureHooks: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.BatchConfigureHooks,
-        ...parseBatchConfigureHooksInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.BeforeAction: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.BeforeAction,
-        ...parseBeforeActionInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.ConfigureHooks: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.ConfigureHooks,
-        ...parseConfigureHooksInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.RemoveHook: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.RemoveHook,
-        ...parseRemoveHookInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.ReorderHooks: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.ReorderHooks,
-        ...parseReorderHooksInstruction(instruction),
-      };
-    }
-    case MultiHookRouterInstruction.SetMaxHooksPerJob: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: MultiHookRouterInstruction.SetMaxHooksPerJob,
-        ...parseSetMaxHooksPerJobInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

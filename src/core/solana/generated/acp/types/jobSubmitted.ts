@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
@@ -25,21 +23,18 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/** Emitted when a provider submits a deliverable. */
 export type JobSubmitted = {
-  jobId: bigint;
+  job: Address;
   provider: Address;
   deliverable: ReadonlyUint8Array;
 };
 
-export type JobSubmittedArgs = {
-  jobId: number | bigint;
-  provider: Address;
-  deliverable: ReadonlyUint8Array;
-};
+export type JobSubmittedArgs = JobSubmitted;
 
 export function getJobSubmittedEncoder(): FixedSizeEncoder<JobSubmittedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["provider", getAddressEncoder()],
     ["deliverable", fixEncoderSize(getBytesEncoder(), 32)],
   ]);
@@ -47,7 +42,7 @@ export function getJobSubmittedEncoder(): FixedSizeEncoder<JobSubmittedArgs> {
 
 export function getJobSubmittedDecoder(): FixedSizeDecoder<JobSubmitted> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["provider", getAddressDecoder()],
     ["deliverable", fixDecoderSize(getBytesDecoder(), 32)],
   ]);

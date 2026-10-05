@@ -1,17 +1,13 @@
 /**
- * Retry wrapper for prepare-then-send flows where the prepared transaction
- * can go stale between prepare and inclusion (e.g. Solana hook intent PDAs
- * or the job PDA, both derived from a counter that another transaction may
- * advance first). Each attempt rebuilds the transaction from fresh chain
- * state via `prepare`.
+ * Retry wrapper for prepare-then-send flows where the prepared transaction can
+ * go stale between prepare and inclusion. Each attempt rebuilds from fresh
+ * chain state via `prepare`.
  *
- * `isStalePrepareError` decides whether a send failure is worth a rebuild;
- * anything else propagates unchanged, as does the final attempt's error.
+ * `isStalePrepareError` decides whether a failure is worth a rebuild; anything
+ * else propagates unchanged, as does the final attempt's error.
  *
- * `delayMs` waits before each re-prepare (default 0, preserving the original
- * immediate-retry behavior). Use it when the staleness is node lag rather
- * than a lost race: an immediate re-read can return the same stale state,
- * while the lagging node typically catches up within 1-2 slots (~400-800ms).
+ * `delayMs` waits before each re-prepare (default 0). Use it when the
+ * staleness is node lag rather than a lost race.
  */
 export async function withReprepare<TPrepared, TResult>(
   prepare: () => Promise<TPrepared>,

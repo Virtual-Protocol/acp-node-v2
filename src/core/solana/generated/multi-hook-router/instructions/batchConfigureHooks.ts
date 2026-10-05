@@ -20,8 +20,6 @@ import {
   getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -91,7 +89,7 @@ export type BatchConfigureHooksInstruction<
 
 export type BatchConfigureHooksInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   setBudget: Option<Array<Address>>;
   fund: Option<Array<Address>>;
   submit: Option<Array<Address>>;
@@ -100,7 +98,7 @@ export type BatchConfigureHooksInstructionData = {
 };
 
 export type BatchConfigureHooksInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   setBudget: OptionOrNullable<Array<Address>>;
   fund: OptionOrNullable<Array<Address>>;
   submit: OptionOrNullable<Array<Address>>;
@@ -112,7 +110,7 @@ export function getBatchConfigureHooksInstructionDataEncoder(): Encoder<BatchCon
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["setBudget", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
       ["fund", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
       ["submit", getOptionEncoder(getArrayEncoder(getAddressEncoder()))],
@@ -129,7 +127,7 @@ export function getBatchConfigureHooksInstructionDataEncoder(): Encoder<BatchCon
 export function getBatchConfigureHooksInstructionDataDecoder(): Decoder<BatchConfigureHooksInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["setBudget", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
     ["fund", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
     ["submit", getOptionDecoder(getArrayDecoder(getAddressDecoder()))],
@@ -157,10 +155,14 @@ export type BatchConfigureHooksAsyncInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
+  /**
+   * `ConfigureHooks::hook_router` for why `init_if_needed` cannot be used on
+   * an exact-fit account. The seeds below still pin the address.
+   */
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: BatchConfigureHooksInstructionDataArgs["jobId"];
+  jobKey: BatchConfigureHooksInstructionDataArgs["jobKey"];
   setBudget: BatchConfigureHooksInstructionDataArgs["setBudget"];
   fund: BatchConfigureHooksInstructionDataArgs["fund"];
   submit: BatchConfigureHooksInstructionDataArgs["submit"];
@@ -217,7 +219,7 @@ export async function getBatchConfigureHooksInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
@@ -260,10 +262,14 @@ export type BatchConfigureHooksInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
+  /**
+   * `ConfigureHooks::hook_router` for why `init_if_needed` cannot be used on
+   * an exact-fit account. The seeds below still pin the address.
+   */
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: BatchConfigureHooksInstructionDataArgs["jobId"];
+  jobKey: BatchConfigureHooksInstructionDataArgs["jobKey"];
   setBudget: BatchConfigureHooksInstructionDataArgs["setBudget"];
   fund: BatchConfigureHooksInstructionDataArgs["fund"];
   submit: BatchConfigureHooksInstructionDataArgs["submit"];
@@ -352,6 +358,10 @@ export type ParsedBatchConfigureHooksInstruction<
   accounts: {
     client: TAccountMetas[0];
     job: TAccountMetas[1];
+    /**
+     * `ConfigureHooks::hook_router` for why `init_if_needed` cannot be used on
+     * an exact-fit account. The seeds below still pin the address.
+     */
     hookRouter: TAccountMetas[2];
     routerState: TAccountMetas[3];
     systemProgram: TAccountMetas[4];

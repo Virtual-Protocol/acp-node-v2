@@ -12,28 +12,27 @@ import {
   getAddressEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type ProviderSet = { jobId: bigint; provider: Address };
+/** Emitted when a provider is assigned to a job via `set_provider`. */
+export type ProviderSet = { job: Address; provider: Address };
 
-export type ProviderSetArgs = { jobId: number | bigint; provider: Address };
+export type ProviderSetArgs = ProviderSet;
 
 export function getProviderSetEncoder(): FixedSizeEncoder<ProviderSetArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["provider", getAddressEncoder()],
   ]);
 }
 
 export function getProviderSetDecoder(): FixedSizeDecoder<ProviderSet> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["provider", getAddressDecoder()],
   ]);
 }

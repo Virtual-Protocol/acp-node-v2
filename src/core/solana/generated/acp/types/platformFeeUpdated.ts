@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when the platform fee rate or treasury address is updated. */
 export type PlatformFeeUpdated = { feeBp: bigint; treasury: Address };
 
 export type PlatformFeeUpdatedArgs = {

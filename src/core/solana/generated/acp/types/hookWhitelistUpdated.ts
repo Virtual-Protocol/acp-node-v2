@@ -20,6 +20,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a hook program is added to or removed from the whitelist. */
 export type HookWhitelistUpdated = { hook: Address; status: boolean };
 
 export type HookWhitelistUpdatedArgs = HookWhitelistUpdated;

@@ -20,8 +20,6 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -33,8 +31,8 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
+  type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type WritableAccount,
 } from "@solana/kit";
 import { findHookStatePda } from "../pdas/index.js";
 import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
@@ -59,7 +57,7 @@ export type AfterActionInstruction<
   InstructionWithAccounts<
     [
       TAccountHookState extends string
-        ? WritableAccount<TAccountHookState>
+        ? ReadonlyAccount<TAccountHookState>
         : TAccountHookState,
       ...TRemainingAccounts,
     ]
@@ -67,7 +65,7 @@ export type AfterActionInstruction<
 
 export type AfterActionInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -75,7 +73,7 @@ export type AfterActionInstructionData = {
 };
 
 export type AfterActionInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -86,7 +84,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
       ["caller", getAddressEncoder()],
@@ -99,7 +97,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
 export function getAfterActionInstructionDataDecoder(): Decoder<AfterActionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
     ["caller", getAddressDecoder()],
@@ -118,8 +116,12 @@ export function getAfterActionInstructionDataCodec(): Codec<
 }
 
 export type AfterActionAsyncInput<TAccountHookState extends string = string> = {
+  /**
+   * Not `mut`: no path writes it, and a write lock on this one global
+   * account would serialise every hooked job.
+   */
   hookState?: Address<TAccountHookState>;
-  jobId: AfterActionInstructionDataArgs["jobId"];
+  jobKey: AfterActionInstructionDataArgs["jobKey"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];
@@ -139,7 +141,7 @@ export async function getAfterActionInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    hookState: { value: input.hookState ?? null, isWritable: true },
+    hookState: { value: input.hookState ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -165,8 +167,12 @@ export async function getAfterActionInstructionAsync<
 }
 
 export type AfterActionInput<TAccountHookState extends string = string> = {
+  /**
+   * Not `mut`: no path writes it, and a write lock on this one global
+   * account would serialise every hooked job.
+   */
   hookState: Address<TAccountHookState>;
-  jobId: AfterActionInstructionDataArgs["jobId"];
+  jobKey: AfterActionInstructionDataArgs["jobKey"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];
@@ -186,7 +192,7 @@ export function getAfterActionInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    hookState: { value: input.hookState ?? null, isWritable: true },
+    hookState: { value: input.hookState ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -212,6 +218,10 @@ export type ParsedAfterActionInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * Not `mut`: no path writes it, and a write lock on this one global
+     * account would serialise every hooked job.
+     */
     hookState: TAccountMetas[0];
   };
   data: AfterActionInstructionData;

@@ -10,12 +10,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -85,12 +85,12 @@ export type PreCreateIntentInstruction<
 
 export type PreCreateIntentInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   kind: number;
 };
 
 export type PreCreateIntentInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   kind: number;
 };
 
@@ -98,7 +98,7 @@ export function getPreCreateIntentInstructionDataEncoder(): FixedSizeEncoder<Pre
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["kind", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: PRE_CREATE_INTENT_DISCRIMINATOR }),
@@ -108,7 +108,7 @@ export function getPreCreateIntentInstructionDataEncoder(): FixedSizeEncoder<Pre
 export function getPreCreateIntentInstructionDataDecoder(): FixedSizeDecoder<PreCreateIntentInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["kind", getU8Decoder()],
   ]);
 }
@@ -143,7 +143,7 @@ export type PreCreateIntentAsyncInput<
   /** (seed prefix depends on `kind`). */
   intentMap: Address<TAccountIntentMap>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: PreCreateIntentInstructionDataArgs["jobId"];
+  jobKey: PreCreateIntentInstructionDataArgs["jobKey"];
   kind: PreCreateIntentInstructionDataArgs["kind"];
 };
 
@@ -251,7 +251,7 @@ export type PreCreateIntentInput<
   /** (seed prefix depends on `kind`). */
   intentMap: Address<TAccountIntentMap>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: PreCreateIntentInstructionDataArgs["jobId"];
+  jobKey: PreCreateIntentInstructionDataArgs["jobKey"];
   kind: PreCreateIntentInstructionDataArgs["kind"];
 };
 

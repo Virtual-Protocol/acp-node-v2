@@ -1,27 +1,15 @@
-// Retry guard for guarded fee-payer errors (WrongStatus 6015 / 0x177f, router
-// InvalidJob 6000 on BatchConfigureHooks, and subscription-hook JobNotExpired
-// 6010 on CleanupProposedTerms).
+// Retry guard for guarded fee-payer errors (WrongStatus, router InvalidJob on
+// BatchConfigureHooks, subscription-hook JobNotExpired on
+// CleanupProposedTerms).
 //
-// Alchemy's sponsor node simulates against its own RPC, which can lag ours by
-// a few slots (see providers/solana/feePayerRetry.ts). A WrongStatus failure
-// is therefore ambiguous: either the sponsor has not yet seen the transaction
-// that moved the job into the required state (safe to retry), or the job
-// genuinely is in the wrong state — e.g. already Completed by a duplicate
-// evaluation event (retrying is pointless and only delays the real error).
-// The router's InvalidJob on BatchConfigureHooks is ambiguous the same way:
-// the job account is an UncheckedAccount there, so a job the sponsor's node
-// has not seen yet fails the hook lib's owner check with InvalidJob instead
-// of AccountNotInitialized — indistinguishable from a genuinely wrong job id.
-// The subscription hook's CleanupProposedTerms is the third: it requires
-// job.state == Expired, so the JobNotExpired thrown moments after claim_refund
-// wrote that state is either sponsor lag or a genuinely live job.
+// Each of those is ambiguous: the sponsor node may simply not have seen the
+// transaction that moved the job into the required state, or the job may
+// genuinely be in the wrong state.
 //
 // The guard disambiguates by asking OUR read RPC: for every state-gated
-// instruction in the batch (ACP core lifecycle, router configure, or sub-hook
-// cleanup), fetch the job account and check whether its current state
-// satisfies that instruction's precondition. If our node says it can succeed,
-// the sponsor was stale — retry. If our node agrees the transaction cannot
-// succeed, the error is genuine — fail fast.
+// instruction in the batch, fetch the job account and check its current state
+// against that instruction's precondition. Our node saying it can succeed
+// means the sponsor was stale; our node agreeing means fail fast.
 
 import type { Address, Rpc, SolanaRpcApi } from "@solana/kit";
 import type { SolanaInstructionLike } from "../../providers/types.js";
@@ -41,16 +29,13 @@ type StateGate = {
   /** Index of the `job` account in the instruction's account list. */
   jobAccountIndex: number;
   /**
-   * Job states in which the instruction's status check passes. Kept generous
-   * (never narrower than the program's actual check): a state wrongly listed
-   * here only costs extra retries before the genuine error propagates, while
-   * a state wrongly missing would abort a recoverable lag retry.
+   * Job states in which the instruction's status check passes. Keep generous,
+   * never narrower than the program's own check.
    */
   allowedStates: JobState[];
   /**
    * The program rejects this instruction past job.expiredAt even though the
-   * state enum still allows it (state flips to Expired only on claim_refund).
-   * Set only on proof — a wrong true aborts recoverable lag retries.
+   * state enum still allows it. Set only on proof.
    */
   expiryGated?: boolean;
 };
@@ -119,11 +104,9 @@ const STATE_GATES: StateGate[] = [
   },
 ];
 
-// Router-program instructions gated on the same ACP job account. The router
-// locks hook configuration once the job leaves Open (HooksLocked), and its
-// job account is an UncheckedAccount whose absence on a lagging node
-// surfaces as InvalidJob (base-acp-hook owner check), not
-// AccountNotInitialized. No expiry gate: the router checks only job.state.
+// Router-program instructions gated on the same ACP job account. Hook
+// configuration locks once the job leaves Open. No expiry gate: the router
+// checks only job.state.
 const ROUTER_STATE_GATES: StateGate[] = [
   {
     discriminator: BATCH_CONFIGURE_HOOKS_DISCRIMINATOR,
@@ -133,12 +116,9 @@ const ROUTER_STATE_GATES: StateGate[] = [
 ];
 
 // Subscription-hook instructions gated on the ACP job account. Cleanup of an
-// abandoned job's ProposedTerms PDA requires the job to have reached Expired
-// (cleanup_proposed_terms.rs:47 — state only, no clock check), which happens
-// on claim_refund. Its job account is at index 2:
-// caller, hook_state, job_account, proposed_terms, provider.
-// No expiry gate: Expired IS the terminal state the instruction wants, so
-// job.expiredAt being in the past is the precondition, not a disqualifier.
+// abandoned ProposedTerms PDA requires job.state == Expired, with its job
+// account at index 2: caller, hook_state, job_account, proposed_terms,
+// acp_state, platform_treasury. No expiry gate — Expired IS the state wanted.
 const SUB_HOOK_STATE_GATES: StateGate[] = [
   {
     discriminator: CLEANUP_PROPOSED_TERMS_DISCRIMINATOR,
@@ -203,9 +183,8 @@ export function buildJobStateRetryGuard(
       });
       const stateOk =
         job.exists && gate.allowedStates.includes(job.data.state);
-      // Even when the state enum allows the instruction, the program rejects
-      // clock-gated instructions past job.expiredAt (the state is not flipped
-      // to Expired until claim_refund). Retrying cannot fix an expired job.
+      // Clock-gated instructions are rejected past job.expiredAt even where
+      // the state enum still allows them.
       const expired =
         stateOk &&
         gate.expiryGated === true &&

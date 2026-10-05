@@ -7,35 +7,15 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
-  parseAddHookWhitelistInstruction,
-  parseClaimRefundInstruction,
-  parseCompleteInstruction,
-  parseCreateJobInstruction,
-  parseDetachHookInstruction,
-  parseFundInstruction,
-  parseInitializeInstruction,
-  parseMigrateStateInstruction,
-  parseNominateAuthorityInstruction,
-  parseRejectInstruction,
-  parseRemoveHookWhitelistInstruction,
-  parseSetBudgetInstruction,
-  parseSetEvaluatorFeeInstruction,
-  parseSetPauseInstruction,
-  parseSetPlatformFeeInstruction,
-  parseSetProviderInstruction,
-  parseSubmitInstruction,
   type ParsedAcceptAuthorityInstruction,
+  type ParsedAcceptTreasuryAuthorityInstruction,
   type ParsedAddHookWhitelistInstruction,
   type ParsedClaimRefundInstruction,
   type ParsedCompleteInstruction,
@@ -45,14 +25,20 @@ import {
   type ParsedInitializeInstruction,
   type ParsedMigrateStateInstruction,
   type ParsedNominateAuthorityInstruction,
+  type ParsedNominateTreasuryAuthorityInstruction,
   type ParsedRejectInstruction,
   type ParsedRemoveHookWhitelistInstruction,
   type ParsedSetBudgetInstruction,
   type ParsedSetEvaluatorFeeInstruction,
   type ParsedSetPauseInstruction,
+  type ParsedSetPaymentTokenInstruction,
   type ParsedSetPlatformFeeInstruction,
   type ParsedSetProviderInstruction,
+  type ParsedSetSponsorInstruction,
+  type ParsedSetSponsorShardsInstruction,
+  type ParsedSetTreasuryShardsInstruction,
   type ParsedSubmitInstruction,
+  type ParsedSweepTreasuryInstruction,
 } from "../instructions/index.js";
 
 export const AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS = "" as Address<"">;
@@ -107,6 +93,7 @@ export function identifyAgenticCommerceV3Account(
 
 export enum AgenticCommerceV3Instruction {
   AcceptAuthority,
+  AcceptTreasuryAuthority,
   AddHookWhitelist,
   ClaimRefund,
   Complete,
@@ -116,14 +103,20 @@ export enum AgenticCommerceV3Instruction {
   Initialize,
   MigrateState,
   NominateAuthority,
+  NominateTreasuryAuthority,
   Reject,
   RemoveHookWhitelist,
   SetBudget,
   SetEvaluatorFee,
   SetPause,
+  SetPaymentToken,
   SetPlatformFee,
   SetProvider,
+  SetSponsor,
+  SetSponsorShards,
+  SetTreasuryShards,
   Submit,
+  SweepTreasury,
 }
 
 export function identifyAgenticCommerceV3Instruction(
@@ -140,6 +133,17 @@ export function identifyAgenticCommerceV3Instruction(
     )
   ) {
     return AgenticCommerceV3Instruction.AcceptAuthority;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([219, 6, 23, 82, 89, 189, 96, 67]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.AcceptTreasuryAuthority;
   }
   if (
     containsBytes(
@@ -244,6 +248,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([45, 45, 96, 248, 151, 166, 39, 133]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.NominateTreasuryAuthority;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([135, 7, 63, 85, 131, 114, 111, 224]),
       ),
       0,
@@ -299,6 +314,17 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([155, 213, 140, 249, 53, 59, 20, 5]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetPaymentToken;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([19, 70, 111, 182, 156, 58, 208, 203]),
       ),
       0,
@@ -321,12 +347,56 @@ export function identifyAgenticCommerceV3Instruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([217, 184, 101, 32, 234, 70, 199, 138]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetSponsor;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([189, 148, 160, 57, 93, 97, 60, 7]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetSponsorShards;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([171, 66, 139, 123, 214, 4, 55, 199]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SetTreasuryShards;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([88, 166, 102, 181, 162, 127, 170, 48]),
       ),
       0,
     )
   ) {
     return AgenticCommerceV3Instruction.Submit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([125, 203, 4, 4, 87, 34, 238, 169]),
+      ),
+      0,
+    )
+  ) {
+    return AgenticCommerceV3Instruction.SweepTreasury;
   }
   throw new Error(
     "The provided instruction could not be identified as a agenticCommerceV3 instruction.",
@@ -337,6 +407,9 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
   | ({
       instructionType: AgenticCommerceV3Instruction.AcceptAuthority;
     } & ParsedAcceptAuthorityInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.AcceptTreasuryAuthority;
+    } & ParsedAcceptTreasuryAuthorityInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.AddHookWhitelist;
     } & ParsedAddHookWhitelistInstruction<TProgram>)
@@ -365,6 +438,9 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
       instructionType: AgenticCommerceV3Instruction.NominateAuthority;
     } & ParsedNominateAuthorityInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.NominateTreasuryAuthority;
+    } & ParsedNominateTreasuryAuthorityInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.Reject;
     } & ParsedRejectInstruction<TProgram>)
   | ({
@@ -380,149 +456,26 @@ export type ParsedAgenticCommerceV3Instruction<TProgram extends string = ""> =
       instructionType: AgenticCommerceV3Instruction.SetPause;
     } & ParsedSetPauseInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.SetPaymentToken;
+    } & ParsedSetPaymentTokenInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.SetPlatformFee;
     } & ParsedSetPlatformFeeInstruction<TProgram>)
   | ({
       instructionType: AgenticCommerceV3Instruction.SetProvider;
     } & ParsedSetProviderInstruction<TProgram>)
   | ({
+      instructionType: AgenticCommerceV3Instruction.SetSponsor;
+    } & ParsedSetSponsorInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SetSponsorShards;
+    } & ParsedSetSponsorShardsInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SetTreasuryShards;
+    } & ParsedSetTreasuryShardsInstruction<TProgram>)
+  | ({
       instructionType: AgenticCommerceV3Instruction.Submit;
-    } & ParsedSubmitInstruction<TProgram>);
-
-export function parseAgenticCommerceV3Instruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedAgenticCommerceV3Instruction<TProgram> {
-  const instructionType = identifyAgenticCommerceV3Instruction(instruction);
-  switch (instructionType) {
-    case AgenticCommerceV3Instruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.AddHookWhitelist: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.AddHookWhitelist,
-        ...parseAddHookWhitelistInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.ClaimRefund: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.ClaimRefund,
-        ...parseClaimRefundInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Complete: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Complete,
-        ...parseCompleteInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.CreateJob: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.CreateJob,
-        ...parseCreateJobInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.DetachHook: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.DetachHook,
-        ...parseDetachHookInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Fund: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Fund,
-        ...parseFundInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.MigrateState: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.MigrateState,
-        ...parseMigrateStateInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.NominateAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Reject: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Reject,
-        ...parseRejectInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.RemoveHookWhitelist: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.RemoveHookWhitelist,
-        ...parseRemoveHookWhitelistInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetBudget: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetBudget,
-        ...parseSetBudgetInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetEvaluatorFee: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetEvaluatorFee,
-        ...parseSetEvaluatorFeeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetPause: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetPause,
-        ...parseSetPauseInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetPlatformFee: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetPlatformFee,
-        ...parseSetPlatformFeeInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.SetProvider: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.SetProvider,
-        ...parseSetProviderInstruction(instruction),
-      };
-    }
-    case AgenticCommerceV3Instruction.Submit: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AgenticCommerceV3Instruction.Submit,
-        ...parseSubmitInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}
+    } & ParsedSubmitInstruction<TProgram>)
+  | ({
+      instructionType: AgenticCommerceV3Instruction.SweepTreasury;
+    } & ParsedSweepTreasuryInstruction<TProgram>);

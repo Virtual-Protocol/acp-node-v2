@@ -20,17 +20,18 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
-export type Refunded = { jobId: bigint; client: Address; amount: bigint };
+/** Emitted when escrowed tokens are returned to the client (rejection or expiry). */
+export type Refunded = { job: Address; client: Address; amount: bigint };
 
 export type RefundedArgs = {
-  jobId: number | bigint;
+  job: Address;
   client: Address;
   amount: number | bigint;
 };
 
 export function getRefundedEncoder(): FixedSizeEncoder<RefundedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["client", getAddressEncoder()],
     ["amount", getU64Encoder()],
   ]);
@@ -38,7 +39,7 @@ export function getRefundedEncoder(): FixedSizeEncoder<RefundedArgs> {
 
 export function getRefundedDecoder(): FixedSizeDecoder<Refunded> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["client", getAddressDecoder()],
     ["amount", getU64Decoder()],
   ]);

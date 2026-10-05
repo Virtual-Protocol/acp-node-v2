@@ -6,8 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from "./fundRequestIntentId.js";
 export * from "./hookMetadata.js";
 export * from "./hookState.js";
 export * from "./intent.js";
-export * from "./providerEscrowIntentId.js";

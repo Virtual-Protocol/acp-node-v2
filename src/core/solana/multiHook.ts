@@ -2,12 +2,10 @@
  * Solana multi-hook-router + subscription-hook support: PDA derivations and
  * opt-params encoders in @solana/kit style.
  *
- * These are the building blocks the router CPI fan-out needs. The router routes
- * a job's lifecycle action (setBudget/fund/submit/complete/reject) to a
- * per-selector list of sub-hooks (fund-transfer-hook, subscription-hook); each
- * sub-hook's accounts are appended to the instruction's remainingAccounts in a
- * fixed order, prefixed by a multi-hook header that tells the router how many
- * accounts and what opt-params belong to each sub-hook.
+ * The router routes a job's lifecycle action to a per-selector list of
+ * sub-hooks. Each sub-hook's accounts are appended to remainingAccounts in a
+ * fixed order, prefixed by a header declaring how many accounts and what
+ * opt-params belong to each.
  */
 import {
   getProgramDerivedAddress,
@@ -37,23 +35,28 @@ async function pda(programAddress: Address, seeds: ReadonlyUint8Array[]): Promis
 // PDA derivations (program id is passed in per call)
 // ---------------------------------------------------------------------------
 
+// A job's identity IS its account address, derived from ["job", client, seed]
+// where `seed` is a caller-chosen uniquifier. Every other PDA is seeded by
+// that address (`job_key`), never by the seed value directly.
 export const acpStatePda = (acp: Address) => pda(acp, [utf8.encode("acp_state")]);
-export const jobPda = (acp: Address, client: Address, jobId: bigint) =>
-  pda(acp, [utf8.encode("job"), addr.encode(client), u64le(jobId)]);
+export const jobPda = (acp: Address, client: Address, seed: bigint) =>
+  pda(acp, [utf8.encode("job"), addr.encode(client), u64le(seed)]);
 export const hookWhitelistPda = (acp: Address, hook: Address) =>
   pda(acp, [utf8.encode("hook_whitelist"), addr.encode(hook)]);
 export const vaultAuthorityPda = (acp: Address, job: Address) =>
   pda(acp, [utf8.encode("vault_authority"), addr.encode(job)]);
+export const vaultPda = (acp: Address, job: Address) =>
+  pda(acp, [utf8.encode("vault"), addr.encode(job)]);
 
 export const hookStatePda = (hook: Address) => pda(hook, [utf8.encode("hook_state")]);
 export const hookMetadataPda = (hook: Address) => pda(hook, [utf8.encode("hook_metadata")]);
 
 export const routerStatePda = (router: Address) => pda(router, [utf8.encode("router_state")]);
-export const hookRouterPda = (router: Address, jobId: bigint) =>
-  pda(router, [utf8.encode("hook_router"), u64le(jobId)]);
+export const hookRouterPda = (router: Address, job: Address) =>
+  pda(router, [utf8.encode("hook_router"), addr.encode(job)]);
 
-export const proposedTermsPda = (subHook: Address, jobId: bigint) =>
-  pda(subHook, [utf8.encode("proposed_terms"), u64le(jobId)]);
+export const proposedTermsPda = (subHook: Address, job: Address) =>
+  pda(subHook, [utf8.encode("proposed_terms"), addr.encode(job)]);
 
 export const subExpiryPda = (subState: Address, client: Address, provider: Address, pkg: bigint) =>
   pda(subState, [
@@ -66,14 +69,14 @@ export const writerRegistryPda = (subState: Address, writer: Address) =>
   pda(subState, [utf8.encode("writer"), addr.encode(writer)]);
 export const stateConfigPda = (subState: Address) => pda(subState, [utf8.encode("state_config")]);
 
-export const intentPda = (fundHook: Address, jobId: bigint, kind: 0 | 1) =>
-  pda(fundHook, [utf8.encode("intent"), u64le(jobId), new Uint8Array([kind])]);
-export const fundRequestIntentIdPda = (fundHook: Address, jobId: bigint) =>
-  pda(fundHook, [utf8.encode("fund_request_intent_id"), u64le(jobId)]);
-export const providerEscrowIntentIdPda = (fundHook: Address, jobId: bigint) =>
-  pda(fundHook, [utf8.encode("provider_escrow_intent_id"), u64le(jobId)]);
-export const escrowAuthorityPda = (fundHook: Address, jobId: bigint) =>
-  pda(fundHook, [utf8.encode("escrow_authority"), u64le(jobId)]);
+export const intentPda = (fundHook: Address, job: Address, kind: 0 | 1) =>
+  pda(fundHook, [utf8.encode("intent"), addr.encode(job), new Uint8Array([kind])]);
+export const fundRequestIntentIdPda = (fundHook: Address, job: Address) =>
+  pda(fundHook, [utf8.encode("fund_request_intent_id"), addr.encode(job)]);
+export const providerEscrowIntentIdPda = (fundHook: Address, job: Address) =>
+  pda(fundHook, [utf8.encode("provider_escrow_intent_id"), addr.encode(job)]);
+export const escrowAuthorityPda = (fundHook: Address, job: Address) =>
+  pda(fundHook, [utf8.encode("escrow_authority"), addr.encode(job)]);
 
 // ---------------------------------------------------------------------------
 // Opt-params encoders (byte-for-byte compatible with what the deployed
@@ -142,20 +145,19 @@ export function encodeEscrowProposal(token: Address, amount: bigint): Uint8Array
 // ---------------------------------------------------------------------------
 
 /**
- * Anchor discriminator for the subscription hook's ProposedTerms account:
- * sha256("account:ProposedTerms")[0..8]. The account type is not exposed in
- * the hook's IDL, so no Codama fetcher exists — this module reads it raw.
+ * sha256("account:ProposedTerms")[0..8]. The type is not in the hook's IDL, so
+ * there is no generated fetcher and this module reads the account raw.
  */
 const PROPOSED_TERMS_DISCRIMINATOR = new Uint8Array([
   0xf3, 0xa5, 0xca, 0x36, 0x04, 0x40, 0x3d, 0x6e,
 ]);
 
-// On-chain ProposedTerms layout: 8-byte discriminator,
-// job_id u64 LE, provider Pubkey, duration i64 LE, package_id u64 LE, bump u8.
-const PROPOSED_TERMS_SIZE = 8 + 8 + 32 + 8 + 8 + 1;
+// On-chain ProposedTerms layout: 8-byte discriminator, job_key Pubkey,
+// provider Pubkey, duration i64 LE, package_id u64 LE, bump u8.
+const PROPOSED_TERMS_SIZE = 8 + 32 + 32 + 8 + 8 + 1;
 
 export type ProposedTerms = {
-  jobId: bigint;
+  job: Address;
   provider: Address;
   /** Subscription duration in seconds (i64; the hook rejects non-positive). */
   duration: bigint;
@@ -163,11 +165,9 @@ export type ProposedTerms = {
 };
 
 /**
- * Read and decode the subscription hook's proposed_terms PDA for a job.
- * Returns null when the account does not exist, was closed, or does not
- * decode as ProposedTerms for this jobId (defensive: length, discriminator,
- * and job-id echo are all checked, so a layout drift in the on-chain program
- * surfaces as null rather than as garbage terms).
+ * Read and decode the subscription hook's proposed_terms PDA for a job. Null
+ * when the account is absent, closed, or fails the length / discriminator /
+ * job-key checks, so a layout drift surfaces as null rather than garbage.
  */
 export async function fetchProposedTerms(
   rpc: {
@@ -177,10 +177,10 @@ export async function fetchProposedTerms(
     ) => { send: () => Promise<{ value: { data: unknown } | null }> };
   },
   subHook: Address,
-  jobId: bigint,
+  job: Address,
   commitment: "confirmed" | "finalized" | "processed" = "confirmed"
 ): Promise<ProposedTerms | null> {
-  const pdaAddress = await proposedTermsPda(subHook, jobId);
+  const pdaAddress = await proposedTermsPda(subHook, job);
   const info = await rpc
     .getAccountInfo(pdaAddress, { encoding: "base64", commitment })
     .send();
@@ -193,12 +193,142 @@ export async function fetchProposedTerms(
     if (data[i] !== PROPOSED_TERMS_DISCRIMINATOR[i]) return null;
   }
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const storedJobId = view.getBigUint64(8, true);
-  if (storedJobId !== jobId) return null;
+  const storedJobKey = getAddressDecoder().decode(data.subarray(8, 40));
+  if (storedJobKey !== job) return null;
   return {
-    jobId: storedJobId,
-    provider: getAddressDecoder().decode(data.subarray(16, 48)),
-    duration: view.getBigInt64(48, true),
-    packageId: view.getBigUint64(56, true),
+    job: storedJobKey,
+    provider: getAddressDecoder().decode(data.subarray(40, 72)),
+    duration: view.getBigInt64(72, true),
+    packageId: view.getBigUint64(80, true),
+  };
+}
+
+/**
+ * `fetchProposedTerms`, retried while it reads as absent.
+ *
+ * Use this — not the bare reader — whenever the result decides a HOOK ACCOUNT
+ * SLICE. The two answers are not symmetric: the skip slice is a no-op when no
+ * terms exist, but is non-retryably wrong once the PDA does, so a read one
+ * slot behind is worth waiting out.
+ */
+export async function fetchProposedTermsForSlice(
+  rpc: Parameters<typeof fetchProposedTerms>[0],
+  subHook: Address,
+  job: Address,
+  commitment: "confirmed" | "finalized" | "processed" = "confirmed",
+  attempts = 3,
+  delayMs = 250
+): Promise<ProposedTerms | null> {
+  let terms: ProposedTerms | null = null;
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    terms = await fetchProposedTerms(rpc, subHook, job, commitment);
+    if (terms !== null) return terms;
+    if (i < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return terms;
+}
+
+// ---------------------------------------------------------------------------
+// FundRequestIntentId raw reader
+// ---------------------------------------------------------------------------
+
+/**
+ * sha256("account:FundRequestIntentId")[0..8]. No instruction takes the type
+ * typed any more, so it is absent from the IDL and has no generated fetcher;
+ * the layout is unchanged, so this reads it raw like fetchProposedTerms.
+ */
+const FUND_REQUEST_INTENT_ID_DISCRIMINATOR = new Uint8Array([
+  115, 10, 133, 59, 77, 84, 106, 104,
+]);
+
+/** sha256("account:ProviderEscrowIntentId")[0..8]. Absent from the IDL for the
+ *  same reason as its fund-request sibling. */
+const PROVIDER_ESCROW_INTENT_ID_DISCRIMINATOR = new Uint8Array([
+  132, 9, 212, 245, 34, 170, 187, 104,
+]);
+
+// On-chain layout, shared by both maps: 8-byte discriminator, job_key Pubkey,
+// has_live_intent bool, bump u8. An intent's PDA is its identity, so the map
+// only records whether one is live.
+const INTENT_ID_MAP_SIZE = 8 + 32 + 1 + 1;
+
+export type IntentIdMap = {
+  jobKey: Address;
+  hasLiveIntent: boolean;
+  bump: number;
+};
+
+/** @deprecated Kept as an alias so existing imports keep resolving. */
+export type FundRequestIntentId = IntentIdMap;
+
+export type MaybeFundRequestIntentId =
+  | { exists: false }
+  | { exists: true; data: FundRequestIntentId };
+
+/**
+ * Read and decode the fund-transfer hook's fund_request_intent_id PDA.
+ * `exists: false` covers never-created, closed, and wrong discriminator or
+ * length alike, matching the generated fetchMaybe* convention it replaces.
+ */
+export async function fetchMaybeFundRequestIntentId(
+  rpc: IntentIdMapRpc,
+  address: Address,
+  config: { commitment: "confirmed" | "finalized" | "processed" }
+): Promise<MaybeFundRequestIntentId> {
+  return fetchMaybeIntentIdMap(
+    rpc,
+    address,
+    config,
+    FUND_REQUEST_INTENT_ID_DISCRIMINATOR
+  );
+}
+
+/** The escrow-side sibling of the above; same layout, different discriminator. */
+export async function fetchMaybeProviderEscrowIntentId(
+  rpc: IntentIdMapRpc,
+  address: Address,
+  config: { commitment: "confirmed" | "finalized" | "processed" }
+): Promise<MaybeFundRequestIntentId> {
+  return fetchMaybeIntentIdMap(
+    rpc,
+    address,
+    config,
+    PROVIDER_ESCROW_INTENT_ID_DISCRIMINATOR
+  );
+}
+
+type IntentIdMapRpc = {
+  getAccountInfo: (
+    address: Address,
+    config: { encoding: "base64"; commitment: "confirmed" | "finalized" | "processed" }
+  ) => { send: () => Promise<{ value: { data: unknown } | null }> };
+};
+
+async function fetchMaybeIntentIdMap(
+  rpc: IntentIdMapRpc,
+  address: Address,
+  config: { commitment: "confirmed" | "finalized" | "processed" },
+  discriminator: Uint8Array
+): Promise<MaybeFundRequestIntentId> {
+  const info = await rpc
+    .getAccountInfo(address, { encoding: "base64", commitment: config.commitment })
+    .send();
+  const raw = info.value?.data;
+  const b64 = Array.isArray(raw) ? raw[0] : undefined;
+  if (typeof b64 !== "string" || b64.length === 0) return { exists: false };
+  const data = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  if (data.length < INTENT_ID_MAP_SIZE) return { exists: false };
+  for (let i = 0; i < 8; i++) {
+    if (data[i] !== discriminator[i]) return { exists: false };
+  }
+  return {
+    exists: true,
+    data: {
+      jobKey: getAddressDecoder().decode(data.subarray(8, 40)),
+      hasLiveIntent: data[40] === 1,
+      bump: data[41]!,
+    },
   };
 }

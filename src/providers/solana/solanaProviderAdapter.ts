@@ -49,6 +49,13 @@ export class SolanaProviderAdapter implements ISolanaProviderAdapter {
     throw new Error("getSigner() not implemented. Override in subclass.");
   }
 
+  // Default: the wallet funds its own rent. Adapters with an SPL paymaster
+  // override this to return the paymaster's fee payer. `_chainId` is unused
+  // here but part of the interface — paymaster adapters resolve per chain.
+  async getRentPayer(_chainId: number): Promise<string> {
+    return this.getSigner().address;
+  }
+
   async signMessage(message: string): Promise<string> {
     const signer = this.getSigner();
     const [dict] = await signer.signMessages([createSignableMessage(message)]);

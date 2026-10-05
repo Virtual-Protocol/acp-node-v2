@@ -51,8 +51,7 @@ export function getIntentDiscriminatorBytes() {
 
 export type Intent = {
   discriminator: ReadonlyUint8Array;
-  id: bigint;
-  jobId: bigint;
+  jobKey: Address;
   actor: Address;
   isEscrow: boolean;
   isSigned: boolean;
@@ -66,8 +65,7 @@ export type Intent = {
 };
 
 export type IntentArgs = {
-  id: number | bigint;
-  jobId: number | bigint;
+  jobKey: Address;
   actor: Address;
   isEscrow: boolean;
   isSigned: boolean;
@@ -85,8 +83,7 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["id", getU64Encoder()],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["actor", getAddressEncoder()],
       ["isEscrow", getBooleanEncoder()],
       ["isSigned", getBooleanEncoder()],
@@ -105,8 +102,7 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
 export function getIntentDecoder(): FixedSizeDecoder<Intent> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["id", getU64Decoder()],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["actor", getAddressDecoder()],
     ["isEscrow", getBooleanDecoder()],
     ["isSigned", getBooleanDecoder()],
@@ -178,5 +174,5 @@ export async function fetchAllMaybeIntent(
 }
 
 export function getIntentSize(): number {
-  return 164;
+  return 180;
 }

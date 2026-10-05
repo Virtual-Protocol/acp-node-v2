@@ -10,6 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -69,13 +71,19 @@ export type MigrateStateInstruction<
     ]
   >;
 
-export type MigrateStateInstructionData = { discriminator: ReadonlyUint8Array };
+export type MigrateStateInstructionData = {
+  discriminator: ReadonlyUint8Array;
+  sponsor: Address;
+};
 
-export type MigrateStateInstructionDataArgs = {};
+export type MigrateStateInstructionDataArgs = { sponsor: Address };
 
 export function getMigrateStateInstructionDataEncoder(): FixedSizeEncoder<MigrateStateInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["sponsor", getAddressEncoder()],
+    ]),
     (value) => ({ ...value, discriminator: MIGRATE_STATE_DISCRIMINATOR }),
   );
 }
@@ -83,6 +91,7 @@ export function getMigrateStateInstructionDataEncoder(): FixedSizeEncoder<Migrat
 export function getMigrateStateInstructionDataDecoder(): FixedSizeDecoder<MigrateStateInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["sponsor", getAddressDecoder()],
   ]);
 }
 
@@ -105,6 +114,7 @@ export type MigrateStateAsyncInput<
   /** field (offset [8..40]) against the signer in the handler. */
   acpState?: Address<TAccountAcpState>;
   systemProgram?: Address<TAccountSystemProgram>;
+  sponsor: MigrateStateInstructionDataArgs["sponsor"];
 };
 
 export async function getMigrateStateInstructionAsync<
@@ -142,6 +152,9 @@ export async function getMigrateStateInstructionAsync<
     ResolvedAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
@@ -158,7 +171,9 @@ export async function getMigrateStateInstructionAsync<
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode({}),
+    data: getMigrateStateInstructionDataEncoder().encode(
+      args as MigrateStateInstructionDataArgs,
+    ),
     programAddress,
   } as MigrateStateInstruction<
     TProgramAddress,
@@ -177,6 +192,7 @@ export type MigrateStateInput<
   /** field (offset [8..40]) against the signer in the handler. */
   acpState: Address<TAccountAcpState>;
   systemProgram?: Address<TAccountSystemProgram>;
+  sponsor: MigrateStateInstructionDataArgs["sponsor"];
 };
 
 export function getMigrateStateInstruction<
@@ -212,6 +228,9 @@ export function getMigrateStateInstruction<
     ResolvedAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -225,7 +244,9 @@ export function getMigrateStateInstruction<
       getAccountMeta(accounts.acpState),
       getAccountMeta(accounts.systemProgram),
     ],
-    data: getMigrateStateInstructionDataEncoder().encode({}),
+    data: getMigrateStateInstructionDataEncoder().encode(
+      args as MigrateStateInstructionDataArgs,
+    ),
     programAddress,
   } as MigrateStateInstruction<
     TProgramAddress,

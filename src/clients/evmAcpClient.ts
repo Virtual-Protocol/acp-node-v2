@@ -20,6 +20,7 @@ import type {
   CompleteParams,
   CreateJobParams,
   FundParams,
+  JobId,
   OnChainJob,
   PreparedEvmTx,
   PreparedTxInput,
@@ -227,13 +228,14 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
 
   override async getJob(
     chainId: number,
-    jobId: bigint
+    jobId: JobId
   ): Promise<OnChainJob | null> {
+    const id = BigInt(jobId);
     const result = await this.provider.readContract(chainId, {
       address: this.getContractAddress(chainId) as Address,
       abi: ACP_ABI as readonly unknown[],
       functionName: "getJob",
-      args: [jobId],
+      args: [id],
     });
 
     const raw = result as {
@@ -247,7 +249,7 @@ export class EvmAcpClient extends BaseAcpClient<Call[]> {
       hook: string;
     };
     return {
-      id: jobId,
+      id,
       client: raw.client,
       provider: raw.provider,
       evaluator: raw.evaluator,

@@ -1,10 +1,9 @@
 import { ACP_SERVER_URL } from "../core/constants.js";
 
 /**
- * Auth client for the ACP server's `/auth/agent` endpoint. Both EVM and Solana
- * authenticate by signing the plain `acp-auth:<timestamp>` challenge message;
- * the server picks the verification primitive by chain (ECDSA/EIP-7702 for EVM,
- * Ed25519 for Solana).
+ * Auth client for the ACP server's agent endpoint. EVM and Solana both
+ * authenticate by signing the challenge message; the server picks the
+ * verification primitive by chain.
  */
 export interface AuthTokenStore {
   get(): string | undefined;

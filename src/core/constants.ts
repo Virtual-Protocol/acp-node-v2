@@ -27,11 +27,8 @@ export class UnknownChainIdError extends Error {
 }
 
 /**
- * Resolve a chain id to its family. Fails closed.
- *
- * This used to return "evm" for anything that was not Solana, so an
- * unregistered id silently reached the EVM client and failed later with an
- * unrelated-looking error rather than at the point of the mistake.
+ * Resolve a chain id to its family. Fails closed, so an unregistered id is
+ * rejected here rather than reaching a client that cannot serve it.
  */
 export function getChainFamily(chainId: number): ChainFamily {
   if (chainId in SOLANA_CHAIN_ID_CLUSTERS) return "solana";
@@ -65,6 +62,9 @@ export const JOB_CREATED_EVENT_DISC = new Uint8Array([
   48, 110, 162, 177, 67, 74, 159, 131,
 ]);
 
+// Address Lookup Table program — native and identical on every cluster, so
+// not chain-keyed.
+export const ALT_PROGRAM_ID = "AddressLookupTab1e1111111111111111111111111";
 // ---------------------------------------------------------------------------
 // Chain-keyed address registries
 // ---------------------------------------------------------------------------
@@ -81,12 +81,38 @@ export const USDC_ADDRESSES: Record<number, string> = {
   [arcTestnet.id]: "0xECc22a8F6fD62388498fBa19813E214605a2BDb3",
 };
 
+// SPL fee-token mints for the Kora SPL-paid tier list; USDC lives in
+// USDC_ADDRESSES above. Empty entries are dropped by defaultSplFeeTokens, so
+// the list degrades to what is populated. Do not guess mint addresses.
+// VIRTUAL is 9 decimals, USDC/USDT 6 — never share a decimal constant here.
+export const SOLANA_VIRTUAL_MINTS: Record<number, string> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "FFyf9eN5aN26Sw3n4JhW3vrD1Jx1fFT9oRZ2nVukA6Pp",
+  [SOLANA_MAINNET_CHAIN_ID]: "3iQL8BFS2vE7mww4ehAqQHAsbmRNCrPxizWAT2Zfyr9y",
+};
+
+export const SOLANA_USDT_MINTS: Record<number, string> = {
+  [SOLANA_DEVNET_CHAIN_ID]: "", // TODO: USDT devnet mint
+  [SOLANA_MAINNET_CHAIN_ID]: "", // TODO: USDT mainnet mint
+};
+
+/**
+ * Default SPL fee-token priority for a Solana chain: VIRTUAL -> USDC -> USDT,
+ * mirroring the EVM ERC-20 gas-token tiers. Missing mints are dropped.
+ */
+export function defaultSplFeeTokens(chainId: number): string[] {
+  return [
+    SOLANA_VIRTUAL_MINTS[chainId],
+    USDC_ADDRESSES[chainId],
+    SOLANA_USDT_MINTS[chainId],
+  ].filter((m): m is string => !!m);
+}
+
 export const ACP_CONTRACT_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [bscTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [base.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
   [SOLANA_DEVNET_CHAIN_ID]: "FVd3tKVfUWH7DDPrUodQqv6uJT2efd6Bw8mYuiUWFf8Y",
-  [SOLANA_MAINNET_CHAIN_ID]: "2heRZzq7QY8EX2hLceTron7jkzQe8uqsRztQnseavCcx",
+  [SOLANA_MAINNET_CHAIN_ID]: "GFASZMVakVEBYo8vDJvhc7zfQ21T6mrPeWe4JNC7z9YP",
   [robinhoodTestnet.id]: "0x0b93793923CD5De81850aF8604a233f3f24d461e",
   [robinhood.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
   [arc.id]: "0x238E541BfefD82238730D00a2208E5497F1832E0",
@@ -98,7 +124,7 @@ export const FUND_TRANSFER_HOOK_ADDRESSES: Record<number, string> = {
   [bscTestnet.id]: "0xaD1d2BB31C40e3D0f14631721Babc4b889F38796",
   [base.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [SOLANA_DEVNET_CHAIN_ID]: "HaNGaZnXPBkZBU75BB3XJ8oah3yRuqDHqBfeeHL7f41Q",
-  [SOLANA_MAINNET_CHAIN_ID]: "Bq83ckifu1yS5WrUiG46eFPmtfFMzpaSUTJQHot6f14",
+  [SOLANA_MAINNET_CHAIN_ID]: "EjuUUZuBHs47kPVjWzvD1DJzfAgTXVvKVKrDaRgVoju1",
   [robinhoodTestnet.id]: "0xbbeC2c985F9483473B9e0Da0704395943034266B",
   [robinhood.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
   [arc.id]: "0x0EaD25150985Bce0B4925c54E4ee1D856381A86B",
@@ -112,7 +138,7 @@ export const MULTI_HOOK_ROUTER_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [base.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [SOLANA_DEVNET_CHAIN_ID]: "EfaW12djNhjHhyw8oTmxBLABqN1uUXofGGpbbnvw6QU5",
-  [SOLANA_MAINNET_CHAIN_ID]: "6gP86dzKK28nuAxNueEUt2vdr5FADAjrFUZr2VBgbzxZ",
+  [SOLANA_MAINNET_CHAIN_ID]: "CSiGLgpBif1AuEU1XViYRsmV6X2X7SN8vNhc5mztKnB6",
   [robinhoodTestnet.id]: "0x5Af0589bD265d2B5Abb617570Ceef8f34Ac6BcdD",
   [robinhood.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
   [arc.id]: "0x77F67252a8d3A6b049f4383FD50Fb9Bf784D29D1",
@@ -123,7 +149,7 @@ export const SUBSCRIPTION_HOOK_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [base.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [SOLANA_DEVNET_CHAIN_ID]: "6XdTqLDQDXpd312sspR6MZ1LuDb16FAHPdDYegMXFATP",
-  [SOLANA_MAINNET_CHAIN_ID]: "wiBJusTQ5ZzyvVT7nUwQsvyHTgb4wM617GgHXYZ2MXg",
+  [SOLANA_MAINNET_CHAIN_ID]: "79yCchFsY1tgnwAEVGhNcjDcpmdnJMjntx7s2bNimkgb",
   [robinhoodTestnet.id]: "0x6eA4c9C6dA120B193e3C2249CCA81ead3Cfb318f",
   [robinhood.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
   [arc.id]: "0xD087363615f36F2b0265Bb4AC78Cd730C6C0cc1D",
@@ -134,7 +160,7 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
   [baseSepolia.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [base.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [SOLANA_DEVNET_CHAIN_ID]: "5L694HKw4DvqDCUXAQ5XJhXgkYH3N4RuogrcJDsuTTU1",
-  [SOLANA_MAINNET_CHAIN_ID]: "5E9txkfq1RafMXXMWWij8kcJxuDcR6EaKUoxTJ3do9zc",
+  [SOLANA_MAINNET_CHAIN_ID]: "5jfRqQpHoeMLRDBa8fVuaGinXYAXrDvcdig5JskpjzDU",
   [robinhoodTestnet.id]: "0x6f254046aA8A9c253f839eb64Da1FE284930100F",
   [robinhood.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
   [arc.id]: "0x52c2C68f4f7fF3C70760E3D0B9b2FA91CFE443Ad",
@@ -142,8 +168,8 @@ export const SUBSCRIPTION_STATE_ADDRESSES: Record<number, string> = {
 };
 
 export const MULTI_HOOK_COMPLETE_ALT_ADDRESSES: Record<number, string> = {
-  [SOLANA_DEVNET_CHAIN_ID]: "BXxVuLL76ue6ixDRanyYAmx2DLXdsaELj6eyPTZUMUwP",
-  [SOLANA_MAINNET_CHAIN_ID]: "HvtMFzNA3xwvuXT55rPxJL4qYhSP6s1hhFnfijgV4b9D",
+  [SOLANA_DEVNET_CHAIN_ID]: "6FixpNhL1MKXmJSU5DmKzVjLvi5iRDLbgRfG2TmNCciA",
+  [SOLANA_MAINNET_CHAIN_ID]: "CLF5jGn6L33DZYP1eMxk7oHftbopnRRSVn75yPPT7Wm4",
 };
 
 export const ACP_SELECTORS = {
@@ -225,6 +251,14 @@ export const SUPPORTED_CHAINS = [
   {
     id: arc.id,
     name: arc.name,
+  },
+  {
+    id: SOLANA_DEVNET_CHAIN_ID,
+    name: "Solana Devnet",
+  },
+  {
+    id: SOLANA_MAINNET_CHAIN_ID,
+    name: "Solana Mainnet",
   },
 ];
 

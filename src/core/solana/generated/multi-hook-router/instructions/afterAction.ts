@@ -20,8 +20,6 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -80,7 +78,7 @@ export type AfterActionInstruction<
 
 export type AfterActionInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -88,7 +86,7 @@ export type AfterActionInstructionData = {
 };
 
 export type AfterActionInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   optParams: ReadonlyUint8Array;
   caller: Address;
@@ -99,7 +97,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["optParams", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
       ["caller", getAddressEncoder()],
@@ -112,7 +110,7 @@ export function getAfterActionInstructionDataEncoder(): Encoder<AfterActionInstr
 export function getAfterActionInstructionDataDecoder(): Decoder<AfterActionInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["optParams", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
     ["caller", getAddressDecoder()],
@@ -139,7 +137,7 @@ export type AfterActionAsyncInput<
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
   instructionsSysvar?: Address<TAccountInstructionsSysvar>;
-  jobId: AfterActionInstructionDataArgs["jobId"];
+  jobKey: AfterActionInstructionDataArgs["jobKey"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];
@@ -190,7 +188,7 @@ export async function getAfterActionInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
@@ -229,7 +227,7 @@ export type AfterActionInput<
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
   instructionsSysvar?: Address<TAccountInstructionsSysvar>;
-  jobId: AfterActionInstructionDataArgs["jobId"];
+  jobKey: AfterActionInstructionDataArgs["jobKey"];
   action: AfterActionInstructionDataArgs["action"];
   optParams: AfterActionInstructionDataArgs["optParams"];
   caller: AfterActionInstructionDataArgs["caller"];

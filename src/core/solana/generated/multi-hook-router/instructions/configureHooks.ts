@@ -18,8 +18,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -89,13 +87,13 @@ export type ConfigureHooksInstruction<
 
 export type ConfigureHooksInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hooks: Array<Address>;
 };
 
 export type ConfigureHooksInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   hooks: Array<Address>;
 };
@@ -104,7 +102,7 @@ export function getConfigureHooksInstructionDataEncoder(): Encoder<ConfigureHook
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["hooks", getArrayEncoder(getAddressEncoder())],
     ]),
@@ -115,7 +113,7 @@ export function getConfigureHooksInstructionDataEncoder(): Encoder<ConfigureHook
 export function getConfigureHooksInstructionDataDecoder(): Decoder<ConfigureHooksInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hooks", getArrayDecoder(getAddressDecoder())],
   ]);
@@ -140,10 +138,17 @@ export type ConfigureHooksAsyncInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
+  /**
+   * `Account<HookRouter>` with `init_if_needed`: the account is exact-fit,
+   * so its length varies with its contents, and `init_if_needed`'s codegen
+   * post-checks the length against a fixed `space =` expression. Every call
+   * after the first would fail `ConstraintSpace`. The seeds below still pin
+   * the address.
+   */
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: ConfigureHooksInstructionDataArgs["jobId"];
+  jobKey: ConfigureHooksInstructionDataArgs["jobKey"];
   action: ConfigureHooksInstructionDataArgs["action"];
   hooks: ConfigureHooksInstructionDataArgs["hooks"];
 };
@@ -197,7 +202,7 @@ export async function getConfigureHooksInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
@@ -240,10 +245,17 @@ export type ConfigureHooksInput<
 > = {
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
+  /**
+   * `Account<HookRouter>` with `init_if_needed`: the account is exact-fit,
+   * so its length varies with its contents, and `init_if_needed`'s codegen
+   * post-checks the length against a fixed `space =` expression. Every call
+   * after the first would fail `ConstraintSpace`. The seeds below still pin
+   * the address.
+   */
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
   systemProgram?: Address<TAccountSystemProgram>;
-  jobId: ConfigureHooksInstructionDataArgs["jobId"];
+  jobKey: ConfigureHooksInstructionDataArgs["jobKey"];
   action: ConfigureHooksInstructionDataArgs["action"];
   hooks: ConfigureHooksInstructionDataArgs["hooks"];
 };
@@ -329,6 +341,13 @@ export type ParsedConfigureHooksInstruction<
   accounts: {
     client: TAccountMetas[0];
     job: TAccountMetas[1];
+    /**
+     * `Account<HookRouter>` with `init_if_needed`: the account is exact-fit,
+     * so its length varies with its contents, and `init_if_needed`'s codegen
+     * post-checks the length against a fixed `space =` expression. Every call
+     * after the first would fail `ConstraintSpace`. The seeds below still pin
+     * the address.
+     */
     hookRouter: TAccountMetas[2];
     routerState: TAccountMetas[3];
     systemProgram: TAccountMetas[4];

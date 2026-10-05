@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -31,10 +29,10 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
-  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
+  type WritableSignerAccount,
 } from "@solana/kit";
 import { findHookRouterPda, findRouterStatePda } from "../pdas/index.js";
 import { MULTI_HOOK_ROUTER_PROGRAM_ADDRESS } from "../programs/index.js";
@@ -60,13 +58,15 @@ export type AddHookInstruction<
   TAccountRouterState extends string | AccountMeta<string> = string,
   TAccountHookWhitelist extends string | AccountMeta<string> = string,
   TAccountHookMetadata extends string | AccountMeta<string> = string,
+  TAccountSystemProgram extends string | AccountMeta<string> =
+    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
       TAccountClient extends string
-        ? ReadonlySignerAccount<TAccountClient> &
+        ? WritableSignerAccount<TAccountClient> &
             AccountSignerMeta<TAccountClient>
         : TAccountClient,
       TAccountJob extends string ? ReadonlyAccount<TAccountJob> : TAccountJob,
@@ -82,19 +82,22 @@ export type AddHookInstruction<
       TAccountHookMetadata extends string
         ? ReadonlyAccount<TAccountHookMetadata>
         : TAccountHookMetadata,
+      TAccountSystemProgram extends string
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
 export type AddHookInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
 };
 
 export type AddHookInstructionDataArgs = {
-  jobId: number | bigint;
+  jobKey: Address;
   action: number;
   hook: Address;
 };
@@ -103,7 +106,7 @@ export function getAddHookInstructionDataEncoder(): FixedSizeEncoder<AddHookInst
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
       ["action", getU8Encoder()],
       ["hook", getAddressEncoder()],
     ]),
@@ -114,7 +117,7 @@ export function getAddHookInstructionDataEncoder(): FixedSizeEncoder<AddHookInst
 export function getAddHookInstructionDataDecoder(): FixedSizeDecoder<AddHookInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
     ["action", getU8Decoder()],
     ["hook", getAddressDecoder()],
   ]);
@@ -137,14 +140,20 @@ export type AddHookAsyncInput<
   TAccountRouterState extends string = string,
   TAccountHookWhitelist extends string = string,
   TAccountHookMetadata extends string = string,
+  TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Writable and the rent payer: adding a hook grows the router account, and
+   * the top-up needs a system-owned source.
+   */
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
   hookRouter?: Address<TAccountHookRouter>;
   routerState?: Address<TAccountRouterState>;
   hookWhitelist: Address<TAccountHookWhitelist>;
   hookMetadata: Address<TAccountHookMetadata>;
-  jobId: AddHookInstructionDataArgs["jobId"];
+  systemProgram?: Address<TAccountSystemProgram>;
+  jobKey: AddHookInstructionDataArgs["jobKey"];
   action: AddHookInstructionDataArgs["action"];
   hook: AddHookInstructionDataArgs["hook"];
 };
@@ -156,6 +165,7 @@ export async function getAddHookInstructionAsync<
   TAccountRouterState extends string,
   TAccountHookWhitelist extends string,
   TAccountHookMetadata extends string,
+  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof MULTI_HOOK_ROUTER_PROGRAM_ADDRESS,
 >(
   input: AddHookAsyncInput<
@@ -164,7 +174,8 @@ export async function getAddHookInstructionAsync<
     TAccountHookRouter,
     TAccountRouterState,
     TAccountHookWhitelist,
-    TAccountHookMetadata
+    TAccountHookMetadata,
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -175,7 +186,8 @@ export async function getAddHookInstructionAsync<
     TAccountHookRouter,
     TAccountRouterState,
     TAccountHookWhitelist,
-    TAccountHookMetadata
+    TAccountHookMetadata,
+    TAccountSystemProgram
   >
 > {
   // Program address.
@@ -184,12 +196,13 @@ export async function getAddHookInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    client: { value: input.client ?? null, isWritable: false },
+    client: { value: input.client ?? null, isWritable: true },
     job: { value: input.job ?? null, isWritable: false },
     hookRouter: { value: input.hookRouter ?? null, isWritable: true },
     routerState: { value: input.routerState ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
     hookMetadata: { value: input.hookMetadata ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -202,11 +215,15 @@ export async function getAddHookInstructionAsync<
   // Resolve default values.
   if (!accounts.hookRouter.value) {
     accounts.hookRouter.value = await findHookRouterPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.routerState.value) {
     accounts.routerState.value = await findRouterStatePda();
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
@@ -218,6 +235,7 @@ export async function getAddHookInstructionAsync<
       getAccountMeta(accounts.routerState),
       getAccountMeta(accounts.hookWhitelist),
       getAccountMeta(accounts.hookMetadata),
+      getAccountMeta(accounts.systemProgram),
     ],
     data: getAddHookInstructionDataEncoder().encode(
       args as AddHookInstructionDataArgs,
@@ -230,7 +248,8 @@ export async function getAddHookInstructionAsync<
     TAccountHookRouter,
     TAccountRouterState,
     TAccountHookWhitelist,
-    TAccountHookMetadata
+    TAccountHookMetadata,
+    TAccountSystemProgram
   >);
 }
 
@@ -241,14 +260,20 @@ export type AddHookInput<
   TAccountRouterState extends string = string,
   TAccountHookWhitelist extends string = string,
   TAccountHookMetadata extends string = string,
+  TAccountSystemProgram extends string = string,
 > = {
+  /**
+   * Writable and the rent payer: adding a hook grows the router account, and
+   * the top-up needs a system-owned source.
+   */
   client: TransactionSigner<TAccountClient>;
   job: Address<TAccountJob>;
   hookRouter: Address<TAccountHookRouter>;
   routerState: Address<TAccountRouterState>;
   hookWhitelist: Address<TAccountHookWhitelist>;
   hookMetadata: Address<TAccountHookMetadata>;
-  jobId: AddHookInstructionDataArgs["jobId"];
+  systemProgram?: Address<TAccountSystemProgram>;
+  jobKey: AddHookInstructionDataArgs["jobKey"];
   action: AddHookInstructionDataArgs["action"];
   hook: AddHookInstructionDataArgs["hook"];
 };
@@ -260,6 +285,7 @@ export function getAddHookInstruction<
   TAccountRouterState extends string,
   TAccountHookWhitelist extends string,
   TAccountHookMetadata extends string,
+  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof MULTI_HOOK_ROUTER_PROGRAM_ADDRESS,
 >(
   input: AddHookInput<
@@ -268,7 +294,8 @@ export function getAddHookInstruction<
     TAccountHookRouter,
     TAccountRouterState,
     TAccountHookWhitelist,
-    TAccountHookMetadata
+    TAccountHookMetadata,
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): AddHookInstruction<
@@ -278,7 +305,8 @@ export function getAddHookInstruction<
   TAccountHookRouter,
   TAccountRouterState,
   TAccountHookWhitelist,
-  TAccountHookMetadata
+  TAccountHookMetadata,
+  TAccountSystemProgram
 > {
   // Program address.
   const programAddress =
@@ -286,12 +314,13 @@ export function getAddHookInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    client: { value: input.client ?? null, isWritable: false },
+    client: { value: input.client ?? null, isWritable: true },
     job: { value: input.job ?? null, isWritable: false },
     hookRouter: { value: input.hookRouter ?? null, isWritable: true },
     routerState: { value: input.routerState ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
     hookMetadata: { value: input.hookMetadata ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -300,6 +329,12 @@ export function getAddHookInstruction<
 
   // Original args.
   const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -310,6 +345,7 @@ export function getAddHookInstruction<
       getAccountMeta(accounts.routerState),
       getAccountMeta(accounts.hookWhitelist),
       getAccountMeta(accounts.hookMetadata),
+      getAccountMeta(accounts.systemProgram),
     ],
     data: getAddHookInstructionDataEncoder().encode(
       args as AddHookInstructionDataArgs,
@@ -322,7 +358,8 @@ export function getAddHookInstruction<
     TAccountHookRouter,
     TAccountRouterState,
     TAccountHookWhitelist,
-    TAccountHookMetadata
+    TAccountHookMetadata,
+    TAccountSystemProgram
   >);
 }
 
@@ -332,12 +369,17 @@ export type ParsedAddHookInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
+    /**
+     * Writable and the rent payer: adding a hook grows the router account, and
+     * the top-up needs a system-owned source.
+     */
     client: TAccountMetas[0];
     job: TAccountMetas[1];
     hookRouter: TAccountMetas[2];
     routerState: TAccountMetas[3];
     hookWhitelist: TAccountMetas[4];
     hookMetadata: TAccountMetas[5];
+    systemProgram: TAccountMetas[6];
   };
   data: AddHookInstructionData;
 };
@@ -350,7 +392,7 @@ export function parseAddHookInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAddHookInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -369,6 +411,7 @@ export function parseAddHookInstruction<
       routerState: getNextAccount(),
       hookWhitelist: getNextAccount(),
       hookMetadata: getNextAccount(),
+      systemProgram: getNextAccount(),
     },
     data: getAddHookInstructionDataDecoder().decode(instruction.data),
   };

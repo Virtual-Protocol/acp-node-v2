@@ -21,16 +21,16 @@ import {
 } from "@solana/kit";
 
 export type PayableFundsRefunded = {
-  jobId: bigint;
-  intentId: bigint;
+  jobKey: Address;
+  intentKey: Address;
   sender: Address;
   token: Address;
   amount: bigint;
 };
 
 export type PayableFundsRefundedArgs = {
-  jobId: number | bigint;
-  intentId: number | bigint;
+  jobKey: Address;
+  intentKey: Address;
   sender: Address;
   token: Address;
   amount: number | bigint;
@@ -38,8 +38,8 @@ export type PayableFundsRefundedArgs = {
 
 export function getPayableFundsRefundedEncoder(): FixedSizeEncoder<PayableFundsRefundedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
-    ["intentId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
+    ["intentKey", getAddressEncoder()],
     ["sender", getAddressEncoder()],
     ["token", getAddressEncoder()],
     ["amount", getU64Encoder()],
@@ -48,8 +48,8 @@ export function getPayableFundsRefundedEncoder(): FixedSizeEncoder<PayableFundsR
 
 export function getPayableFundsRefundedDecoder(): FixedSizeDecoder<PayableFundsRefunded> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
-    ["intentId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
+    ["intentKey", getAddressDecoder()],
     ["sender", getAddressDecoder()],
     ["token", getAddressDecoder()],
     ["amount", getU64Decoder()],

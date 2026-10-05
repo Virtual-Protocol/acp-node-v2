@@ -14,8 +14,6 @@ import {
   getBooleanEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
@@ -23,20 +21,18 @@ import {
 } from "@solana/kit";
 
 export type IntentSigned = {
-  intentId: bigint;
+  jobKey: Address;
+  intentKey: Address;
   signer: Address;
   isApproved: boolean;
 };
 
-export type IntentSignedArgs = {
-  intentId: number | bigint;
-  signer: Address;
-  isApproved: boolean;
-};
+export type IntentSignedArgs = IntentSigned;
 
 export function getIntentSignedEncoder(): FixedSizeEncoder<IntentSignedArgs> {
   return getStructEncoder([
-    ["intentId", getU64Encoder()],
+    ["jobKey", getAddressEncoder()],
+    ["intentKey", getAddressEncoder()],
     ["signer", getAddressEncoder()],
     ["isApproved", getBooleanEncoder()],
   ]);
@@ -44,7 +40,8 @@ export function getIntentSignedEncoder(): FixedSizeEncoder<IntentSignedArgs> {
 
 export function getIntentSignedDecoder(): FixedSizeDecoder<IntentSigned> {
   return getStructDecoder([
-    ["intentId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
+    ["intentKey", getAddressDecoder()],
     ["signer", getAddressDecoder()],
     ["isApproved", getBooleanDecoder()],
   ]);

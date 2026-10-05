@@ -1,11 +1,7 @@
 /**
  * General Solana wallet helpers — balances + transfer instruction builders.
- *
- * These are EVM-consistent: like the EVM provider keeps a generic
- * `sendTransaction(call)` and relies on encoders to build the call, the Solana
- * provider keeps a generic `sendInstructions(instructions)` and these pure
- * helpers build the instructions / read balances. Compose them and pass to
- * `adapter.sendInstructions(...)`; read balances with `adapter.getRpc()`.
+ * Compose them and pass to `adapter.sendInstructions(...)`; read balances with
+ * `adapter.getRpc()`.
  *
  * Amounts are raw base units: lamports for SOL, token base units for SPL.
  */

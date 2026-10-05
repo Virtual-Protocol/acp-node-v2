@@ -18,6 +18,7 @@ import {
   type FixedSizeEncoder,
 } from "@solana/kit";
 
+/** Emitted when a writer's role is revoked (deactivated, PDA kept alive). */
 export type WriterRemoved = { writer: Address };
 
 export type WriterRemovedArgs = WriterRemoved;

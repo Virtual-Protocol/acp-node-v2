@@ -10,12 +10,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
@@ -32,11 +32,7 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import {
-  findEscrowAuthorityPda,
-  findHookStatePda,
-  findProviderEscrowIntentIdPda,
-} from "../pdas/index.js";
+import { findEscrowAuthorityPda, findHookStatePda } from "../pdas/index.js";
 import { FUND_TRANSFER_HOOK_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   expectSome,
@@ -59,13 +55,14 @@ export type ClaimEscrowRefundInstruction<
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountHookState extends string | AccountMeta<string> = string,
   TAccountJobAccount extends string | AccountMeta<string> = string,
-  TAccountProviderEscrowIntentId extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
   TAccountEscrowVault extends string | AccountMeta<string> = string,
   TAccountProviderTokenAccount extends string | AccountMeta<string> = string,
   TAccountEscrowAuthority extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountAcpState extends string | AccountMeta<string> = string,
+  TAccountSponsor extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -81,9 +78,6 @@ export type ClaimEscrowRefundInstruction<
       TAccountJobAccount extends string
         ? ReadonlyAccount<TAccountJobAccount>
         : TAccountJobAccount,
-      TAccountProviderEscrowIntentId extends string
-        ? ReadonlyAccount<TAccountProviderEscrowIntentId>
-        : TAccountProviderEscrowIntentId,
       TAccountIntent extends string
         ? WritableAccount<TAccountIntent>
         : TAccountIntent,
@@ -99,22 +93,28 @@ export type ClaimEscrowRefundInstruction<
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountAcpState extends string
+        ? ReadonlyAccount<TAccountAcpState>
+        : TAccountAcpState,
+      TAccountSponsor extends string
+        ? WritableAccount<TAccountSponsor>
+        : TAccountSponsor,
       ...TRemainingAccounts,
     ]
   >;
 
 export type ClaimEscrowRefundInstructionData = {
   discriminator: ReadonlyUint8Array;
-  jobId: bigint;
+  jobKey: Address;
 };
 
-export type ClaimEscrowRefundInstructionDataArgs = { jobId: number | bigint };
+export type ClaimEscrowRefundInstructionDataArgs = { jobKey: Address };
 
 export function getClaimEscrowRefundInstructionDataEncoder(): FixedSizeEncoder<ClaimEscrowRefundInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["jobId", getU64Encoder()],
+      ["jobKey", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CLAIM_ESCROW_REFUND_DISCRIMINATOR }),
   );
@@ -123,7 +123,7 @@ export function getClaimEscrowRefundInstructionDataEncoder(): FixedSizeEncoder<C
 export function getClaimEscrowRefundInstructionDataDecoder(): FixedSizeDecoder<ClaimEscrowRefundInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["jobId", getU64Decoder()],
+    ["jobKey", getAddressDecoder()],
   ]);
 }
 
@@ -141,20 +141,20 @@ export type ClaimEscrowRefundAsyncInput<
   TAccountCaller extends string = string,
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
-  TAccountProviderEscrowIntentId extends string = string,
   TAccountIntent extends string = string,
   TAccountEscrowVault extends string = string,
   TAccountProviderTokenAccount extends string = string,
   TAccountEscrowAuthority extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountSponsor extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   hookState?: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
-  providerEscrowIntentId?: Address<TAccountProviderEscrowIntentId>;
   /**
-   * The job-scoped escrow intent. The map is not part of the address
-   * derivation, so the id equality is asserted explicitly.
+   * The job-scoped escrow intent. Its address is its identity, so the seeds
+   * constraint is the whole check.
    */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
@@ -163,31 +163,37 @@ export type ClaimEscrowRefundAsyncInput<
   providerTokenAccount: Address<TAccountProviderTokenAccount>;
   escrowAuthority?: Address<TAccountEscrowAuthority>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  jobId: ClaimEscrowRefundInstructionDataArgs["jobId"];
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  /** equal `acp_state.sponsor`. */
+  sponsor: Address<TAccountSponsor>;
+  jobKey: ClaimEscrowRefundInstructionDataArgs["jobKey"];
 };
 
 export async function getClaimEscrowRefundInstructionAsync<
   TAccountCaller extends string,
   TAccountHookState extends string,
   TAccountJobAccount extends string,
-  TAccountProviderEscrowIntentId extends string,
   TAccountIntent extends string,
   TAccountEscrowVault extends string,
   TAccountProviderTokenAccount extends string,
   TAccountEscrowAuthority extends string,
   TAccountTokenProgram extends string,
+  TAccountAcpState extends string,
+  TAccountSponsor extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
   input: ClaimEscrowRefundAsyncInput<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
     TAccountEscrowAuthority,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountAcpState,
+    TAccountSponsor
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -196,12 +202,13 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
     TAccountEscrowAuthority,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountAcpState,
+    TAccountSponsor
   >
 > {
   // Program address.
@@ -213,10 +220,6 @@ export async function getClaimEscrowRefundInstructionAsync<
     caller: { value: input.caller ?? null, isWritable: false },
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
-    providerEscrowIntentId: {
-      value: input.providerEscrowIntentId ?? null,
-      isWritable: false,
-    },
     intent: { value: input.intent ?? null, isWritable: true },
     escrowVault: { value: input.escrowVault ?? null, isWritable: true },
     providerTokenAccount: {
@@ -228,6 +231,8 @@ export async function getClaimEscrowRefundInstructionAsync<
       isWritable: false,
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -241,14 +246,9 @@ export async function getClaimEscrowRefundInstructionAsync<
   if (!accounts.hookState.value) {
     accounts.hookState.value = await findHookStatePda();
   }
-  if (!accounts.providerEscrowIntentId.value) {
-    accounts.providerEscrowIntentId.value = await findProviderEscrowIntentIdPda(
-      { jobId: expectSome(args.jobId) },
-    );
-  }
   if (!accounts.escrowAuthority.value) {
     accounts.escrowAuthority.value = await findEscrowAuthorityPda({
-      jobId: expectSome(args.jobId),
+      jobKey: expectSome(args.jobKey),
     });
   }
   if (!accounts.tokenProgram.value) {
@@ -262,12 +262,13 @@ export async function getClaimEscrowRefundInstructionAsync<
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
-      getAccountMeta(accounts.providerEscrowIntentId),
       getAccountMeta(accounts.intent),
       getAccountMeta(accounts.escrowVault),
       getAccountMeta(accounts.providerTokenAccount),
       getAccountMeta(accounts.escrowAuthority),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.sponsor),
     ],
     data: getClaimEscrowRefundInstructionDataEncoder().encode(
       args as ClaimEscrowRefundInstructionDataArgs,
@@ -278,12 +279,13 @@ export async function getClaimEscrowRefundInstructionAsync<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
     TAccountEscrowAuthority,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountAcpState,
+    TAccountSponsor
   >);
 }
 
@@ -291,20 +293,20 @@ export type ClaimEscrowRefundInput<
   TAccountCaller extends string = string,
   TAccountHookState extends string = string,
   TAccountJobAccount extends string = string,
-  TAccountProviderEscrowIntentId extends string = string,
   TAccountIntent extends string = string,
   TAccountEscrowVault extends string = string,
   TAccountProviderTokenAccount extends string = string,
   TAccountEscrowAuthority extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAcpState extends string = string,
+  TAccountSponsor extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   hookState: Address<TAccountHookState>;
   jobAccount: Address<TAccountJobAccount>;
-  providerEscrowIntentId: Address<TAccountProviderEscrowIntentId>;
   /**
-   * The job-scoped escrow intent. The map is not part of the address
-   * derivation, so the id equality is asserted explicitly.
+   * The job-scoped escrow intent. Its address is its identity, so the seeds
+   * constraint is the whole check.
    */
   intent: Address<TAccountIntent>;
   /** Escrow vault holding the escrowed tokens */
@@ -313,31 +315,37 @@ export type ClaimEscrowRefundInput<
   providerTokenAccount: Address<TAccountProviderTokenAccount>;
   escrowAuthority: Address<TAccountEscrowAuthority>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  jobId: ClaimEscrowRefundInstructionDataArgs["jobId"];
+  /** against `hook_state.acp_program`. Read only to source the treasury. */
+  acpState: Address<TAccountAcpState>;
+  /** equal `acp_state.sponsor`. */
+  sponsor: Address<TAccountSponsor>;
+  jobKey: ClaimEscrowRefundInstructionDataArgs["jobKey"];
 };
 
 export function getClaimEscrowRefundInstruction<
   TAccountCaller extends string,
   TAccountHookState extends string,
   TAccountJobAccount extends string,
-  TAccountProviderEscrowIntentId extends string,
   TAccountIntent extends string,
   TAccountEscrowVault extends string,
   TAccountProviderTokenAccount extends string,
   TAccountEscrowAuthority extends string,
   TAccountTokenProgram extends string,
+  TAccountAcpState extends string,
+  TAccountSponsor extends string,
   TProgramAddress extends Address = typeof FUND_TRANSFER_HOOK_PROGRAM_ADDRESS,
 >(
   input: ClaimEscrowRefundInput<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
     TAccountEscrowAuthority,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountAcpState,
+    TAccountSponsor
   >,
   config?: { programAddress?: TProgramAddress },
 ): ClaimEscrowRefundInstruction<
@@ -345,12 +353,13 @@ export function getClaimEscrowRefundInstruction<
   TAccountCaller,
   TAccountHookState,
   TAccountJobAccount,
-  TAccountProviderEscrowIntentId,
   TAccountIntent,
   TAccountEscrowVault,
   TAccountProviderTokenAccount,
   TAccountEscrowAuthority,
-  TAccountTokenProgram
+  TAccountTokenProgram,
+  TAccountAcpState,
+  TAccountSponsor
 > {
   // Program address.
   const programAddress =
@@ -361,10 +370,6 @@ export function getClaimEscrowRefundInstruction<
     caller: { value: input.caller ?? null, isWritable: false },
     hookState: { value: input.hookState ?? null, isWritable: false },
     jobAccount: { value: input.jobAccount ?? null, isWritable: false },
-    providerEscrowIntentId: {
-      value: input.providerEscrowIntentId ?? null,
-      isWritable: false,
-    },
     intent: { value: input.intent ?? null, isWritable: true },
     escrowVault: { value: input.escrowVault ?? null, isWritable: true },
     providerTokenAccount: {
@@ -376,6 +381,8 @@ export function getClaimEscrowRefundInstruction<
       isWritable: false,
     },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    acpState: { value: input.acpState ?? null, isWritable: false },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -397,12 +404,13 @@ export function getClaimEscrowRefundInstruction<
       getAccountMeta(accounts.caller),
       getAccountMeta(accounts.hookState),
       getAccountMeta(accounts.jobAccount),
-      getAccountMeta(accounts.providerEscrowIntentId),
       getAccountMeta(accounts.intent),
       getAccountMeta(accounts.escrowVault),
       getAccountMeta(accounts.providerTokenAccount),
       getAccountMeta(accounts.escrowAuthority),
       getAccountMeta(accounts.tokenProgram),
+      getAccountMeta(accounts.acpState),
+      getAccountMeta(accounts.sponsor),
     ],
     data: getClaimEscrowRefundInstructionDataEncoder().encode(
       args as ClaimEscrowRefundInstructionDataArgs,
@@ -413,12 +421,13 @@ export function getClaimEscrowRefundInstruction<
     TAccountCaller,
     TAccountHookState,
     TAccountJobAccount,
-    TAccountProviderEscrowIntentId,
     TAccountIntent,
     TAccountEscrowVault,
     TAccountProviderTokenAccount,
     TAccountEscrowAuthority,
-    TAccountTokenProgram
+    TAccountTokenProgram,
+    TAccountAcpState,
+    TAccountSponsor
   >);
 }
 
@@ -431,18 +440,21 @@ export type ParsedClaimEscrowRefundInstruction<
     caller: TAccountMetas[0];
     hookState: TAccountMetas[1];
     jobAccount: TAccountMetas[2];
-    providerEscrowIntentId: TAccountMetas[3];
     /**
-     * The job-scoped escrow intent. The map is not part of the address
-     * derivation, so the id equality is asserted explicitly.
+     * The job-scoped escrow intent. Its address is its identity, so the seeds
+     * constraint is the whole check.
      */
-    intent: TAccountMetas[4];
+    intent: TAccountMetas[3];
     /** Escrow vault holding the escrowed tokens */
-    escrowVault: TAccountMetas[5];
+    escrowVault: TAccountMetas[4];
     /** Provider's token account to receive refund */
-    providerTokenAccount: TAccountMetas[6];
-    escrowAuthority: TAccountMetas[7];
-    tokenProgram: TAccountMetas[8];
+    providerTokenAccount: TAccountMetas[5];
+    escrowAuthority: TAccountMetas[6];
+    tokenProgram: TAccountMetas[7];
+    /** against `hook_state.acp_program`. Read only to source the treasury. */
+    acpState: TAccountMetas[8];
+    /** equal `acp_state.sponsor`. */
+    sponsor: TAccountMetas[9];
   };
   data: ClaimEscrowRefundInstructionData;
 };
@@ -455,7 +467,7 @@ export function parseClaimEscrowRefundInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimEscrowRefundInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 10) {
     // TODO: Coded error.
     throw new Error("Not enough accounts");
   }
@@ -471,12 +483,13 @@ export function parseClaimEscrowRefundInstruction<
       caller: getNextAccount(),
       hookState: getNextAccount(),
       jobAccount: getNextAccount(),
-      providerEscrowIntentId: getNextAccount(),
       intent: getNextAccount(),
       escrowVault: getNextAccount(),
       providerTokenAccount: getNextAccount(),
       escrowAuthority: getNextAccount(),
       tokenProgram: getNextAccount(),
+      acpState: getNextAccount(),
+      sponsor: getNextAccount(),
     },
     data: getClaimEscrowRefundInstructionDataDecoder().decode(instruction.data),
   };

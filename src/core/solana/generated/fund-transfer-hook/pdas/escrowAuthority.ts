@@ -7,15 +7,15 @@
  */
 
 import {
+  getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
-  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
 export type EscrowAuthoritySeeds = {
-  jobId: number | bigint;
+  jobKey: Address;
 };
 
 export async function findEscrowAuthorityPda(
@@ -32,7 +32,7 @@ export async function findEscrowAuthorityPda(
           116, 121,
         ]),
       ),
-      getU64Encoder().encode(seeds.jobId),
+      getAddressEncoder().encode(seeds.jobKey),
     ],
   });
 }

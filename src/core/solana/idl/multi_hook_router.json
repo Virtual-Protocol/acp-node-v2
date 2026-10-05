@@ -160,6 +160,26 @@
       "code": 6023,
       "msg": "Hook program account is not executable",
       "name": "HookNotExecutable"
+    },
+    {
+      "code": 6024,
+      "msg": "Growing the router needs a rent payer and the system program",
+      "name": "RentPayerMissing"
+    },
+    {
+      "code": 6025,
+      "msg": "Rent destination is not acp_state.sponsor",
+      "name": "InvalidRefundRecipient"
+    },
+    {
+      "code": 6026,
+      "msg": "Job is not in a terminal state",
+      "name": "WrongStatus"
+    },
+    {
+      "code": 6027,
+      "msg": "Cached hook metadata exceeds 5 x max_hooks_per_job entries",
+      "name": "TooManyCachedHooks"
     }
   ],
   "events": [
@@ -201,6 +221,19 @@
         78
       ],
       "name": "HookRemoved"
+    },
+    {
+      "discriminator": [
+        196,
+        106,
+        82,
+        197,
+        52,
+        92,
+        135,
+        55
+      ],
+      "name": "HookRouterClosed"
     },
     {
       "discriminator": [
@@ -246,8 +279,13 @@
     {
       "accounts": [
         {
+          "docs": [
+            "Writable and the rent payer: adding a hook grows the router account, and",
+            "the top-up needs a system-owned source."
+          ],
           "name": "client",
-          "signer": true
+          "signer": true,
+          "writable": true
         },
         {
           "name": "job"
@@ -274,7 +312,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           },
@@ -309,12 +347,16 @@
         },
         {
           "name": "hook_metadata"
+        },
+        {
+          "address": "11111111111111111111111111111111",
+          "name": "system_program"
         }
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -367,7 +409,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           }
@@ -403,8 +445,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -449,6 +491,10 @@
           "name": "job"
         },
         {
+          "docs": [
+            "`ConfigureHooks::hook_router` for why `init_if_needed` cannot be used on",
+            "an exact-fit account. The seeds below still pin the address."
+          ],
           "name": "hook_router",
           "pda": {
             "seeds": [
@@ -470,7 +516,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           },
@@ -507,8 +553,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "set_budget",
@@ -593,7 +639,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           }
@@ -629,8 +675,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -667,14 +713,25 @@
     {
       "accounts": [
         {
-          "name": "client",
-          "signer": true,
-          "writable": true
+          "docs": [
+            "Permissionless. The caller receives nothing — every lamport goes to",
+            "`acp_state.sponsor` — so there is no incentive to race and no",
+            "rent-farming surface. That also lets this double as a sweep for any",
+            "router whose terminal-transaction bundle failed to land."
+          ],
+          "name": "caller",
+          "signer": true
         },
         {
+          "docs": [
+            "`deserialize_job` against `router_state.acp_program`."
+          ],
           "name": "job"
         },
         {
+          "docs": [
+            "so it cannot be `Account<HookRouter>`. Seeds pin the address."
+          ],
           "name": "hook_router",
           "pda": {
             "seeds": [
@@ -696,7 +753,107 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
+              }
+            ]
+          },
+          "writable": true
+        },
+        {
+          "name": "router_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "acp_state"
+        },
+        {
+          "name": "sponsor",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "job_key",
+          "type": "pubkey"
+        }
+      ],
+      "discriminator": [
+        204,
+        155,
+        217,
+        12,
+        192,
+        12,
+        49,
+        65
+      ],
+      "docs": [
+        "Reclaim a terminal job's HookRouter rent to `acp_state.sponsor`.",
+        "Permissionless — the caller receives nothing. A no-op if already closed,",
+        "so it can be swept blindly over a list of terminal jobs."
+      ],
+      "name": "close_hook_router"
+    },
+    {
+      "accounts": [
+        {
+          "name": "client",
+          "signer": true,
+          "writable": true
+        },
+        {
+          "name": "job"
+        },
+        {
+          "docs": [
+            "`Account<HookRouter>` with `init_if_needed`: the account is exact-fit,",
+            "so its length varies with its contents, and `init_if_needed`'s codegen",
+            "post-checks the length against a fixed `space =` expression. Every call",
+            "after the first would fail `ConstraintSpace`. The seeds below still pin",
+            "the address."
+          ],
+          "name": "hook_router",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  111,
+                  107,
+                  95,
+                  114,
+                  111,
+                  117,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "job_key"
               }
             ]
           },
@@ -733,8 +890,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -871,38 +1028,38 @@
               {
                 "kind": "const",
                 "value": [
-                  39,
-                  92,
-                  81,
-                  151,
-                  240,
-                  84,
-                  54,
-                  168,
-                  218,
-                  152,
-                  52,
-                  47,
-                  154,
-                  197,
-                  170,
+                  203,
+                  9,
+                  225,
+                  30,
+                  61,
+                  29,
+                  149,
                   241,
-                  51,
-                  103,
-                  195,
-                  132,
-                  43,
-                  55,
-                  221,
-                  33,
-                  38,
-                  56,
+                  219,
+                  111,
                   190,
-                  33,
-                  142,
-                  233,
+                  59,
+                  76,
+                  171,
+                  208,
+                  45,
+                  19,
+                  245,
+                  181,
+                  160,
                   87,
-                  232
+                  233,
+                  72,
+                  170,
+                  14,
+                  181,
+                  126,
+                  111,
+                  15,
+                  157,
+                  236,
+                  230
                 ]
               }
             ]
@@ -965,7 +1122,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           },
@@ -998,8 +1155,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -1056,7 +1213,7 @@
               },
               {
                 "kind": "arg",
-                "path": "job_id"
+                "path": "job_key"
               }
             ]
           },
@@ -1089,8 +1246,8 @@
       ],
       "args": [
         {
-          "name": "job_id",
-          "type": "u64"
+          "name": "job_key",
+          "type": "pubkey"
         },
         {
           "name": "action",
@@ -1224,8 +1381,8 @@
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "action",
@@ -1244,8 +1401,8 @@
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "action",
@@ -1288,8 +1445,8 @@
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "action",
@@ -1312,8 +1469,8 @@
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "set_budget_hooks",
@@ -1367,12 +1524,37 @@
       }
     },
     {
+      "docs": [
+        "Emitted when a terminal job's `HookRouter` PDA is closed and its rent",
+        "reclaimed. `rent_destination` is recorded so indexers can see where the",
+        "lamports went, following the precedent set by `ProposedTermsCleanedUp`."
+      ],
+      "name": "HookRouterClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "job_key",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "HooksConfigured",
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "action",
@@ -1393,8 +1575,8 @@
       "type": {
         "fields": [
           {
-            "name": "job_id",
-            "type": "u64"
+            "name": "job_key",
+            "type": "pubkey"
           },
           {
             "name": "action",

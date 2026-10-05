@@ -21,8 +21,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -50,15 +48,10 @@ export function getHookStateDiscriminatorBytes() {
 export type HookState = {
   discriminator: ReadonlyUint8Array;
   acpProgram: Address;
-  intentCounter: bigint;
   bump: number;
 };
 
-export type HookStateArgs = {
-  acpProgram: Address;
-  intentCounter: number | bigint;
-  bump: number;
-};
+export type HookStateArgs = { acpProgram: Address; bump: number };
 
 /** Gets the encoder for {@link HookStateArgs} account data. */
 export function getHookStateEncoder(): FixedSizeEncoder<HookStateArgs> {
@@ -66,7 +59,6 @@ export function getHookStateEncoder(): FixedSizeEncoder<HookStateArgs> {
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["acpProgram", getAddressEncoder()],
-      ["intentCounter", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: HOOK_STATE_DISCRIMINATOR }),
@@ -78,7 +70,6 @@ export function getHookStateDecoder(): FixedSizeDecoder<HookState> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["acpProgram", getAddressDecoder()],
-    ["intentCounter", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -142,5 +133,5 @@ export async function fetchAllMaybeHookState(
 }
 
 export function getHookStateSize(): number {
-  return 49;
+  return 41;
 }

@@ -7,24 +7,13 @@
  */
 
 import {
-  assertIsInstructionWithAccounts,
   containsBytes,
   fixEncoderSize,
   getBytesEncoder,
   type Address,
-  type Instruction,
-  type InstructionWithData,
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  parseAcceptAuthorityInstruction,
-  parseActivateSubscriptionInstruction,
-  parseAddWriterInstruction,
-  parseInitializeInstruction,
-  parseNominateAuthorityInstruction,
-  parsePreCreateSubExpiryInstruction,
-  parseReactivateWriterInstruction,
-  parseRemoveWriterInstruction,
   type ParsedAcceptAuthorityInstruction,
   type ParsedActivateSubscriptionInstruction,
   type ParsedAddWriterInstruction,
@@ -218,71 +207,3 @@ export type ParsedSubscriptionStateInstruction<TProgram extends string = ""> =
   | ({
       instructionType: SubscriptionStateInstruction.RemoveWriter;
     } & ParsedRemoveWriterInstruction<TProgram>);
-
-export function parseSubscriptionStateInstruction<TProgram extends string>(
-  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedSubscriptionStateInstruction<TProgram> {
-  const instructionType = identifySubscriptionStateInstruction(instruction);
-  switch (instructionType) {
-    case SubscriptionStateInstruction.AcceptAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.AcceptAuthority,
-        ...parseAcceptAuthorityInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.ActivateSubscription: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.ActivateSubscription,
-        ...parseActivateSubscriptionInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.AddWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.AddWriter,
-        ...parseAddWriterInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.Initialize: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.Initialize,
-        ...parseInitializeInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.NominateAuthority: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.NominateAuthority,
-        ...parseNominateAuthorityInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.PreCreateSubExpiry: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.PreCreateSubExpiry,
-        ...parsePreCreateSubExpiryInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.ReactivateWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.ReactivateWriter,
-        ...parseReactivateWriterInstruction(instruction),
-      };
-    }
-    case SubscriptionStateInstruction.RemoveWriter: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: SubscriptionStateInstruction.RemoveWriter,
-        ...parseRemoveWriterInstruction(instruction),
-      };
-    }
-    default:
-      throw new Error(
-        `Unrecognized instruction type: ${instructionType as string}`,
-      );
-  }
-}

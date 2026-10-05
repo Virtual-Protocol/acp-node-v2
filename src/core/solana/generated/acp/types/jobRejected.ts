@@ -16,8 +16,6 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   type Address,
   type FixedSizeCodec,
   type FixedSizeDecoder,
@@ -25,21 +23,18 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
+/** Emitted when a job is rejected by an evaluator, client, or provider. */
 export type JobRejected = {
-  jobId: bigint;
+  job: Address;
   rejector: Address;
   reason: ReadonlyUint8Array;
 };
 
-export type JobRejectedArgs = {
-  jobId: number | bigint;
-  rejector: Address;
-  reason: ReadonlyUint8Array;
-};
+export type JobRejectedArgs = JobRejected;
 
 export function getJobRejectedEncoder(): FixedSizeEncoder<JobRejectedArgs> {
   return getStructEncoder([
-    ["jobId", getU64Encoder()],
+    ["job", getAddressEncoder()],
     ["rejector", getAddressEncoder()],
     ["reason", fixEncoderSize(getBytesEncoder(), 32)],
   ]);
@@ -47,7 +42,7 @@ export function getJobRejectedEncoder(): FixedSizeEncoder<JobRejectedArgs> {
 
 export function getJobRejectedDecoder(): FixedSizeDecoder<JobRejected> {
   return getStructDecoder([
-    ["jobId", getU64Decoder()],
+    ["job", getAddressDecoder()],
     ["rejector", getAddressDecoder()],
     ["reason", fixDecoderSize(getBytesDecoder(), 32)],
   ]);

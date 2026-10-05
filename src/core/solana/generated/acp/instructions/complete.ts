@@ -34,9 +34,13 @@ import {
   type TransactionSigner,
   type WritableAccount,
 } from "@solana/kit";
-import { findAcpStatePda } from "../pdas/index.js";
+import { findAcpStatePda, findVaultPda } from "../pdas/index.js";
 import { AGENTIC_COMMERCE_V3_PROGRAM_ADDRESS } from "../programs/index.js";
-import { getAccountMetaFactory, type ResolvedAccount } from "../shared/index.js";
+import {
+  expectAddress,
+  getAccountMetaFactory,
+  type ResolvedAccount,
+} from "../shared/index.js";
 
 export const COMPLETE_DISCRIMINATOR = new Uint8Array([
   0, 77, 224, 147, 136, 25, 88, 76,
@@ -56,7 +60,7 @@ export type CompleteInstruction<
   TAccountProviderTokenAccount extends string | AccountMeta<string> = string,
   TAccountTreasuryTokenAccount extends string | AccountMeta<string> = string,
   TAccountEvaluatorTokenAccount extends string | AccountMeta<string> = string,
-  TAccountPlatformTreasury extends string | AccountMeta<string> = string,
+  TAccountSponsor extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountHookProgram extends string | AccountMeta<string> = string,
@@ -89,9 +93,9 @@ export type CompleteInstruction<
       TAccountEvaluatorTokenAccount extends string
         ? WritableAccount<TAccountEvaluatorTokenAccount>
         : TAccountEvaluatorTokenAccount,
-      TAccountPlatformTreasury extends string
-        ? WritableAccount<TAccountPlatformTreasury>
-        : TAccountPlatformTreasury,
+      TAccountSponsor extends string
+        ? WritableAccount<TAccountSponsor>
+        : TAccountSponsor,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -154,7 +158,7 @@ export type CompleteAsyncInput<
   TAccountProviderTokenAccount extends string = string,
   TAccountTreasuryTokenAccount extends string = string,
   TAccountEvaluatorTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
@@ -171,7 +175,8 @@ export type CompleteAsyncInput<
   treasuryTokenAccount?: Address<TAccountTreasuryTokenAccount>;
   /** Optional: required when evaluator_fee_bp > 0 and budget > 0 */
   evaluatorTokenAccount?: Address<TAccountEvaluatorTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -188,7 +193,7 @@ export async function getCompleteInstructionAsync<
   TAccountProviderTokenAccount extends string,
   TAccountTreasuryTokenAccount extends string,
   TAccountEvaluatorTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -203,7 +208,7 @@ export async function getCompleteInstructionAsync<
     TAccountProviderTokenAccount,
     TAccountTreasuryTokenAccount,
     TAccountEvaluatorTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -220,7 +225,7 @@ export async function getCompleteInstructionAsync<
     TAccountProviderTokenAccount,
     TAccountTreasuryTokenAccount,
     TAccountEvaluatorTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -249,10 +254,7 @@ export async function getCompleteInstructionAsync<
       value: input.evaluatorTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -268,6 +270,11 @@ export async function getCompleteInstructionAsync<
   // Resolve default values.
   if (!accounts.acpState.value) {
     accounts.acpState.value = await findAcpStatePda();
+  }
+  if (!accounts.vault.value) {
+    accounts.vault.value = await findVaultPda({
+      job: expectAddress(accounts.job.value),
+    });
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -285,7 +292,7 @@ export async function getCompleteInstructionAsync<
       getAccountMeta(accounts.providerTokenAccount),
       getAccountMeta(accounts.treasuryTokenAccount),
       getAccountMeta(accounts.evaluatorTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -304,7 +311,7 @@ export async function getCompleteInstructionAsync<
     TAccountProviderTokenAccount,
     TAccountTreasuryTokenAccount,
     TAccountEvaluatorTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -320,7 +327,7 @@ export type CompleteInput<
   TAccountProviderTokenAccount extends string = string,
   TAccountTreasuryTokenAccount extends string = string,
   TAccountEvaluatorTokenAccount extends string = string,
-  TAccountPlatformTreasury extends string = string,
+  TAccountSponsor extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountHookProgram extends string = string,
   TAccountHookWhitelist extends string = string,
@@ -337,7 +344,8 @@ export type CompleteInput<
   treasuryTokenAccount?: Address<TAccountTreasuryTokenAccount>;
   /** Optional: required when evaluator_fee_bp > 0 and budget > 0 */
   evaluatorTokenAccount?: Address<TAccountEvaluatorTokenAccount>;
-  platformTreasury?: Address<TAccountPlatformTreasury>;
+  /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+  sponsor?: Address<TAccountSponsor>;
   tokenProgram?: Address<TAccountTokenProgram>;
   hookProgram?: Address<TAccountHookProgram>;
   hookWhitelist?: Address<TAccountHookWhitelist>;
@@ -354,7 +362,7 @@ export function getCompleteInstruction<
   TAccountProviderTokenAccount extends string,
   TAccountTreasuryTokenAccount extends string,
   TAccountEvaluatorTokenAccount extends string,
-  TAccountPlatformTreasury extends string,
+  TAccountSponsor extends string,
   TAccountTokenProgram extends string,
   TAccountHookProgram extends string,
   TAccountHookWhitelist extends string,
@@ -369,7 +377,7 @@ export function getCompleteInstruction<
     TAccountProviderTokenAccount,
     TAccountTreasuryTokenAccount,
     TAccountEvaluatorTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -385,7 +393,7 @@ export function getCompleteInstruction<
   TAccountProviderTokenAccount,
   TAccountTreasuryTokenAccount,
   TAccountEvaluatorTokenAccount,
-  TAccountPlatformTreasury,
+  TAccountSponsor,
   TAccountTokenProgram,
   TAccountHookProgram,
   TAccountHookWhitelist
@@ -413,10 +421,7 @@ export function getCompleteInstruction<
       value: input.evaluatorTokenAccount ?? null,
       isWritable: true,
     },
-    platformTreasury: {
-      value: input.platformTreasury ?? null,
-      isWritable: true,
-    },
+    sponsor: { value: input.sponsor ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     hookProgram: { value: input.hookProgram ?? null, isWritable: false },
     hookWhitelist: { value: input.hookWhitelist ?? null, isWritable: false },
@@ -446,7 +451,7 @@ export function getCompleteInstruction<
       getAccountMeta(accounts.providerTokenAccount),
       getAccountMeta(accounts.treasuryTokenAccount),
       getAccountMeta(accounts.evaluatorTokenAccount),
-      getAccountMeta(accounts.platformTreasury),
+      getAccountMeta(accounts.sponsor),
       getAccountMeta(accounts.tokenProgram),
       getAccountMeta(accounts.hookProgram),
       getAccountMeta(accounts.hookWhitelist),
@@ -465,7 +470,7 @@ export function getCompleteInstruction<
     TAccountProviderTokenAccount,
     TAccountTreasuryTokenAccount,
     TAccountEvaluatorTokenAccount,
-    TAccountPlatformTreasury,
+    TAccountSponsor,
     TAccountTokenProgram,
     TAccountHookProgram,
     TAccountHookWhitelist
@@ -490,7 +495,8 @@ export type ParsedCompleteInstruction<
     treasuryTokenAccount?: TAccountMetas[6] | undefined;
     /** Optional: required when evaluator_fee_bp > 0 and budget > 0 */
     evaluatorTokenAccount?: TAccountMetas[7] | undefined;
-    platformTreasury?: TAccountMetas[8] | undefined;
+    /** acp_state.sponsor. Distinct from platform_treasury, which receives SPL fees. */
+    sponsor?: TAccountMetas[8] | undefined;
     tokenProgram?: TAccountMetas[9] | undefined;
     hookProgram?: TAccountMetas[10] | undefined;
     hookWhitelist?: TAccountMetas[11] | undefined;
@@ -533,7 +539,7 @@ export function parseCompleteInstruction<
       providerTokenAccount: getNextOptionalAccount(),
       treasuryTokenAccount: getNextOptionalAccount(),
       evaluatorTokenAccount: getNextOptionalAccount(),
-      platformTreasury: getNextOptionalAccount(),
+      sponsor: getNextOptionalAccount(),
       tokenProgram: getNextOptionalAccount(),
       hookProgram: getNextOptionalAccount(),
       hookWhitelist: getNextOptionalAccount(),

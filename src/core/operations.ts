@@ -24,17 +24,21 @@ export type PreparedEvmTx = OperationResult<Call[]> & {
 export type PreparedSolanaTx = OperationResult<SolanaInstructionLike[]> & {
   chain: "solana";
   /**
-   * Optional send options the client attaches at prepare time and
-   * `submitPrepared` forwards to the adapter — e.g. a persistent lookup table
-   * to compress against plus `sponsorLookupTables` (router reject). The
-   * lookup table must already exist on-chain (no creation side-effect at
-   * prepare time).
+   * Send options the client attaches at prepare time and `submitPrepared`
+   * forwards to the adapter. Any lookup table named here must already exist
+   * on-chain — prepare has no creation side-effect.
    */
   sendOptions?: SendInstructionsOptions;
 };
 
 export type PreparedTx = PreparedEvmTx | PreparedSolanaTx;
 export type PreparedTxInput = PreparedTx[];
+
+/**
+ * A job's identifier, in whichever form the chain gives it its identity: the
+ * contract's counter on EVM, the job account's own base58 ADDRESS on Solana.
+ */
+export type JobId = bigint | string;
 
 export type CreateJobParams = {
   providerAddress: string;
@@ -47,8 +51,8 @@ export type CreateJobParams = {
 
 /**
  * Subscription terms proposed by the provider at setBudget on a multi-hook
- * (router) job. The subscription hook stores them as the job's proposed_terms;
- * the client confirms them at fund and activation happens at complete.
+ * (router) job: stored as proposed_terms, confirmed at fund, activated at
+ * complete.
  */
 export type SubscriptionTermsInput = {
   /** Subscription duration in seconds (the hook rejects non-positive). */
@@ -57,20 +61,16 @@ export type SubscriptionTermsInput = {
 };
 
 export type SetBudgetParams = {
-  jobId: bigint;
+  jobId: JobId;
   amount: bigint;
   clientAddress?: string;
   /**
-   * Hook opt_params, identical semantics on every chain: omitted or "0x"
-   * proposes nothing. For a fund-transfer fund request encode via
-   * encodeFundTransferSetBudgetOptParams(chainId, token, amount, destination)
-   * — budget-mint amounts may exceed the job budget (fund() then
-   * authorizes with a client-signed Approve/Revoke bracket); token = the
-   * default pubkey cancels a live proposal (Solana).
+   * Hook opt_params; omitted or "0x" proposes nothing. Encode a fund-transfer
+   * request via encodeFundTransferSetBudgetOptParams(chainId, token, amount,
+   * destination); the default pubkey as token cancels a live proposal.
    *
-   * On a Solana multi-hook (router) job this carries ONLY the fund-transfer
-   * slice; the client assembles the multi-hook header itself so the declared
-   * account counts always match the slices it builds.
+   * On a Solana router job this carries ONLY the fund-transfer slice — the
+   * client assembles the multi-hook header itself.
    */
   optParams?: Hex;
   /**
@@ -88,28 +88,28 @@ export type ApproveAllowanceParams = {
 };
 
 export type FundParams = {
-  jobId: bigint;
+  jobId: JobId;
   expectedBudget: bigint;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type SubmitParams = {
-  jobId: bigint;
+  jobId: JobId;
   deliverable: string;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type CompleteParams = {
-  jobId: bigint;
+  jobId: JobId;
   reason: string;
   clientAddress?: string;
   optParams?: Hex;
 };
 
 export type RejectParams = {
-  jobId: bigint;
+  jobId: JobId;
   reason: string;
   clientAddress?: string;
   optParams?: Hex;
@@ -117,13 +117,13 @@ export type RejectParams = {
 
 export type BatchConfigureHooksParams = {
   routerAddress: string;
-  jobId: bigint;
+  jobId: JobId;
   selectors: Hex[];
   hooksPerSelector: string[][];
 };
 
 export type OnChainJob = {
-  id: bigint;
+  id: JobId;
   client: string;
   provider: string;
   evaluator: string;

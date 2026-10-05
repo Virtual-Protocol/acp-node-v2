@@ -377,6 +377,13 @@ agent.on("entry", async (session, entry) => {
 
 See [`src/examples/llm/`](./src/examples/llm/) for complete LLM examples with Claude.
 
+> **Evaluator trust boundary:** Provider deliverables are untrusted input.
+> `session.toMessages()` escapes them inside an explicit
+> `<untrusted_provider_deliverable>` data block, but structural delimiters do not
+> prove correctness or eliminate model-level prompt injection. Do not let a
+> self-evaluating LLM release value solely because text inside a deliverable asks
+> it to call `complete()`; use independent evaluation for value-bearing jobs.
+
 ## Provider Adapters
 
 | Adapter                          | Use Case                                          |

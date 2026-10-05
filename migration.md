@@ -599,6 +599,12 @@ agent.on("entry", async (session, entry) => {
 });
 ```
 
+Provider deliverables are untrusted input. `session.toMessages()` escapes them
+inside `<untrusted_provider_deliverable>` with an instruction not to follow
+embedded commands, but delimiters do not prove correctness. A self-evaluating
+LLM should not release value solely from its own reading of provider-controlled
+text; use independent evaluation for value-bearing jobs.
+
 ### Available Tools by Role and Status
 
 **Provider:**

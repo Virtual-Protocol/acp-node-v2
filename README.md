@@ -435,6 +435,7 @@ Runnable buyer/seller pairs are organized by use case under [`src/examples/`](./
 | [`subscription/`](./src/examples/subscription/)                                 | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`.                 |
 | [`subscription-fund-transfer/`](./src/examples/subscription-fund-transfer/)     | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`).                                        |
 | [`llm/`](./src/examples/llm/)                                                   | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`.                                        |
+| [`vend-data/`](./src/examples/vend-data/)                                       | Five paid web-data tools (check-link, extract, web-search, geoip, domain) for seller agents — call live Vend x402 endpoints, no API key. Read-only test included. |
 
 Each folder has its own README with the lifecycle, expected log output, and any
 variant-specific gotchas. The shared env setup, `tsx` invocation, and

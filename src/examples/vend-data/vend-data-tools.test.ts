@@ -2,10 +2,12 @@
  * Tests for the vend-data offering tools.
  *
  * - Shape: vendDataTools() returns five AcpTool-shaped definitions.
- * - Live 402: an unpaid call to a live endpoint returns HTTP 402 with the
- *   x402-v2 Nano challenge (proves the endpoint is reachable and priced).
+ * - Live: an unpaid call to a live endpoint returns HTTP 402 with the
+ *   x402-v2 Nano challenge, or HTTP 200 while the caller's IP is inside the
+ *   merchant's small free trial (x-trial-limit header). Either proves the
+ *   endpoint is reachable and priced.
  *
- * Run: npx tsx examples/vend-data-offering.test.ts
+ * Run: npx tsx src/examples/vend-data/vend-data-tools.test.ts
  */
 import assert from "node:assert/strict";
 import { vendDataTools, vendFetch } from "./vend-data-tools.js";
@@ -25,6 +27,10 @@ async function live402(name: string): Promise<void> {
             }.paypercall.dev/api/v1/${name}?url=` + encodeURIComponent(target);
 
   const resp = await fetch(url);
+  if (resp.status === 200 && resp.headers.get("x-trial-limit") !== null) {
+    console.log(`  ok  ${name} -> 200 inside free trial`);
+    return;
+  }
   assert.equal(resp.status, 402, `${name} should require payment (HTTP 402)`);
   const body = (await resp.json()) as {
     accepts: { scheme: string; network: string; asset: string }[];
@@ -52,12 +58,16 @@ async function main(): Promise<void> {
   const names = ["check-link", "extract", "web-search", "geoip", "domain-info"] as const;
   for (const n of names) await live402(n);
 
-  // 3. vendFetch without a settle callback correctly raises on 402
-  await assert.rejects(
-    () => vendFetch("geoip", "8.8.8.8"),
-    /PAYMENT-REQUIRED/
-  );
-  console.log("  ok  vendFetch() raises PAYMENT-REQUIRED until settled");
+  // 3. vendFetch without a settle callback raises on 402 (or returns data
+  //    while the caller is inside the free trial)
+  try {
+    const data = await vendFetch("geoip", "8.8.8.8");
+    assert.equal(typeof data.query, "string");
+    console.log("  ok  vendFetch() returned data inside free trial");
+  } catch (err) {
+    assert.match(String(err), /PAYMENT-REQUIRED/);
+    console.log("  ok  vendFetch() raises PAYMENT-REQUIRED until settled");
+  }
 
   console.log("\nAll vend-data offering tests passed.");
 }

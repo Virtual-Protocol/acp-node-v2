@@ -40,7 +40,9 @@ function vendTool(name: ToolName, description: string): AcpTool {
       ? "IPv4/IPv6 address"
       : name === "domain-info"
         ? "domain name (e.g. example.com)"
-        : "URL to fetch";
+        : name === "web-search"
+          ? "search query (keywords or a natural-language question)"
+          : "URL to fetch";
   return {
     name: `vend_${name}`,
     description,

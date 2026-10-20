@@ -742,27 +742,40 @@ export class AcpAgent {
     chainId: number,
     offering: AcpAgentOffering,
     providerAddress: string,
-    requirementData: Record<string, unknown> | string,
+    requirementData: unknown,
     opts?: {
       evaluatorAddress?: string;
       hookAddress?: string;
       packageId?: number;
     },
   ): Promise<JobId> {
-    // Validate requirement data against JSON schema if requirements is an object.
+    // Validate both the supplied value and the exact representation we will post.
+    let validateRequirements: import("ajv").ValidateFunction | undefined;
     if (
       offering.requirements &&
-      typeof offering.requirements === "object" &&
-      typeof requirementData === "object"
+      typeof offering.requirements === "object"
     ) {
       const ajv = new Ajv({ allErrors: true, strictSchema: false });
       addFormats(ajv);
-      const validate = ajv.compile(offering.requirements);
-      if (!validate(requirementData)) {
+      validateRequirements = ajv.compile(offering.requirements);
+      if (!validateRequirements(requirementData)) {
         throw new Error(
-          `Requirement validation failed: ${ajv.errorsText(validate.errors)}`,
+          `Requirement validation failed: ${ajv.errorsText(validateRequirements.errors)}`,
         );
       }
+    }
+
+    // Resolve serialization before any creation dispatch, not inside its retry loop.
+    let requirementContent: string;
+    try {
+      const encoded = JSON.stringify(requirementData);
+      if (typeof encoded !== "string") throw new Error("Missing JSON representation");
+      requirementContent = encoded;
+    } catch {
+      throw new Error("Requirement serialization failed: payload must be JSON serializable");
+    }
+    if (validateRequirements && !validateRequirements(JSON.parse(requirementContent))) {
+      throw new Error("Requirement validation failed: serialized payload does not satisfy the declared schema");
     }
 
     const buffer = offering.slaMinutes === MIN_SLA_MINS ? BUFFER_SECONDS : 0;
@@ -810,7 +823,7 @@ export class AcpAgent {
         await this.sendMessage(
           chainId,
           jobId.toString(),
-          JSON.stringify(requirementData),
+          requirementContent,
           "requirement",
           packageId,
         );
@@ -835,7 +848,7 @@ export class AcpAgent {
     chainId: number,
     offeringName: string,
     providerAddress: string,
-    requirementData: Record<string, unknown> | string,
+    requirementData: unknown,
     opts?: {
       evaluatorAddress?: string;
       hookAddress?: string;

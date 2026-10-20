@@ -6,6 +6,7 @@
   "scripts": {
     "prepare": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:requirements": "npm run build && node --test tests/offering-requirements.test.mjs && tsc --noEmit --strict --skipLibCheck --target es2020 --module nodenext --moduleResolution nodenext tests/offering-requirements.types.ts",
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js"

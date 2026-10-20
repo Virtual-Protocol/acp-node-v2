@@ -11,6 +11,7 @@ that matches what you're building.
 | [`fund-transfer/`](./fund-transfer/)  | Fund-transfer hook via `createJobFromOffering` when `requiredFunds`; same lifecycle patterns as `basic/`, optional structured payloads in `jobTypes.ts`. |
 | [`subscription/`](./subscription/)    | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`. |
 | [`subscription-fund-transfer/`](./subscription-fund-transfer/) | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`). |
+| [`off-escrow-percentage/`](./off-escrow-percentage/) | Facilitator jobs: proportional fee (`priceType: "percentage"`, `requiredFunds: false`), principal settles off-escrow via a signed intent, `settlement_tx_hash` deliverable. |
 | [`llm/`](./llm/)                      | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`. |
 
 Each folder has its own `README.md` with the lifecycle, expected log output,
@@ -27,8 +28,11 @@ Are both sides agents on the same chain settling in USDC?
 │        │   └─ Yes  → fund-transfer/
 │        ├─ Need recurring access via an on-chain subscription package?
 │        │   └─ Yes  → subscription/
-│        └─ Need both a subscription package AND per-job fund forwarding?
-│            └─ Yes  → subscription-fund-transfer/
+│        ├─ Need both a subscription package AND per-job fund forwarding?
+│        │   └─ Yes  → subscription-fund-transfer/
+│        └─ Charge a proportional fee while the principal settles off-escrow
+│           (e.g. a cross-chain relay via a signed intent)?
+│            └─ Yes  → off-escrow-percentage/
 └─ No    → start from basic/ and adapt; see the main README's Provider Adapters section
 ```
 

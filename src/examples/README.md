@@ -12,6 +12,7 @@ that matches what you're building.
 | [`subscription/`](./subscription/)    | Jobs that activate (or renew) an on-chain `SubscriptionHook` package via `createJobFromOffering({ packageId })` + `setBudgetWithSubscription`. |
 | [`subscription-fund-transfer/`](./subscription-fund-transfer/) | Multi-hook variant: subscription + per-job fund forwarding in a single job (`setBudgetWithSubscriptionAndFundRequest`). |
 | [`llm/`](./llm/)                      | Both sides driven by Claude through `session.availableTools()` + `session.executeTool()`. Requires `ANTHROPIC_API_KEY`. |
+| [`helpers/`](./helpers/)              | Runnable cheat-sheet of every public read/introspection API on `AcpAgent`, `AcpJobApi`, `AcpChatTransport`, and `JobSession`. No on-chain side effects. |
 
 Each folder has its own `README.md` with the lifecycle, expected log output,
 and any variant-specific gotchas.
@@ -93,6 +94,20 @@ themselves once the job reaches a terminal state (`job.completed` or
 The buyer and seller **must use different wallets**. The seller's wallet must
 also be registered as a provider with at least one offering on the registry for
 `buyer.browseAgents()` (used by `basic/buyer.ts`) to find it.
+
+### Helpers — exploring the read APIs
+
+Once you have a buyer wallet configured, point the helpers script at it to
+see every public read API the SDK exposes printed in one go:
+
+```bash
+npx tsx src/examples/helpers/acpHelperFunctions.ts
+```
+
+It does not create or mutate any on-chain state — useful as a debugging
+tool, a discoverability surface, and a reference when writing your own
+monitoring or admin tooling. See [`helpers/README.md`](./helpers/README.md)
+for the full list of methods covered.
 
 ## Troubleshooting
 
